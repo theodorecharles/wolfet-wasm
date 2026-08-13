@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Wolfenstein: Enemy Territory</title>
+  <link rel="icon" href="/img/et.png" type="image/png">
+  <link rel="stylesheet" href="/css/etjs.css">
+</head>
+<body>
+  <div id="name-gate">
+    <form id="name-form" class="gate-card" autocomplete="on">
+      <img id="et-icon" src="/img/et.png" width="64" height="64" alt="Wolfenstein: Enemy Territory">
+      <p class="game-kicker">Wolfenstein</p>
+      <h1>Enemy Territory</h1>
+      <p>Enter a player name to start the game.</p>
+      <label for="player-name">Player name</label>
+      <input id="player-name" name="player-name" type="text" maxlength="32" autocomplete="nickname" spellcheck="false" autofocus>
+      <button type="submit" id="name-submit">Play</button>
+      <p id="name-error" class="gate-error"></p>
+    </form>
+  </div>
+
+  <div id="load-panel" class="hidden" aria-live="polite">
+    <div class="gate-card">
+      <img class="et-icon-sm" src="/img/et.png" width="32" height="32" alt="">
+      <h1>Loading</h1>
+      <p id="load-status">Preparing official game data…</p>
+      <div class="load-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="load-bar-fill"></div>
+      </div>
+      <p id="load-detail" class="load-detail"></p>
+    </div>
+  </div>
+
+  <audio id="menu-music" loop preload="auto" src="/sound/music/menu_server.wav"></audio>
+
+  <div id="viewport-frame" class="hidden" tabindex="0">
+    <canvas id="et-canvas" width="1024" height="768"></canvas>
+  </div>
+
+  <script src="/js/player-name.js?v=2"></script>
+  <script src="/js/etjs-input.js?v=3"></script>
+  <script src="/js/bind-store.js?v=2"></script>
+  <script src="/js/pk3-cache.js?v=2"></script>
+  <script src="/js/client.js?v=8"></script>
+</body>
+</html>

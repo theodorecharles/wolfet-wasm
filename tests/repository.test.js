@@ -1,0 +1,48 @@
+'use strict';
+
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+const ROOT = path.join(__dirname, '..');
+
+describe('reproducible source repository', () => {
+  it('keeps reference workspaces, game data, builds, and credentials out of Git', () => {
+    const ignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
+    [
+      '/etlegacy/',
+      '/quakejs/',
+      '/runtime/etmain/*.pk3',
+      '/runtime/legacy/*.pk3',
+      '/web/client/*',
+      '/runtime/.rcon-password'
+    ].forEach((rule) => assert.match(ignore, new RegExp(rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
+  });
+
+  it('pins the Splash Damage archive and all installed game files by SHA-256', () => {
+    const fetcher = fs.readFileSync(path.join(ROOT, 'scripts', 'fetch-game-data.sh'), 'utf8');
+    assert.match(fetcher, /cdn\.splashdamage\.com\/downloads\/games\/wet\/et260b\.x86_full\.zip/);
+    assert.match(fetcher, /2a8fef8e8558efffcad658bb9a8b12df8740418b3514142350eba3b7641eb3e0/);
+    assert.match(fetcher, /712966b20e06523fe81419516500e499c86b2b4fec823856ddbd333fcb3d26e5/);
+    assert.match(fetcher, /d1abab70f6e3e3af8f34dfb4d94542c8bd592b0a1a582f0107d2162ee23c679b/);
+  });
+
+  it('pins and completely represents the current ET: Legacy engine delta', () => {
+    const setup = fs.readFileSync(path.join(ROOT, 'scripts', 'setup-etlegacy.sh'), 'utf8');
+    assert.match(setup, /a44ab4f396370a694109da33df901d85f6fe9626/);
+    const patch = path.join(ROOT, 'patches', 'etlegacy-wasm.patch');
+    assert.ok(fs.statSync(patch).size > 300000);
+    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', patch]);
+  });
+
+  it('does not ship the old shared RCON password', () => {
+    const dedicatedSource = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
+    const rconSource = fs.readFileSync(path.join(ROOT, 'server', 'rcon.js'), 'utf8');
+    assert.doesNotMatch(dedicatedSource, /ETJS_RCON \|\| ['"]etjs['"]/);
+    assert.doesNotMatch(rconSource, /password\) \|\| ['"]etjs['"]/);
+    assert.match(dedicatedSource, /randomBytes\(24\)/);
+    assert.match(dedicatedSource, /runtime', '\.rcon-password/);
+  });
+});

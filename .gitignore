@@ -1,0 +1,41 @@
+# Dependencies and local caches
+/node_modules/
+/.cache/
+/tmp-etjs-shots/
+/.env
+.DS_Store
+
+# Upstream reference workspaces. ETJS pins ET: Legacy with a patch instead.
+/etlegacy/
+/quakejs/
+
+# Original game installers/assets and downloaded third-party runtime data
+/*.run
+/*.zip
+/game-data/
+/vendor/
+/runtime/etmain/*.pk3
+/runtime/legacy/*.pk3
+/web/sound/music/*
+!/web/sound/music/.gitkeep
+/web/img/et.png
+/web/img/et.ico
+
+# Generated WebAssembly client
+/web/client/*
+!/web/client/.gitkeep
+
+# Dedicated-server state and locally generated credentials
+/runtime/.rcon-password
+/runtime/legacy/etconsole.log
+/runtime/legacy/etconfig_server.cfg
+/runtime/legacy/session/
+/runtime/legacy/demos/
+/runtime/legacy/profiles/
+/runtime/legacy/screenshots/
+/runtime/legacy/*.db
+/runtime/legacy/*.db-*
+
+# Native helper binaries
+/tools/huffpack
+/tools/q3huff

@@ -1,0 +1,1249 @@
+/**
+ * Browser ET client bootstrap. Runs only in a window (no Node require).
+ * name → download (silent) → splash+music → menu+music → Join Game →
+ * loading+music → game.
+ */
+(function () {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  /* One stamp for etjs.js + etjs.wasm so EM_ASM addresses match. */
+  window.ETJS_ASSET_VER = window.ETJS_ASSET_VER || String(Date.now());
+
+  var frame = document.getElementById('viewport-frame');
+  var canvas = document.getElementById('et-canvas');
+  var loadPanel = document.getElementById('load-panel');
+  var loadStatus = document.getElementById('load-status');
+  var loadDetail = document.getElementById('load-detail');
+  var loadFill = document.getElementById('load-bar-fill');
+  var loadBar = loadFill && loadFill.parentElement;
+  var pk3Cache = window.ETJSPk3
+    ? window.ETJSPk3.createPk3Cache({
+      backend: (typeof indexedDB !== 'undefined')
+        ? window.ETJSPk3.idbBackend()
+        : window.ETJSPk3.memoryBackend()
+    })
+    : null;
+
+  var playReady = false;
+  var typingMode = null;
+  var held = Object.create(null);
+  var loadHidden = false;
+  var menuAudio = document.getElementById('menu-music');
+  var menuMusicWanted = false;
+  var nameGate = document.getElementById('name-gate');
+  var nameForm = document.getElementById('name-form');
+  var nameInput = document.getElementById('player-name');
+  var nameError = document.getElementById('name-error');
+
+  var AUTOEXEC_LINES = [
+    'set rate 25000',
+    'set snaps 20',
+    'set cl_maxpackets 30',
+    'set r_drawworld 1',
+    'set r_fastsky 0',
+    'set r_nocurves 0',
+    'set r_dynamiclight 1',
+    'set r_vertexLight 0',
+    'set r_lightmap 0',
+    'set r_mapOverBrightBits 2',
+    'set r_overBrightBits 0',
+    'set r_picmip 0',
+    'set cg_shadows 0',
+    'set cg_atmosphericEffects 0',
+    'set cg_markTime 0',
+    'set r_ignoreGLErrors 1',
+    'set r_allowSoftwareGL 1',
+    'set cl_freelook 1',
+    'set in_mouse 1',
+    'set sensitivity 8',
+    'set m_pitch 0.022',
+    'set m_yaw 0.022',
+    'set cg_drawGun 1',
+    'set com_maxfps 125',
+    'set com_maxfpsUnfocused 125',
+    'set com_unfocused 0',
+    'set com_minimized 0',
+    'set s_initsound 1',
+    'set s_volume 0.8',
+    'set s_muteWhenUnfocused 0',
+    'set s_muteWhenMinimized 0',
+    'set com_recommendedSet 1',
+    'set cg_autoAction 0',
+    'unbindall',
+    'bind w +forward',
+    'bind s +back',
+    'bind a +moveleft',
+    'bind d +moveright',
+    'bind LEFTARROW +left',
+    'bind RIGHTARROW +right',
+    'bind UPARROW +lookup',
+    'bind DOWNARROW +lookdown',
+    'bind SPACE +moveup',
+    'bind c +movedown',
+    'bind e +leanright',
+    'bind q +leanleft',
+    'bind x +prone',
+    'bind MOUSE1 +attack',
+    'bind MOUSE2 weapalt',
+    'bind MOUSE3 weapnext',
+    'bind MOUSE4 weapprev',
+    'bind MOUSE5 +zoom',
+    'bind MWHEELDOWN weapprev',
+    'bind MWHEELUP weapnext',
+    'bind 0 weaponbank 10',
+    'bind 1 weaponbank 1',
+    'bind 2 weaponbank 2',
+    'bind 3 weaponbank 3',
+    'bind 4 weaponbank 4',
+    'bind 5 weaponbank 5',
+    'bind 6 weaponbank 6',
+    'bind 7 weaponbank 7',
+    'bind 8 weaponbank 8',
+    'bind 9 weaponbank 9',
+    'bind SHIFT +sprint',
+    'bind CAPSLOCK +speed',
+    'bind f +activate',
+    'bind h dropobj',
+    'bind b +zoom',
+    'bind g +mapexpand',
+    'bind r +reload',
+    'bind k kill',
+    'bind o +objectives',
+    'bind TAB +scores',
+    'bind ALT +stats',
+    'bind CTRL +topshots',
+    'bind ` toggleconsole',
+    'bind ~ toggleconsole',
+    'bind l openlimbomenu',
+    'bind , mapzoomout',
+    'bind . mapzoomin',
+    'bind = zoomin',
+    'bind - zoomout',
+    'bind p classmenu',
+    'bind j teammenu',
+    'bind i spawnmenu',
+    'bind n timerreset',
+    'bind t messagemode',
+    'bind y messagemode2',
+    'bind u messagemode3',
+    'bind v mp_quickmessage',
+    'bind z mp_fireteammsg',
+    'bind F1 "vote yes"',
+    'bind F2 "vote no"',
+    'bind F3 ready',
+    'bind F4 notready',
+    'bind m mvactivate',
+    'bind BACKSPACE spechelp',
+    'bind F7 edithud',
+    'bind F11 autoscreenshot',
+    'bind F12 toggleRecord',
+    'bind KP_ENTER mp_fireteamadmin',
+    'bind KP_PLUS "selectbuddy -1"',
+    'bind KP_END "selectbuddy 0"',
+    'bind KP_DOWNARROW "selectbuddy 1"',
+    'bind KP_PGDN "selectbuddy 2"',
+    'bind KP_LEFTARROW "selectbuddy 3"',
+    'bind KP_5 "selectbuddy 4"',
+    'bind KP_RIGHTARROW "selectbuddy 5"',
+    'bind KP_HOME "selectbuddy 6"',
+    'bind KP_UPARROW "selectbuddy 7"',
+    'bind KP_MINUS "selectbuddy -2"'
+  ];
+
+  var HOLD_KEYS = {
+    KeyW: '+forward',
+    KeyS: '+back',
+    KeyA: '+moveleft',
+    KeyD: '+moveright',
+    ArrowLeft: '+left',
+    ArrowRight: '+right',
+    ArrowUp: '+lookup',
+    ArrowDown: '+lookdown',
+    Space: '+moveup',
+    KeyC: '+movedown',
+    KeyW: '+forward',
+    KeyS: '+back',
+    KeyA: '+moveleft',
+    KeyD: '+moveright',
+    Space: '+moveup',
+    KeyC: '+movedown',
+    KeyE: '+leanright',
+    KeyQ: '+leanleft',
+    KeyX: '+prone',
+    ShiftLeft: '+sprint',
+    ShiftRight: '+sprint',
+    CapsLock: '+speed',
+    KeyF: '+activate',
+    KeyB: '+zoom',
+    KeyG: '+mapexpand',
+    KeyR: '+reload',
+    KeyO: '+objectives',
+    Tab: '+scores',
+    AltLeft: '+stats',
+    AltRight: '+stats',
+    ControlLeft: '+topshots',
+    ControlRight: '+topshots'
+  };
+
+  var TAP_KEYS = {
+    KeyL: 'openlimbomenu',
+    KeyP: 'classmenu',
+    KeyJ: 'teammenu',
+    KeyI: 'spawnmenu',
+    KeyH: 'dropobj',
+    KeyK: 'kill',
+    Digit0: 'weaponbank 10',
+    Digit1: 'weaponbank 1',
+    Digit2: 'weaponbank 2',
+    Digit3: 'weaponbank 3',
+    Digit4: 'weaponbank 4',
+    Digit5: 'weaponbank 5',
+    Digit6: 'weaponbank 6',
+    Digit7: 'weaponbank 7',
+    Digit8: 'weaponbank 8',
+    Digit9: 'weaponbank 9',
+    Comma: 'mapzoomout',
+    Period: 'mapzoomin',
+    Equal: 'zoomin',
+    Minus: 'zoomout',
+    KeyN: 'timerreset',
+    KeyT: 'messagemode',
+    KeyY: 'messagemode2',
+    KeyU: 'messagemode3',
+    KeyV: 'mp_quickmessage',
+    KeyZ: 'mp_fireteammsg',
+    F1: 'vote yes',
+    F2: 'vote no',
+    F3: 'ready',
+    F4: 'notready',
+    KeyM: 'mvactivate',
+    Backspace: 'spechelp',
+    F7: 'edithud',
+    F11: 'autoscreenshot',
+    F12: 'toggleRecord',
+    NumpadEnter: 'mp_fireteamadmin',
+    NumpadAdd: 'selectbuddy -1',
+    Numpad1: 'selectbuddy 0',
+    Numpad2: 'selectbuddy 1',
+    Numpad3: 'selectbuddy 2',
+    Numpad4: 'selectbuddy 3',
+    Numpad5: 'selectbuddy 4',
+    Numpad6: 'selectbuddy 5',
+    Numpad7: 'selectbuddy 6',
+    Numpad8: 'selectbuddy 7',
+    NumpadSubtract: 'selectbuddy -2'
+  };
+
+  var MOUSE_HOLD = {
+    0: '+attack',
+    4: '+zoom'
+  };
+  var MOUSE_TAP = {
+    1: 'weapnext',
+    2: 'weapalt',
+    3: 'weapprev'
+  };
+
+  function playMenuMusic() {
+    menuMusicWanted = true;
+    resumeAudio();
+    if (!menuAudio) {
+      return;
+    }
+    menuAudio.loop = true;
+    menuAudio.volume = 0.75;
+    var p = menuAudio.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(function () { /* wait for a later gesture */ });
+    }
+  }
+
+  function stopMenuMusic() {
+    menuMusicWanted = false;
+    if (menuAudio) {
+      menuAudio.pause();
+      try { menuAudio.currentTime = 0; } catch (e) { /* ignore */ }
+    }
+  }
+
+  function showError(msg) {
+    if (msg) {
+      playReady = false;
+      if (loadStatus) {
+        loadStatus.textContent = msg;
+      }
+      if (loadPanel) {
+        loadPanel.classList.remove('hidden');
+      }
+    }
+  }
+
+  function setLoadProgress(frac, status, detail) {
+    var pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
+    if (loadStatus && status) {
+      loadStatus.textContent = status;
+    }
+    if (loadDetail) {
+      loadDetail.textContent = detail || '';
+    }
+    if (loadFill) {
+      loadFill.style.width = pct + '%';
+    }
+    if (loadBar) {
+      loadBar.setAttribute('aria-valuenow', String(pct));
+    }
+  }
+
+  var engineReady = false;
+
+  function sizeCanvas() {
+    /* QuakeJS resizeViewport: backbuffer = viewport-frame size. */
+    var host = frame || (canvas && canvas.parentElement);
+    var w = (host && host.offsetWidth) || window.innerWidth || 1024;
+    var h = (host && host.offsetHeight) || window.innerHeight || 768;
+    if (w < 2) {
+      w = window.innerWidth || 1024;
+    }
+    if (h < 2) {
+      h = window.innerHeight || 768;
+    }
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+    }
+    if (canvas.style) {
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+    }
+    /* Do not touch Emscripten/SDL GL until the renderer exists. */
+    if (!engineReady) {
+      return;
+    }
+    if (window.Module && typeof window.Module.setCanvasSize === 'function') {
+      window.Module.setCanvasSize(w, h);
+    }
+    if (window.Module && typeof window.Module._ETJS_SetResolution === 'function') {
+      try { window.Module._ETJS_SetResolution(w, h); } catch (e) { /* not ready */ }
+    }
+  }
+
+  function ensureWebGL() {
+    var attrs = {
+      alpha: false,
+      antialias: false,
+      depth: true,
+      stencil: false,
+      preserveDrawingBuffer: true,
+      powerPreference: 'high-performance'
+    };
+    var gl = canvas.getContext('webgl2', attrs) || canvas.getContext('webgl', attrs);
+    if (!gl) {
+      throw new Error('WebGL is required');
+    }
+    return gl;
+  }
+
+  function engineCmd(line) {
+    var M = window.Module;
+    if (!M || !line) {
+      return false;
+    }
+    if (line.charAt(line.length - 1) !== '\n') {
+      line += '\n';
+    }
+    try {
+      if (typeof M.ccall === 'function') {
+        M.ccall('Cbuf_AddText', null, ['string'], [line]);
+        return true;
+      }
+    } catch (e) { /* not ready */ }
+    return false;
+  }
+
+  function addLook(yaw, pitch) {
+    var M = window.Module;
+    if (!M) {
+      return;
+    }
+    try {
+      if (typeof M._ETJS_AddLook === 'function') {
+        M._ETJS_AddLook(yaw, pitch);
+      } else if (typeof M.ccall === 'function') {
+        M.ccall('ETJS_AddLook', null, ['number', 'number'], [yaw, pitch]);
+      }
+    } catch (e) { /* not ready */ }
+  }
+
+  function installDefaultBinds() {
+    engineCmd(AUTOEXEC_LINES.join('\n'));
+  }
+
+  function pointerLocked() {
+    return document.pointerLockElement === canvas ||
+      document.webkitPointerLockElement === canvas;
+  }
+
+  function lockPointer() {
+    if (!canvas) {
+      return;
+    }
+    canvas.focus();
+    if (frame && frame.focus) {
+      frame.focus();
+    }
+    if (canvas.requestPointerLock) {
+      canvas.requestPointerLock();
+    } else if (canvas.webkitRequestPointerLock) {
+      canvas.webkitRequestPointerLock();
+    }
+    resumeAudio();
+  }
+
+  function resumeAudio() {
+    var ctxs = [];
+    var M = window.Module;
+    if (typeof SDL !== 'undefined' && SDL.audioContext) {
+      ctxs.push(SDL.audioContext);
+    }
+    if (M && M.SDL2 && M.SDL2.audioContext) {
+      ctxs.push(M.SDL2.audioContext);
+    }
+    if (typeof AL !== 'undefined' && AL.currentCtx && AL.currentCtx.audioCtx) {
+      ctxs.push(AL.currentCtx.audioCtx);
+    }
+    ctxs.forEach(function (ctx) {
+      if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+        ctx.resume();
+      }
+    });
+  }
+
+  function releaseAllHolds() {
+    Object.keys(held).forEach(function (code) {
+      var val = held[code];
+      if (typeof val === 'string' && val.charAt(0) === '+') {
+        engineCmd('-' + val.slice(1));
+      }
+      delete held[code];
+    });
+  }
+
+  function onEngineLine(text) {
+    if (typeof text !== 'string') {
+      return;
+    }
+    if (text.indexOf('ETJS join name=') !== -1) {
+      var joined = text.replace(/^.*ETJS join name=/, '').split(' ')[0];
+      if (window.ETJSName && joined) {
+        try { window.ETJSName.savePlayerName(joined); } catch (e) { /* ignore */ }
+      }
+    }
+    if (text.indexOf('----- Common Initialized') !== -1) {
+      engineReady = true;
+      sizeCanvas();
+    }
+    if (text.indexOf('Connecting to') !== -1 || text.indexOf('resolved to') !== -1) {
+      hideLoadPanel();
+      playMenuMusic();
+    } else if (text.indexOf('ETJS splash start') !== -1 ||
+               text.indexOf('ETJS UIMENU_MAIN') !== -1 ||
+               text.indexOf('ETJS menus loaded count=') !== -1 ||
+               text.indexOf('Cinematic ') !== -1 ||
+               text.indexOf('ETJS menu ready') !== -1 ||
+               text.indexOf('ETJS menu music start') !== -1) {
+      engineReady = true;
+      hideLoadPanel();
+      playMenuMusic();
+    } else if (text.indexOf('ETJS view team=') !== -1 ||
+               text.indexOf('ETJS CGameRendering vm') !== -1) {
+      hideLoadPanel();
+      stopMenuMusic();
+    }
+  }
+
+  function hideLoadPanel() {
+    if (loadHidden) {
+      return;
+    }
+    loadHidden = true;
+    setLoadProgress(1, 'Entering the match…', '');
+    if (loadPanel) {
+      loadPanel.classList.add('hidden');
+    }
+    if (frame) {
+      frame.classList.remove('hidden');
+      frame.focus();
+    }
+    sizeCanvas();
+    playReady = true;
+    installDefaultBinds();
+    engineCmd('set cg_autoAction 0');
+    engineCmd('stoprecord');
+  }
+
+  function engineArgs(playerName, cfg) {
+    var nameArgs = window.ETJSName.nameToGameArgs(playerName);
+    var connect = (cfg && cfg.connect) || (window.location.hostname + ':27961');
+    /* ET only keeps 96 startup +commands; put connect first so it cannot
+     * be dropped. Everything else lives in autoexec.cfg. */
+    return nameArgs.concat([
+      '+set', 'etjs_connect', connect,
+      '+set', 'fs_basepath', '/',
+      '+set', 'fs_homepath', '/home',
+      '+set', 'fs_game', 'legacy',
+      '+set', 'sv_master1', '',
+      '+set', 'r_fullscreen', '0',
+      '+set', 'r_mode', '-1',
+      '+set', 'r_customwidth', String(canvas.width || 1024),
+      '+set', 'r_customheight', String(canvas.height || 768),
+      '+set', 'com_hunkMegs', '128',
+      '+set', 'com_zoneMegs', '16',
+      '+set', 'com_recommendedSet', '1',
+      '+set', 'com_introPlayed', '0'
+    ]);
+  }
+
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = src;
+      s.async = false;
+      s.onload = function () { resolve(src); };
+      s.onerror = function () { reject(new Error('failed to load ' + src)); };
+      document.body.appendChild(s);
+    });
+  }
+
+  function fetchPakBytes(file, onProgress) {
+    return fetch(file.url).then(function (res) {
+      if (!res.ok) {
+        throw new Error('failed to fetch ' + file.url + ' (' + res.status + ')');
+      }
+      /* One ArrayBuffer — do not concatenate chunks (that doubles pak0 in JS). */
+      return res.arrayBuffer().then(function (buf) {
+        if (onProgress) {
+          onProgress(buf.byteLength, buf.byteLength);
+        }
+        return buf;
+      });
+    });
+  }
+
+  function preloadIntoFS(Module, file, onProgress) {
+    var fetchFn = function () { return fetchPakBytes(file, onProgress); };
+    var done = pk3Cache
+      ? pk3Cache.getOrFetch(file.name, fetchFn).then(function (got) {
+        if (got.cached && onProgress) {
+          onProgress(file.bytes || 1, file.bytes || 1);
+        }
+        return got.bytes;
+      })
+      : fetchFn();
+    return Promise.resolve(done).then(function (buf) {
+      var data = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+      Module.FS.writeFile(file.parent + '/' + file.name, data, { canOwn: true });
+    });
+  }
+
+  function mkdirp(FS, dir) {
+    var parts = dir.split('/').filter(Boolean);
+    var cur = '';
+    parts.forEach(function (p) {
+      cur += '/' + p;
+      try { FS.mkdir(cur); } catch (e) { /* exists */ }
+    });
+  }
+
+  function writeAutoexec(FS) {
+    var stored = window.ETJSBinds ? window.ETJSBinds.loadBinds() : null;
+    var lines = window.ETJSBinds ? window.ETJSBinds.mergeAutoexec(AUTOEXEC_LINES, stored) : AUTOEXEC_LINES;
+    var body = lines.join('\n') + '\n';
+    ['/etmain', '/legacy', '/home/etmain', '/home/legacy'].forEach(function (dir) {
+      mkdirp(FS, dir);
+      try { FS.writeFile(dir + '/autoexec.cfg', body); } catch (e) { /* ignore */ }
+    });
+    if (stored) {
+      try { FS.writeFile('/home/legacy/etconfig.cfg', stored); } catch (e) { /* ignore */ }
+    }
+  }
+
+  function persistBindsFromFS() {
+    var M = window.Module;
+    if (!M || !M.FS || !window.ETJSBinds) {
+      return;
+    }
+    var paths = ['/home/legacy/etconfig.cfg', '/home/etmain/etconfig.cfg'];
+    var i;
+    for (i = 0; i < paths.length; i++) {
+      try {
+        var text = M.FS.readFile(paths[i], { encoding: 'utf8' });
+        if (text && text.length > 262144) {
+          console.warn('ETJS skip oversized etconfig', paths[i], text.length);
+          continue;
+        }
+        if (text && (/bind\s+/i.test(text) || /seta?\s+/i.test(text))) {
+          window.ETJSBinds.saveBinds(text);
+          return;
+        }
+      } catch (e) { /* not written yet */ }
+    }
+  }
+
+  function writeMenuFiles(FS) {
+    mkdirp(FS, '/legacy/ui');
+    mkdirp(FS, '/home/legacy/ui');
+    return Promise.all([
+      fetch('/legacy/ui/etjs_menus.txt').then(function (r) { return r.ok ? r.text() : ''; }),
+      fetch('/legacy/ui/etjs_official.menu').then(function (r) { return r.ok ? r.text() : ''; }),
+      fetch('/legacy/ui/main.menu').then(function (r) { return r.ok ? r.text() : ''; }),
+      fetch('/legacy/ui/etjs_main.menu').then(function (r) { return r.ok ? r.text() : ''; }),
+      fetch('/legacy/ui/etjs_bare.menu').then(function (r) { return r.ok ? r.text() : ''; })
+    ]).then(function (texts) {
+      ['/legacy/ui', '/home/legacy/ui'].forEach(function (dir) {
+        if (texts[0]) { try { FS.writeFile(dir + '/etjs_menus.txt', texts[0]); } catch (e) { /* ignore */ } }
+        if (texts[1]) { try { FS.writeFile(dir + '/etjs_official.menu', texts[1]); } catch (e) { /* ignore */ } }
+        if (texts[2]) { try { FS.writeFile(dir + '/main.menu', texts[2]); } catch (e) { /* ignore */ } }
+        if (texts[3]) { try { FS.writeFile(dir + '/etjs_main.menu', texts[3]); } catch (e) { /* ignore */ } }
+        if (texts[4]) { try { FS.writeFile(dir + '/etjs_bare.menu', texts[4]); } catch (e) { /* ignore */ } }
+      });
+    }).catch(function () { /* menus still served from pak overlay on next run */ });
+  }
+
+  function bindQuakejsInput() {
+    /* Matches etlegacy/src/qcommon/keycodes.h (letters are lowercase ASCII). */
+    var K_MOUSE1 = 178;
+    /* etlegacy keycodes.h: K_CONSOLE is the hardcoded tilde toggle. */
+    var K_CONSOLE = 297;
+    var CODE_TO_KEY = {
+      KeyW: 119, KeyS: 115, KeyA: 97, KeyD: 100,
+      KeyC: 99, KeyE: 101, KeyQ: 113, KeyX: 120,
+      KeyF: 102, KeyB: 98, KeyG: 103, KeyR: 114, KeyO: 111,
+      KeyL: 108, KeyP: 112, KeyJ: 106, KeyI: 105,
+      KeyH: 104, KeyK: 107, KeyN: 110, KeyT: 116,
+      KeyY: 121, KeyU: 117, KeyV: 118, KeyZ: 122, KeyM: 109,
+      Digit0: 48, Digit1: 49, Digit2: 50, Digit3: 51, Digit4: 52,
+      Digit5: 53, Digit6: 54, Digit7: 55, Digit8: 56, Digit9: 57,
+      Space: 32, Tab: 9, Escape: 27, Backspace: 127,
+      ShiftLeft: 138, ShiftRight: 138,
+      ControlLeft: 137, ControlRight: 137,
+      AltLeft: 136, AltRight: 136,
+      CapsLock: 129,
+      Backquote: 297,
+      ArrowUp: 132, ArrowDown: 133, ArrowLeft: 134, ArrowRight: 135,
+      F1: 145, F2: 146, F3: 147, F4: 148, F7: 151, F11: 155, F12: 156,
+      Comma: 44, Period: 46, Equal: 61, Minus: 45,
+      NumpadEnter: 169, NumpadAdd: 174, NumpadSubtract: 173,
+      Numpad1: 166, Numpad2: 167, Numpad3: 168, Numpad4: 163,
+      Numpad5: 164, Numpad6: 165, Numpad7: 160, Numpad8: 161
+    };
+    var MOUSE_TO_KEY = { 0: 178, 2: 179, 1: 180, 3: 181, 4: 182 };
+
+    var moveF = 0;
+    var moveR = 0;
+    var moveU = 0;
+    var ignoreLookUntil = 0;
+    var wasLimbo = false;
+
+    function sendKey(key, down) {
+      var M = window.Module;
+      if (!M || !key) {
+        return false;
+      }
+      try {
+        if (typeof M._ETJS_KeyEvent === 'function') {
+          M._ETJS_KeyEvent(key, down ? 1 : 0);
+          return true;
+        }
+      } catch (e) { /* not ready */ }
+      return false;
+    }
+
+    function sendMove() {
+      var M = window.Module;
+      var move = window.ETJSInput
+        ? window.ETJSInput.moveFromHeld({
+          KeyW: !!held.KeyW,
+          KeyS: !!held.KeyS,
+          KeyA: !!held.KeyA,
+          KeyD: !!held.KeyD,
+          Space: !!held.Space,
+          KeyC: !!held.KeyC
+        })
+        : { forward: moveF, right: moveR, up: moveU };
+      moveF = move.forward;
+      moveR = move.right;
+      moveU = move.up;
+      window.__etjsLastMove = move;
+      if (M && typeof M._ETJS_SetMove === 'function') {
+        try { M._ETJS_SetMove(move.forward, move.right, move.up); } catch (e) { /* not ready */ }
+      }
+    }
+
+    function cvarInt(name) {
+      var M = window.Module;
+      try {
+        if (M && typeof M.ccall === 'function') {
+          return M.ccall('ETJS_CvarInt', 'number', ['string'], [name]);
+        }
+      } catch (e) { /* not ready */ }
+      return 0;
+    }
+
+    function limboOpen() {
+      return cvarInt('etjs_limbo') !== 0;
+    }
+
+    function inWorld() {
+      return cvarInt('etjs_ingame') !== 0;
+    }
+
+    function uiOpen() {
+      return !inWorld() || limboOpen();
+    }
+
+    function isConsoleEvent(ev, code) {
+      return code === 'Backquote' || ev.code === 'Backquote' ||
+        ev.key === '`' || ev.key === '~';
+    }
+
+    function syncCursor() {
+      if (limboOpen()) {
+        if (document.exitPointerLock) {
+          document.exitPointerLock();
+        }
+        if (canvas && canvas.style) {
+          canvas.style.cursor = 'default';
+        }
+        if (document.body && document.body.style) {
+          document.body.style.cursor = 'default';
+        }
+      }
+    }
+
+    function resolveCode(ev) {
+      if (ev.code) {
+        return ev.code;
+      }
+      var k = ev.key ? String(ev.key).toLowerCase() : '';
+      if (k === 'w') { return 'KeyW'; }
+      if (k === 'a') { return 'KeyA'; }
+      if (k === 's') { return 'KeyS'; }
+      if (k === 'd') { return 'KeyD'; }
+      if (k === ' ') { return 'Space'; }
+      if (k === 'c') { return 'KeyC'; }
+      return '';
+    }
+
+    function onKeyDown(ev) {
+      if (ev.target && ev.target.closest && ev.target.closest('#name-gate')) {
+        return;
+      }
+      if (!playReady) {
+        return;
+      }
+      var code = resolveCode(ev) || ev.code;
+      /* QuakeJS / real ET: grave is CONSOLE_KEY even while the menu is up. */
+      if (isConsoleEvent(ev, code)) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        if (ev.repeat) {
+          return;
+        }
+        sendKey(K_CONSOLE, 1);
+        held.Backquote = K_CONSOLE;
+        typingMode = typingMode === 'console' ? null : 'console';
+        releaseAllHolds();
+        sendMove();
+        return;
+      }
+      if (uiOpen()) {
+        var menuKey = CODE_TO_KEY[code] ||
+          (ev.key && ev.key.length === 1 ? ev.key.toLowerCase().charCodeAt(0) : 0);
+        if (!menuKey) {
+          return;
+        }
+        ev.preventDefault();
+        if (ev.repeat) {
+          return;
+        }
+        held[code] = menuKey;
+        sendKey(menuKey, 1);
+        return;
+      }
+      if (typingMode) {
+        if (code === 'Escape') {
+          typingMode = null;
+          releaseAllHolds();
+          sendMove();
+        } else if (typingMode === 'chat' && (code === 'Enter' || code === 'NumpadEnter')) {
+          typingMode = null;
+        }
+        return;
+      }
+      var key = CODE_TO_KEY[code];
+      if (!key && ev.key && ev.key.length === 1) {
+        key = ev.key.toLowerCase().charCodeAt(0);
+      }
+      if (!key) {
+        return;
+      }
+      ev.preventDefault();
+      if (ev.repeat) {
+        return;
+      }
+      held[code] = key;
+      if (code === 'KeyW') { moveF = 1; }
+      else if (code === 'KeyS') { moveF = -1; }
+      else if (code === 'KeyD') { moveR = 1; }
+      else if (code === 'KeyA') { moveR = -1; }
+      else if (code === 'Space') { moveU = 1; }
+      else if (code === 'KeyC') { moveU = -1; }
+      sendMove();
+      if (!sendKey(key, 1)) {
+        if (code === 'KeyL') {
+          engineCmd('openlimbomenu');
+        } else if (HOLD_KEYS[code]) {
+          engineCmd(HOLD_KEYS[code]);
+        } else if (TAP_KEYS[code]) {
+          engineCmd(TAP_KEYS[code]);
+        }
+      } else if (HOLD_KEYS[code] && HOLD_KEYS[code].charAt(0) === '+') {
+        /* Bind may be late; SetMove already applied. Also issue +cmd. */
+        engineCmd(HOLD_KEYS[code]);
+      }
+      /* Bind may be missing from the FS copy of default.cfg. */
+      if (code === 'KeyL') {
+        engineCmd('openlimbomenu');
+      }
+    }
+
+    function onKeyUp(ev) {
+      if (!playReady) {
+        return;
+      }
+      var code = resolveCode(ev) || ev.code;
+      var key = held[code] || CODE_TO_KEY[code];
+      if (key) {
+        ev.preventDefault();
+        sendKey(key, 0);
+        if (code === 'KeyW' && moveF > 0) { moveF = 0; }
+        else if (code === 'KeyS' && moveF < 0) { moveF = 0; }
+        else if (code === 'KeyD' && moveR > 0) { moveR = 0; }
+        else if (code === 'KeyA' && moveR < 0) { moveR = 0; }
+        else if (code === 'Space' && moveU > 0) { moveU = 0; }
+        else if (code === 'KeyC' && moveU < 0) { moveU = 0; }
+        sendMove();
+        if (HOLD_KEYS[code] && HOLD_KEYS[code].charAt(0) === '+') {
+          engineCmd('-' + HOLD_KEYS[code].slice(1));
+        }
+        delete held[code];
+      }
+    }
+
+    function pushCursor(ev) {
+      var M = window.Module;
+      if (!canvas || !M || typeof M._ETJS_SetCursor !== 'function') {
+        return;
+      }
+      var rect = canvas.getBoundingClientRect();
+      var mapped = window.ETJSInput
+        ? window.ETJSInput.letterboxTo640(ev.clientX, ev.clientY, rect)
+        : { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+      try { M._ETJS_SetCursor(mapped.x, mapped.y); } catch (e) { /* not ready */ }
+    }
+
+    function onMouseDown(ev) {
+      if (!playReady || typingMode) {
+        return;
+      }
+      syncCursor();
+      pushCursor(ev);
+      var mkey = MOUSE_TO_KEY[ev.button] || (K_MOUSE1 + ev.button);
+      /* QuakeJS always delivers mouse down AND up. Menu/limbo must too. */
+      if (uiOpen()) {
+        held['mouse' + ev.button] = mkey;
+        sendKey(mkey, 1);
+        return;
+      }
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      if (!pointerLocked()) {
+        lockPointer();
+      }
+      if (window.ETJSInput && !window.ETJSInput.shouldFireOnMouseDown(true, false, pointerLocked())) {
+        return;
+      }
+      held['mouse' + ev.button] = mkey;
+      if (!sendKey(mkey, 1)) {
+        if (MOUSE_HOLD[ev.button]) {
+          engineCmd(MOUSE_HOLD[ev.button]);
+        } else if (MOUSE_TAP[ev.button]) {
+          engineCmd(MOUSE_TAP[ev.button]);
+        }
+      }
+    }
+
+    function onMouseUp(ev) {
+      var id = 'mouse' + ev.button;
+      var mkey = held[id];
+      if (mkey) {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        sendKey(mkey, 0);
+        if (MOUSE_HOLD[ev.button]) {
+          engineCmd('-' + MOUSE_HOLD[ev.button].slice(1));
+        }
+        delete held[id];
+      }
+    }
+
+    function onMouseMove(ev) {
+      if (!playReady || typingMode) {
+        return;
+      }
+      var limbo = limboOpen();
+      if (wasLimbo && !limbo) {
+        ignoreLookUntil = Date.now() + 600;
+      }
+      wasLimbo = limbo;
+      if (Date.now() < ignoreLookUntil) {
+        if (limbo || !inWorld()) {
+          syncCursor();
+          pushCursor(ev);
+        }
+        return;
+      }
+      var mx = ev.movementX || ev.webkitMovementX || 0;
+      var my = ev.movementY || ev.webkitMovementY || 0;
+      if (!inWorld() || limbo || !pointerLocked()) {
+        syncCursor();
+        pushCursor(ev);
+        return;
+      }
+      if (mx || my) {
+        addLook(-mx * 0.12, my * 0.12);
+      }
+    }
+
+    function onWheel(ev) {
+      if (!playReady || typingMode || limboOpen()) {
+        return;
+      }
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      sendKey(ev.deltaY > 0 ? 183 : 184, 1);
+      sendKey(ev.deltaY > 0 ? 183 : 184, 0);
+    }
+
+    function onContextMenu(ev) {
+      if (playReady && pointerLocked()) {
+        ev.preventDefault();
+      }
+    }
+
+    function onCanvasClick(ev) {
+      /* QuakeJS elementPointerLock: lock on click only once you are
+       * actually playing. Locking MAIN freezes clientX/Y and steals JOIN. */
+      if (!playReady || uiOpen()) {
+        return;
+      }
+      lockPointer();
+    }
+
+    function onMouseOut(ev) {
+      if (!playReady) {
+        return;
+      }
+      [0, 1, 2, 3, 4].forEach(function (button) {
+        var id = 'mouse' + button;
+        var mkey = held[id];
+        if (mkey) {
+          sendKey(mkey, 0);
+          delete held[id];
+        }
+      });
+    }
+
+    window.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    window.addEventListener('mousemove', onMouseMove, true);
+    window.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('mouseup', onMouseUp, true);
+    window.addEventListener('wheel', onWheel, { capture: true, passive: false });
+    window.addEventListener('contextmenu', onContextMenu, true);
+    window.addEventListener('blur', function () {
+      releaseAllHolds();
+      moveF = 0;
+      moveR = 0;
+      moveU = 0;
+      sendMove();
+    });
+    canvas.addEventListener('click', onCanvasClick, true);
+    canvas.addEventListener('mouseout', onMouseOut, true);
+    function pumpMove() {
+      sendMove();
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(pumpMove);
+      }
+    }
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(pumpMove);
+    }
+  }
+
+  function startEngine(playerName) {
+    if (loadPanel) {
+      loadPanel.classList.remove('hidden');
+    }
+    setLoadProgress(0.02, 'Preparing official game data…', '');
+    sizeCanvas();
+    window.addEventListener('resize', sizeCanvas);
+
+    return fetch('/config.json').then(function (res) { return res.json(); }).catch(function () {
+      return { connect: window.location.hostname + ':27961' };
+    }).then(function (cfg) {
+      var args = engineArgs(playerName, cfg);
+      var started = false;
+
+      if (typeof WebAssembly !== 'undefined' && WebAssembly.Memory &&
+          WebAssembly.Memory.prototype && !WebAssembly.Memory.prototype.__etjsGrowHook) {
+        var origGrow = WebAssembly.Memory.prototype.grow;
+        WebAssembly.Memory.prototype.grow = function (pages) {
+          var from = this.buffer ? this.buffer.byteLength : 0;
+          console.log('ETJS wasm grow pages=' + pages + ' from=' + from);
+          try {
+            return origGrow.call(this, pages);
+          } catch (err) {
+            console.error('ETJS wasm grow failed pages=' + pages + ' from=' + from, err);
+            throw err;
+          }
+        };
+        WebAssembly.Memory.prototype.__etjsGrowHook = true;
+      }
+
+      window.Module = {
+        canvas: canvas,
+        elementPointerLock: false,
+        arguments: args,
+        noInitialRun: true,
+        locateFile: function (path) {
+          return '/client/' + path + '?v=' + (window.ETJS_ASSET_VER || Date.now());
+        },
+        print: function (text) {
+          console.log(text);
+          onEngineLine(text);
+        },
+        printErr: function (text) {
+          var s = String(text || '');
+          if (/WARNING|couldn't exec|not found|was not found|skipping|Sound memory|SDL audio/i.test(s)) {
+            console.log(s);
+          } else {
+            console.error(s);
+          }
+          onEngineLine(s);
+        },
+        onAbort: function (what) {
+          console.error('ETJS abort', what);
+          showError('Engine aborted: ' + what);
+        },
+        websocket: {
+          url: (typeof window.location !== 'undefined')
+            ? (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws'
+            : 'ws://127.0.0.1:8088/ws'
+        },
+        preRun: [function () {
+          var FS = window.Module.FS;
+          writeAutoexec(FS);
+          window.Module.etjsMenus = writeMenuFiles(FS);
+          var files = [
+            { parent: '/etmain', name: 'pak0.pk3', url: '/etmain/pak0.pk3', bytes: 228138631 },
+            { parent: '/etmain', name: 'pak1.pk3', url: '/etmain/pak1.pk3', bytes: 51616 },
+            { parent: '/etmain', name: 'pak2.pk3', url: '/etmain/pak2.pk3', bytes: 89910 },
+            { parent: '/etmain', name: 'mp_bin.pk3', url: '/etmain/mp_bin.pk3', bytes: 400000 },
+            { parent: '/legacy', name: 'legacy_v2.84.0.pk3', url: '/legacy/legacy_v2.84.0.pk3', bytes: 34306898 }
+          ];
+          var loaded = files.map(function () { return 0; });
+          var totals = files.map(function (f) { return f.bytes || 1; });
+          function report() {
+            var got = 0;
+            var all = 0;
+            var i;
+            for (i = 0; i < files.length; i++) {
+              got += loaded[i];
+              all += totals[i];
+            }
+            setLoadProgress(0.05 + 0.85 * (all ? got / all : 0),
+              'Downloading official game data…',
+              Math.round(got / 1048576) + ' / ' + Math.round(all / 1048576) + ' MB');
+          }
+          window.Module.etjsReady = Promise.all(files.map(function (file, idx) {
+            return preloadIntoFS(window.Module, file, function (got, total) {
+              loaded[idx] = got;
+              if (total) {
+                totals[idx] = total;
+              }
+              report();
+            });
+          }).concat([window.Module.etjsMenus || Promise.resolve()]));
+        }],
+        onRuntimeInitialized: function () {
+          if (started) {
+            return;
+          }
+          var ready = window.Module.etjsReady || Promise.resolve();
+          ready.then(function () {
+            if (started) {
+              return;
+            }
+            started = true;
+            setLoadProgress(0.96, 'Starting Wolfenstein: Enemy Territory…', 'Opening the main menu');
+            if (frame) {
+              frame.classList.remove('hidden');
+            }
+            canvas.width = window.innerWidth || 1024;
+            canvas.height = window.innerHeight || 768;
+            try {
+              window.Module.preinitializedWebGLContext = ensureWebGL();
+            } catch (glErr) {
+              showError(glErr.message || String(glErr));
+              return;
+            }
+            try {
+              if (typeof window.Module.callMain === 'function') {
+                window.Module.callMain(args);
+              }
+            } catch (startErr) {
+              console.error('ETJS callMain failed', startErr);
+              showError(startErr.message || String(startErr));
+            }
+            setTimeout(installDefaultBinds, 1200);
+            setTimeout(function () { persistBindsFromFS(); }, 4000);
+            setInterval(function () {
+              engineCmd('writeconfig etconfig.cfg');
+              persistBindsFromFS();
+            }, 15000);
+          }).catch(function (err) {
+            console.error('ETJS engine start failed', err);
+            showError(err.message || String(err));
+          });
+        }
+      };
+
+      if (!window.WebGLRenderingContext && !window.WebGL2RenderingContext) {
+        throw new Error('WebGL is required');
+      }
+      canvas.addEventListener('webglcontextlost', function (ev) {
+        ev.preventDefault();
+        console.error('ETJS WebGL context lost');
+      });
+      bindQuakejsInput();
+      if (!window.__etjsPreserveGL) {
+        window.__etjsPreserveGL = true;
+        var origGetContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+          attrs = attrs || {};
+          if (type && String(type).indexOf('webgl') !== -1) {
+            attrs.preserveDrawingBuffer = true;
+            attrs.antialias = false;
+          }
+          return origGetContext.call(this, type, attrs);
+        };
+      }
+
+      var glNoop = function () { return 0; };
+      [
+        'glActiveTextureARB', 'glAttachObjectARB', 'glBindFramebufferEXT',
+        'glBindRenderbufferEXT', 'glCallList', 'glCheckFramebufferStatusEXT',
+        'glClientActiveTextureARB', 'glCompileShaderARB', 'glCreateProgramObjectARB',
+        'glCreateShaderObjectARB', 'glDeleteFramebuffersEXT', 'glDeleteRenderbuffersEXT',
+        'glDetachObjectARB', 'glFramebufferRenderbufferEXT', 'glGenFramebuffersEXT',
+        'glGenRenderbuffersEXT', 'glLinkProgramARB', 'glLockArraysEXT',
+        'glRenderbufferStorageEXT', 'glRenderbufferStorageMultisampleEXT',
+        'glShaderSourceARB', 'glUnlockArraysEXT', 'glUseProgramObjectARB',
+        'glGetUniformLocation', 'glUniform1f', 'glGetObjectParameterivARB',
+        'glGetShaderiv', 'glGetInfoLogARB', 'glDeleteObjectARB',
+        'glFramebufferTexture2DEXT', 'glFramebufferTexture2D', 'glGenerateMipmapEXT'
+      ].forEach(function (name) {
+        if (typeof window[name] !== 'function') {
+          window[name] = glNoop;
+        }
+        window.Module[name] = glNoop;
+      });
+
+      return loadScript('/client/etjs.js?v=' + window.ETJS_ASSET_VER).catch(function () {
+        console.error('ETJS engine script not present yet at /client/etjs.js');
+        throw new Error('ET client engine is not built');
+      });
+    });
+  }
+
+  function boot() {
+    if (typeof fetch !== 'function') {
+      return;
+    }
+    var existing = window.ETJSName.loadPlayerName() || '';
+    if (nameInput) {
+      nameInput.value = existing;
+      nameInput.focus();
+    }
+    function beginFromForm(ev) {
+      if (ev) {
+        ev.preventDefault();
+      }
+      var raw = nameInput ? nameInput.value : existing;
+      var name;
+      try {
+        name = window.ETJSName.savePlayerName(raw);
+      } catch (err) {
+        if (nameError) {
+          nameError.textContent = 'Enter a player name.';
+        }
+        return;
+      }
+      if (nameGate) {
+        nameGate.classList.add('hidden');
+      }
+      if (loadPanel) {
+        loadPanel.classList.remove('hidden');
+      }
+      startEngine(name).catch(function (err) {
+        showError(err.message || String(err));
+      });
+    }
+    if (nameForm) {
+      nameForm.addEventListener('submit', beginFromForm);
+    } else {
+      beginFromForm();
+    }
+    window.addEventListener('error', function (ev) {
+      var msg = ev && ev.message ? ev.message : String(ev);
+      if (/Array buffer|ASM_CONSTS|Aborted|out of memory/i.test(msg)) {
+        showError(msg);
+      }
+    });
+    window.addEventListener('unhandledrejection', function (ev) {
+      var msg = ev && ev.reason ? String(ev.reason && ev.reason.message || ev.reason) : 'promise rejection';
+      if (/Array buffer|ASM_CONSTS|Aborted|out of memory/i.test(msg)) {
+        showError(msg);
+      }
+    });
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        persistBindsFromFS();
+      }
+    });
+    document.addEventListener('pointerdown', function () {
+      if (menuMusicWanted) {
+        playMenuMusic();
+      }
+    }, true);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();

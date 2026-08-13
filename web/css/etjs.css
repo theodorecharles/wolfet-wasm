@@ -1,0 +1,179 @@
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+  color: #e6d7b0;
+  font-family: "Liberation Sans", "Segoe UI", sans-serif;
+}
+
+#name-gate,
+#load-panel,
+#start-panel {
+  position: absolute;
+  inset: 0;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at center, #2a2114 0%, #0b0b0b 70%);
+}
+
+#name-gate {
+  z-index: 40;
+}
+
+#start-panel {
+  z-index: 25;
+}
+
+#load-panel {
+  z-index: 30;
+}
+
+#et-icon,
+.et-icon-sm {
+  display: block;
+  margin: 0 auto 0.85rem;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+#et-icon {
+  width: 64px;
+  height: 64px;
+}
+
+.hidden,
+#name-gate.hidden,
+#load-panel.hidden,
+#start-panel.hidden,
+#viewport-frame.hidden {
+  display: none !important;
+}
+
+.game-kicker {
+  margin: 0 0 0.15rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: #c4a35a;
+}
+
+.music-hint {
+  margin: 0.85rem 0 0;
+  color: #8a7a55;
+  font-size: 0.8rem;
+}
+
+.gate-card {
+  width: min(28rem, 92vw);
+  padding: 2rem 2.2rem 1.6rem;
+  border: 1px solid #6b542c;
+  background: rgba(16, 12, 8, 0.92);
+  box-shadow: 0 0 0 1px #000, 0 18px 40px rgba(0, 0, 0, 0.55);
+}
+
+.gate-card h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.55rem;
+  letter-spacing: 0.04em;
+  color: #f0d48a;
+}
+
+.gate-card p {
+  margin: 0 0 1.3rem;
+  color: #b8a57a;
+  line-height: 1.4;
+}
+
+.gate-card label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #c4b48a;
+}
+
+.gate-card input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid #7a6234;
+  background: #16110b;
+  color: #f3e6c4;
+  font-size: 1.05rem;
+}
+
+.gate-card button {
+  margin-top: 1rem;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #c4a35a;
+  background: #3c2c12;
+  color: #f4e4b2;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.gate-card button:hover {
+  background: #5a4218;
+}
+
+.gate-error {
+  min-height: 1.2rem;
+  margin: 0.6rem 0 0;
+  color: #e07060;
+  font-size: 0.9rem;
+}
+
+.load-bar {
+  width: 100%;
+  height: 0.7rem;
+  margin: 0.4rem 0 0.6rem;
+  border: 1px solid #7a6234;
+  background: #16110b;
+  overflow: hidden;
+}
+
+#load-bar-fill {
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #5a4218, #c4a35a);
+  transition: width 0.15s ease-out;
+}
+
+.load-detail {
+  margin: 0;
+  color: #8a7a55;
+  font-size: 0.82rem;
+}
+
+#viewport-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+#viewport-frame.hidden {
+  display: none;
+}
+
+#viewport-frame:focus {
+  outline: none;
+}
+
+#et-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  cursor: default;
+}

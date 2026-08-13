@@ -1,0 +1,4 @@
+// Official ET frontend (pre-expanded official menu file).
+{
+	loadMenu { "ui/etjs_official.menu" }
+}
