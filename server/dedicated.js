@@ -7,11 +7,14 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const RUNTIME_ETMAIN = path.join(ROOT, 'runtime', 'etmain');
+const SERVER_MOD = path.join(ROOT, 'runtime', 'legacy', 'qagame.mp.x86_64.so');
+const ETJS_PAK = path.join(ROOT, 'runtime', 'legacy', 'etjs.pk3');
 const OMNIBOT_CFG = path.join(ROOT, 'runtime', 'omni-bot-user', 'omni-bot.cfg');
 const IMAGE = process.env.ETJS_DED_IMAGE ||
   'etlegacy/server@sha256:e8810511b59a70cd66ddf36951cbb873333c4081d236241343e19ee4a0a30d63';
 const CONTAINER = process.env.ETJS_DED_CONTAINER || 'etjs-dedicated';
 const RCON_FILE = path.join(ROOT, 'runtime', '.rcon-password');
+const DATA_FETCHER = path.join(ROOT, 'scripts', 'fetch-game-data.sh');
 
 /** Host UDP port the website / proxy / status queries talk to. */
 const HOST_UDP_PORT = Number(process.env.ETJS_DED_PORT || 27961);
@@ -52,8 +55,14 @@ function readOrCreateRconPassword() {
 }
 
 const RCON_PASSWORD = readOrCreateRconPassword();
+const SERVER_MOD_HASH = fs.existsSync(SERVER_MOD)
+  ? crypto.createHash('sha256').update(fs.readFileSync(SERVER_MOD)).digest('hex')
+  : 'missing';
+const ETJS_PAK_HASH = fs.existsSync(ETJS_PAK)
+  ? crypto.createHash('sha256').update(fs.readFileSync(ETJS_PAK)).digest('hex')
+  : 'missing';
 const CONFIG_LABEL = crypto.createHash('sha256')
-  .update(IMAGE + '\0' + RCON_PASSWORD)
+  .update(IMAGE + '\0' + RCON_PASSWORD + '\0' + SERVER_MOD_HASH + '\0' + ETJS_PAK_HASH)
   .digest('hex');
 
 const DEFAULT_ARGS = [
@@ -70,8 +79,12 @@ const DEFAULT_ARGS = [
   '+set', 'g_friendlyFire', '0',
   '+set', 'g_gametype', '2',
   '+set', 'g_heavyWeaponRestriction', '100',
+  '+set', 'g_speed', '400',
   '+set', 'g_bluelimbotime', '1000',
   '+set', 'g_redlimbotime', '1000',
+  /* Automatically enter the reinforcement queue after death. Without this,
+   * ET keeps displaying the one-second wave while waiting for a manual tapout. */
+  '+set', 'g_forcerespawn', '1',
   '+set', 'omnibot_enable', '1',
   '+set', 'omnibot_path', './legacy/omni-bot',
   '+set', 'omnibot_flags', '0',
@@ -81,7 +94,11 @@ const DEFAULT_ARGS = [
   '+set', 'logfile', '2',
   '+set', 'com_hunkMegs', '128',
   '+map', 'oasis',
-  '+exec', 'objectiverotate.cfg'
+  '+exec', 'objectiverotate.cfg',
+  /* legacy's defaultpublic config is loaded during map init and resets speed. */
+  '+set', 'g_speed', '400',
+  '+set', 'g_friendlyFire', '0',
+  '+set', 'g_forcerespawn', '1'
 ];
 
 function assertOfficialPaks() {
@@ -89,6 +106,30 @@ function assertOfficialPaks() {
   const missing = required.filter((name) => !fs.existsSync(path.join(RUNTIME_ETMAIN, name)));
   if (missing.length) {
     throw new Error('official ET paks missing from ' + RUNTIME_ETMAIN + ': ' + missing.join(', '));
+  }
+}
+
+/**
+ * Validate/provision the host's ignored game-data cache. The fetch script uses
+ * pinned SHA-256 sums and only contacts Splash Damage when an official file is
+ * missing or invalid. Browsers never use that upstream URL; they download the
+ * resulting files from this ETJS host under /etmain and /legacy.
+ */
+function ensureGameData() {
+  execFileSync('sh', [DATA_FETCHER], {
+    cwd: ROOT,
+    env: process.env,
+    stdio: 'inherit'
+  });
+  assertOfficialPaks();
+}
+
+function assertServerMod() {
+  if (!fs.existsSync(SERVER_MOD)) {
+    throw new Error('ETJS server game module missing; run: npm run build:server-mod');
+  }
+  if (!fs.existsSync(ETJS_PAK)) {
+    throw new Error('ETJS data pak missing; run: npm run build:pak');
   }
 }
 
@@ -137,6 +178,7 @@ function stopDedicated() {
  */
 function startDedicated(opts) {
   assertOfficialPaks();
+  assertServerMod();
   if (!dockerAvailable()) {
     throw new Error('docker is required to start etlegacy/server');
   }
@@ -183,15 +225,20 @@ function followLogs(logStream) {
 module.exports = {
   ROOT: ROOT,
   RUNTIME_ETMAIN: RUNTIME_ETMAIN,
+  SERVER_MOD: SERVER_MOD,
+  ETJS_PAK: ETJS_PAK,
   IMAGE: IMAGE,
   CONTAINER: CONTAINER,
   HOST_UDP_PORT: HOST_UDP_PORT,
   CONTAINER_UDP_PORT: CONTAINER_UDP_PORT,
   RCON_PASSWORD: RCON_PASSWORD,
   RCON_FILE: RCON_FILE,
+  DATA_FETCHER: DATA_FETCHER,
   CONFIG_LABEL: CONFIG_LABEL,
   DEFAULT_ARGS: DEFAULT_ARGS,
   assertOfficialPaks: assertOfficialPaks,
+  ensureGameData: ensureGameData,
+  assertServerMod: assertServerMod,
   dockerAvailable: dockerAvailable,
   containerRunning: containerRunning,
   containerConfigured: containerConfigured,

@@ -7,7 +7,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const { parseStatusResponse, classifyPlayer } = require('../server/status');
-const { rosterFromStatus } = require('../server/supervisor');
+const { rosterFromStatus, GAMEPLAY_CVARS } = require('../server/supervisor');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -31,6 +31,18 @@ describe('status parser classifies Omni-Bot vs humans', () => {
     const roster = rosterFromStatus(st, ['TankRed']);
     assert.equal(roster.humans, 1);
     assert.equal(roster.bots, 1);
+  });
+});
+
+describe('runtime reconciliation', () => {
+  it('reasserts fun gameplay cvars without the unsupported minplayers command', () => {
+    const supervisor = fs.readFileSync(path.join(ROOT, 'server', 'supervisor.js'), 'utf8');
+    const commands = GAMEPLAY_CVARS.join('\n');
+    assert.match(commands, /g_speed 400/);
+    assert.match(commands, /g_friendlyFire 0/);
+    assert.match(commands, /g_forcerespawn 1/);
+    assert.doesNotMatch(supervisor, /bot minplayers/);
+    assert.match(supervisor, /stopped \|\| running/);
   });
 });
 

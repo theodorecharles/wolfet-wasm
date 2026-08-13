@@ -14,20 +14,35 @@
     root.ETJSInput = api;
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  function letterboxTo640(clientX, clientY, rect) {
+  function letterboxTo640(clientX, clientY, rect, widescreenGame) {
     var width = rect && rect.width ? rect.width : 0;
     var height = rect && rect.height ? rect.height : 0;
     var left = rect && typeof rect.left === 'number' ? rect.left : 0;
     var top = rect && typeof rect.top === 'number' ? rect.top : 0;
-    /* QuakeJS: client point in the canvas CSS box → backbuffer. Engine UI
-     * stretches 640×480 across that full backbuffer (not a 4:3 letterbox). */
-    var sx = width > 0 ? 640 / width : 1;
+    /* UI menus stretch 640×480 to the backbuffer. Cgame/HUD screens use
+     * ETLegacy's aspect-correct virtual width (768 at 1280×800), with the
+     * original 640-wide panel centered inside it. */
+    var aspect = height > 0 ? width / height : (4 / 3);
+    var virtualWidth = widescreenGame && aspect > (4 / 3)
+      ? 480 * aspect : 640;
+    var sx = width > 0 ? virtualWidth / width : 1;
     var sy = height > 0 ? 480 / height : 1;
     return {
       x: (clientX - left) * sx,
       y: (clientY - top) * sy,
       scale: height > 0 ? height / 480 : 1,
-      xoff: 0
+      xoff: (virtualWidth - 640) * 0.5
+    };
+  }
+
+  function from640(x640, y640, width, height, widescreenGame) {
+    var aspect = height > 0 ? width / height : (4 / 3);
+    var virtualWidth = widescreenGame && aspect > (4 / 3)
+      ? 480 * aspect : 640;
+    var xoff = (virtualWidth - 640) * 0.5;
+    return {
+      x: (x640 + xoff) * width / virtualWidth,
+      y: y640 * height / 480
     };
   }
 
@@ -85,6 +100,7 @@
 
   return {
     letterboxTo640: letterboxTo640,
+    from640: from640,
     clickHitsRect: clickHitsRect,
     shouldFireOnMouseDown: shouldFireOnMouseDown,
     moveFromHeld: moveFromHeld,

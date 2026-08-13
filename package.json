@@ -9,12 +9,14 @@
     "url": "git+https://github.com/theodorecharles/ETJS.git"
   },
   "scripts": {
-    "setup": "npm run setup:engine && npm run setup:data && npm run build:tools",
+    "setup": "npm run setup:engine && npm run setup:data && npm run build:tools && npm run build:pak && npm run build:server-mod",
     "setup:data": "sh scripts/fetch-game-data.sh",
     "setup:engine": "sh scripts/setup-etlegacy.sh",
     "reference:quakejs": "sh scripts/setup-quakejs-reference.sh",
-    "build": "npm run build:tools && npm run build:web",
+    "build": "npm run build:tools && npm run build:pak && npm run build:server-mod && npm run build:web",
     "build:tools": "sh scripts/build-tools.sh",
+    "build:pak": "sh scripts/build-etjs-pak.sh",
+    "build:server-mod": "sh scripts/build-server-mod.sh",
     "build:web": "sh scripts/build-web-client.sh",
     "start": "node server/index.js",
     "test": "node --test tests/*.test.js",

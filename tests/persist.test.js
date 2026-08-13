@@ -26,13 +26,22 @@ describe('binding persist in localStorage', () => {
   });
 
   it('mergeAutoexec prefers the stored binds over default bind lines', () => {
-    const defaults = ['set rate 25000', 'unbindall', 'bind w +forward', 'set r_picmip 0'];
-    const stored = 'bind e +leanright\nbind MOUSE1 +attack';
+    const defaults = [
+      'set rate 25000', 'unbindall', 'bind w +forward',
+      'bind f +activate', 'bind t messagemode', 'bind v mp_quickmessage',
+      'set r_picmip 0'
+    ];
+    const stored = 'unbindall\nbind w +back\nbind e +leanright\nbind MOUSE1 +attack\nset r_picmip 3';
     const merged = binds.mergeAutoexec(defaults, stored);
     assert.ok(merged.includes('set rate 25000'));
-    assert.ok(!merged.includes('unbindall'));
+    assert.equal(merged.filter((l) => /^\s*unbindall\b/i.test(l)).length, 1);
+    assert.ok(merged.indexOf('bind w +back') > merged.indexOf('bind w +forward'));
+    assert.ok(merged.includes('bind t messagemode'));
+    assert.ok(merged.includes('bind v mp_quickmessage'));
+    assert.ok(merged.includes('bind f +activate'));
     assert.ok(merged.some((l) => /bind e \+leanright/.test(l)));
     assert.ok(merged.some((l) => /MOUSE1 \+attack/.test(l)));
+    assert.ok(!merged.includes('set r_picmip 3'));
   });
 });
 

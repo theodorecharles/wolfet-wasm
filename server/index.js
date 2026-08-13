@@ -29,7 +29,8 @@ const MIME = {
   '.map': 'application/json',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.ttf': 'font/ttf'
 };
 
 function log(msg) {
@@ -155,8 +156,10 @@ async function waitForDedicated(timeoutMs) {
 
 async function main() {
   log('ETJS starting');
-  dedicated.assertOfficialPaks();
-  log('official paks: ' + dedicated.RUNTIME_ETMAIN);
+  log('validating server-side game data');
+  dedicated.ensureGameData();
+  dedicated.assertServerMod();
+  log('official paks ready for same-origin browser delivery: ' + dedicated.RUNTIME_ETMAIN);
 
   if (process.env.ETJS_SKIP_DED !== '1') {
     if (dedicated.containerRunning() && dedicated.containerConfigured()) {
@@ -171,6 +174,7 @@ async function main() {
 
   const httpServer = await startHttp();
 
+  let lastFillSummary = '';
   const supervisor = startSupervisor({
     host: '127.0.0.1',
     port: DED_PORT,
@@ -178,8 +182,12 @@ async function main() {
     intervalMs: 1500,
     log: log,
     onTick: (result) => {
-      log('fill humans=' + result.state.humans + ' bots=' + result.state.bots +
-        ' target=' + result.plan.target + ' add=' + result.plan.add + ' remove=' + result.plan.remove);
+      const summary = 'fill humans=' + result.state.humans + ' bots=' + result.state.bots +
+        ' target=' + result.plan.target + ' add=' + result.plan.add + ' remove=' + result.plan.remove;
+      if (summary !== lastFillSummary || result.plan.add || result.plan.remove) {
+        log(summary);
+        lastFillSummary = summary;
+      }
     }
   });
 

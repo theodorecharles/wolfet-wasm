@@ -18,6 +18,7 @@
   var loadDetail = document.getElementById('load-detail');
   var loadFill = document.getElementById('load-bar-fill');
   var loadBar = loadFill && loadFill.parentElement;
+  var startupConsole = document.getElementById('startup-console');
   var pk3Cache = window.ETJSPk3
     ? window.ETJSPk3.createPk3Cache({
       backend: (typeof indexedDB !== 'undefined')
@@ -36,6 +37,15 @@
   var nameForm = document.getElementById('name-form');
   var nameInput = document.getElementById('player-name');
   var nameError = document.getElementById('name-error');
+  var graphicsProfile = document.getElementById('graphics-profile');
+  var dynamicQuality = document.getElementById('dynamic-quality');
+  var dynamicFps = document.getElementById('dynamic-fps');
+  var lastLoadStatus = '';
+  var MAX_STARTUP_LINES = 180;
+  var GRAPHICS_STORAGE_KEY = 'etjs.graphics';
+  var selectedQualityLevel = 3;
+  var selectedFpsTarget = 60;
+  var adaptiveQuality = true;
 
   var AUTOEXEC_LINES = [
     'set rate 25000',
@@ -44,15 +54,27 @@
     'set r_drawworld 1',
     'set r_fastsky 0',
     'set r_nocurves 0',
-    'set r_dynamiclight 1',
+    'set r_dynamiclight 2',
     'set r_vertexLight 0',
     'set r_lightmap 0',
     'set r_mapOverBrightBits 2',
     'set r_overBrightBits 0',
     'set r_picmip 0',
-    'set cg_shadows 0',
-    'set cg_atmosphericEffects 0',
-    'set cg_markTime 0',
+    'set r_lodbias 0',
+    'set r_subdivisions 4',
+    'set r_detailtextures 1',
+    'set r_texturebits 32',
+    'set r_colorbits 32',
+    'set r_depthbits 24',
+    'set r_ext_compressed_textures 0',
+    'set r_ext_texture_filter_anisotropic 16',
+    'set r_textureMode GL_LINEAR_MIPMAP_LINEAR',
+    'set r_flares 1',
+    'set r_drawSun 1',
+    'set cg_shadows 1',
+    'set cg_atmosphericEffects 1',
+    'set cg_markTime 20000',
+    'set cg_brasstime 2500',
     'set r_ignoreGLErrors 1',
     'set r_allowSoftwareGL 1',
     'set cl_freelook 1',
@@ -69,6 +91,8 @@
     'set s_volume 0.8',
     'set s_muteWhenUnfocused 0',
     'set s_muteWhenMinimized 0',
+    'set com_ansiColor 0',
+    'set con_fontName ariblk',
     'set com_recommendedSet 1',
     'set cg_autoAction 0',
     'unbindall',
@@ -152,11 +176,39 @@
     'bind KP_MINUS "selectbuddy -2"'
   ];
 
+  var PROFILE_BOOT_LINES = [
+    ['set r_picmip 3', 'set r_subdivisions 20', 'set r_detailtextures 0',
+      'set r_texturebits 16', 'set r_ext_compressed_textures 1',
+      'set r_ext_texture_filter_anisotropic 0', 'set r_textureMode GL_LINEAR_MIPMAP_NEAREST',
+      'set r_dynamiclight 0', 'set cg_shadows 0', 'set cg_atmosphericEffects 0',
+      'set cg_markTime 0', 'set r_lodbias 2', 'set r_fastsky 1'],
+    ['set r_picmip 2', 'set r_subdivisions 12', 'set r_detailtextures 0',
+      'set r_texturebits 0', 'set r_ext_compressed_textures 1',
+      'set r_ext_texture_filter_anisotropic 0', 'set r_textureMode GL_LINEAR_MIPMAP_NEAREST',
+      'set r_dynamiclight 1', 'set cg_shadows 0', 'set cg_atmosphericEffects 0',
+      'set cg_markTime 5000', 'set r_lodbias 1', 'set r_fastsky 0'],
+    ['set r_picmip 1', 'set r_subdivisions 4', 'set r_detailtextures 1',
+      'set r_texturebits 32', 'set r_ext_compressed_textures 0',
+      'set r_ext_texture_filter_anisotropic 4', 'set r_textureMode GL_LINEAR_MIPMAP_LINEAR',
+      'set r_dynamiclight 1', 'set cg_shadows 1', 'set cg_atmosphericEffects 0.5',
+      'set cg_markTime 10000', 'set r_lodbias 0', 'set r_fastsky 0'],
+    ['set r_picmip 0', 'set r_subdivisions 4', 'set r_detailtextures 1',
+      'set r_texturebits 32', 'set r_ext_compressed_textures 0',
+      'set r_ext_texture_filter_anisotropic 16', 'set r_textureMode GL_LINEAR_MIPMAP_LINEAR',
+      'set r_dynamiclight 2', 'set cg_shadows 1', 'set cg_atmosphericEffects 1',
+      'set cg_markTime 20000', 'set r_lodbias 0', 'set r_fastsky 0']
+  ];
+
+  function selectedAutoexecLines() {
+    var level = Math.max(0, Math.min(3, selectedQualityLevel));
+    return AUTOEXEC_LINES.concat(PROFILE_BOOT_LINES[level], [
+      'set etjs_autoQuality ' + (adaptiveQuality ? '1' : '0'),
+      'set etjs_quality ' + level,
+      'set etjs_targetFps ' + selectedFpsTarget
+    ]);
+  }
+
   var HOLD_KEYS = {
-    KeyW: '+forward',
-    KeyS: '+back',
-    KeyA: '+moveleft',
-    KeyD: '+moveright',
     ArrowLeft: '+left',
     ArrowRight: '+right',
     ArrowUp: '+lookup',
@@ -167,8 +219,6 @@
     KeyS: '+back',
     KeyA: '+moveleft',
     KeyD: '+moveright',
-    Space: '+moveup',
-    KeyC: '+movedown',
     KeyE: '+leanright',
     KeyQ: '+leanleft',
     KeyX: '+prone',
@@ -271,6 +321,7 @@
   function showError(msg) {
     if (msg) {
       playReady = false;
+      appendStartupLine('ERROR: ' + msg, 'error');
       if (loadStatus) {
         loadStatus.textContent = msg;
       }
@@ -280,10 +331,40 @@
     }
   }
 
+  function appendStartupLine(text, level) {
+    if (!startupConsole || text === null || typeof text === 'undefined') {
+      return;
+    }
+    String(text).replace(/\r/g, '').split('\n').forEach(function (raw) {
+      /* Strip complete terminal CSI colors before stripping control bytes;
+       * reversing that order leaves visible "[0m" fragments behind. */
+      var line = raw
+        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '')
+        .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+        .replace(/^\s*\d+\s/, '');
+      if (!line) {
+        return;
+      }
+      var row = document.createElement('div');
+      row.className = 'startup-console-line';
+      row.setAttribute('data-level', level || 'info');
+      row.textContent = line;
+      startupConsole.appendChild(row);
+      while (startupConsole.childNodes.length > MAX_STARTUP_LINES) {
+        startupConsole.removeChild(startupConsole.firstChild);
+      }
+    });
+    startupConsole.scrollTop = startupConsole.scrollHeight;
+  }
+
   function setLoadProgress(frac, status, detail) {
     var pct = Math.max(0, Math.min(100, Math.round(frac * 100)));
     if (loadStatus && status) {
       loadStatus.textContent = status;
+    }
+    if (status && status !== lastLoadStatus) {
+      lastLoadStatus = status;
+      appendStartupLine(status);
     }
     if (loadDetail) {
       loadDetail.textContent = detail || '';
@@ -332,7 +413,7 @@
   function ensureWebGL() {
     var attrs = {
       alpha: false,
-      antialias: false,
+      antialias: selectedQualityLevel >= 3,
       depth: true,
       stencil: false,
       preserveDrawingBuffer: true,
@@ -377,7 +458,11 @@
   }
 
   function installDefaultBinds() {
-    engineCmd(AUTOEXEC_LINES.join('\n'));
+    var stored = window.ETJSBinds ? window.ETJSBinds.loadBinds() : null;
+    var lines = window.ETJSBinds
+      ? window.ETJSBinds.mergeAutoexec(selectedAutoexecLines(), stored)
+      : selectedAutoexecLines();
+    engineCmd(lines.join('\n'));
   }
 
   function pointerLocked() {
@@ -420,20 +505,11 @@
     });
   }
 
-  function releaseAllHolds() {
-    Object.keys(held).forEach(function (code) {
-      var val = held[code];
-      if (typeof val === 'string' && val.charAt(0) === '+') {
-        engineCmd('-' + val.slice(1));
-      }
-      delete held[code];
-    });
-  }
-
-  function onEngineLine(text) {
+  function onEngineLine(text, level) {
     if (typeof text !== 'string') {
       return;
     }
+    appendStartupLine(text, level);
     if (text.indexOf('ETJS join name=') !== -1) {
       var joined = text.replace(/^.*ETJS join name=/, '').split(' ')[0];
       if (window.ETJSName && joined) {
@@ -501,7 +577,9 @@
       '+set', 'com_hunkMegs', '128',
       '+set', 'com_zoneMegs', '16',
       '+set', 'com_recommendedSet', '1',
-      '+set', 'com_introPlayed', '0'
+      '+set', 'com_introPlayed', '0',
+      '+set', 'com_ansiColor', '0',
+      '+set', 'con_fontName', 'ariblk'
     ]);
   }
 
@@ -558,7 +636,8 @@
 
   function writeAutoexec(FS) {
     var stored = window.ETJSBinds ? window.ETJSBinds.loadBinds() : null;
-    var lines = window.ETJSBinds ? window.ETJSBinds.mergeAutoexec(AUTOEXEC_LINES, stored) : AUTOEXEC_LINES;
+    var defaults = selectedAutoexecLines();
+    var lines = window.ETJSBinds ? window.ETJSBinds.mergeAutoexec(defaults, stored) : defaults;
     var body = lines.join('\n') + '\n';
     ['/etmain', '/legacy', '/home/etmain', '/home/legacy'].forEach(function (dir) {
       mkdirp(FS, dir);
@@ -660,6 +739,25 @@
       return false;
     }
 
+    function releaseInputHolds() {
+      Object.keys(held).forEach(function (code) {
+        var key = held[code];
+        if (typeof key === 'number') {
+          var sent = sendKey(key, 0);
+          if (!sent && HOLD_KEYS[code] && HOLD_KEYS[code].charAt(0) === '+') {
+            engineCmd('-' + HOLD_KEYS[code].slice(1));
+          }
+        } else if (typeof key === 'string' && key.charAt(0) === '+') {
+          engineCmd('-' + key.slice(1));
+        }
+        delete held[code];
+      });
+      moveF = 0;
+      moveR = 0;
+      moveU = 0;
+      sendMove();
+    }
+
     function sendMove() {
       var M = window.Module;
       var move = window.ETJSInput
@@ -691,8 +789,105 @@
       return 0;
     }
 
+    var QUALITY_PROFILES = [
+      {
+        name: 'minimum',
+        commands: ['set r_dynamiclight 0', 'set cg_shadows 0', 'set cg_atmosphericEffects 0',
+          'set cg_markTime 0', 'set r_lodbias 2', 'set r_fastsky 1']
+      },
+      {
+        name: 'performance',
+        commands: ['set r_dynamiclight 1', 'set cg_shadows 0', 'set cg_atmosphericEffects 0',
+          'set cg_markTime 5000', 'set r_lodbias 1', 'set r_fastsky 0']
+      },
+      {
+        name: 'balanced',
+        commands: ['set r_dynamiclight 1', 'set cg_shadows 1', 'set cg_atmosphericEffects 0.5',
+          'set cg_markTime 10000', 'set r_lodbias 0', 'set r_fastsky 0']
+      },
+      {
+        name: 'maximum',
+        commands: ['set r_dynamiclight 2', 'set cg_shadows 1', 'set cg_atmosphericEffects 1',
+          'set cg_markTime 20000', 'set r_lodbias 0', 'set r_fastsky 0']
+      }
+    ];
+    var qualityCeiling = Math.max(0, Math.min(QUALITY_PROFILES.length - 1, selectedQualityLevel));
+    var qualityLevel = qualityCeiling;
+    var qualityWindowStart = 0;
+    var qualityFrames = 0;
+    var lowFpsWindows = 0;
+    var highFpsWindows = 0;
+
+    function applyQualityProfile(level, fps) {
+      var next = Math.max(0, Math.min(QUALITY_PROFILES.length - 1, level));
+      var profile = QUALITY_PROFILES[next];
+      qualityLevel = next;
+      engineCmd(profile.commands.join('\n'));
+      engineCmd('set etjs_quality ' + next);
+      window.__etjsQuality = {
+        level: next,
+        name: profile.name,
+        fps: Math.round(fps * 10) / 10,
+        targetFps: selectedFpsTarget
+      };
+      console.log('ETJS quality=' + profile.name + ' fps=' + window.__etjsQuality.fps);
+    }
+
+    function monitorQuality(now) {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(monitorQuality);
+      }
+      if (!playReady || !inWorld() || document.visibilityState === 'hidden' ||
+          cvarInt('etjs_autoQuality') === 0) {
+        qualityWindowStart = 0;
+        qualityFrames = 0;
+        lowFpsWindows = 0;
+        highFpsWindows = 0;
+        return;
+      }
+      if (!qualityWindowStart) {
+        qualityWindowStart = now;
+        qualityFrames = 0;
+        return;
+      }
+      qualityFrames++;
+      var elapsed = now - qualityWindowStart;
+      if (elapsed < 3000) {
+        return;
+      }
+      var fps = qualityFrames * 1000 / elapsed;
+      qualityWindowStart = now;
+      qualityFrames = 0;
+      lowFpsWindows = fps < selectedFpsTarget * 0.92 ? lowFpsWindows + 1 : 0;
+      highFpsWindows = fps >= selectedFpsTarget * 0.985 ? highFpsWindows + 1 : 0;
+      if (lowFpsWindows >= 2 && qualityLevel > 0) {
+        applyQualityProfile(qualityLevel - 1, fps);
+        lowFpsWindows = 0;
+        highFpsWindows = 0;
+      } else if (highFpsWindows >= 5 && qualityLevel < qualityCeiling) {
+        applyQualityProfile(qualityLevel + 1, fps);
+        lowFpsWindows = 0;
+        highFpsWindows = 0;
+      } else {
+        window.__etjsQuality = {
+          level: qualityLevel,
+          name: QUALITY_PROFILES[qualityLevel].name,
+          fps: Math.round(fps * 10) / 10,
+          targetFps: selectedFpsTarget
+        };
+      }
+    }
+
     function limboOpen() {
       return cvarInt('etjs_limbo') !== 0;
+    }
+
+    function intermissionOpen() {
+      return cvarInt('etjs_intermission') !== 0;
+    }
+
+    function engineUiOpen() {
+      return cvarInt('etjs_uiopen') !== 0;
     }
 
     function inWorld() {
@@ -700,7 +895,7 @@
     }
 
     function uiOpen() {
-      return !inWorld() || limboOpen();
+      return !inWorld() || engineUiOpen() || limboOpen() || intermissionOpen();
     }
 
     function isConsoleEvent(ev, code) {
@@ -709,7 +904,7 @@
     }
 
     function syncCursor() {
-      if (limboOpen()) {
+      if (uiOpen()) {
         if (document.exitPointerLock) {
           document.exitPointerLock();
         }
@@ -737,13 +932,20 @@
     }
 
     function onKeyDown(ev) {
+      var initialCode = resolveCode(ev) || ev.code;
+      /* Browser/system chords always win. Bare Ctrl remains available as an
+       * ET key, while Ctrl+Shift+R, Ctrl+R, Cmd+R, Ctrl+L, and devtools never
+       * become game input or have their browser defaults cancelled. */
+      if (ev.metaKey || (ev.ctrlKey && initialCode !== 'ControlLeft' && initialCode !== 'ControlRight')) {
+        return;
+      }
       if (ev.target && ev.target.closest && ev.target.closest('#name-gate')) {
         return;
       }
       if (!playReady) {
         return;
       }
-      var code = resolveCode(ev) || ev.code;
+      var code = initialCode;
       /* QuakeJS / real ET: grave is CONSOLE_KEY even while the menu is up. */
       if (isConsoleEvent(ev, code)) {
         ev.preventDefault();
@@ -754,8 +956,7 @@
         sendKey(K_CONSOLE, 1);
         held.Backquote = K_CONSOLE;
         typingMode = typingMode === 'console' ? null : 'console';
-        releaseAllHolds();
-        sendMove();
+        releaseInputHolds();
         return;
       }
       if (uiOpen()) {
@@ -775,8 +976,7 @@
       if (typingMode) {
         if (code === 'Escape') {
           typingMode = null;
-          releaseAllHolds();
-          sendMove();
+          releaseInputHolds();
         } else if (typingMode === 'chat' && (code === 'Enter' || code === 'NumpadEnter')) {
           typingMode = null;
         }
@@ -809,25 +1009,22 @@
         } else if (TAP_KEYS[code]) {
           engineCmd(TAP_KEYS[code]);
         }
-      } else if (HOLD_KEYS[code] && HOLD_KEYS[code].charAt(0) === '+') {
-        /* Bind may be late; SetMove already applied. Also issue +cmd. */
-        engineCmd(HOLD_KEYS[code]);
-      }
-      /* Bind may be missing from the FS copy of default.cfg. */
-      if (code === 'KeyL') {
-        engineCmd('openlimbomenu');
       }
     }
 
     function onKeyUp(ev) {
+      var initialCode = resolveCode(ev) || ev.code;
+      if (ev.metaKey || (ev.ctrlKey && initialCode !== 'ControlLeft' && initialCode !== 'ControlRight')) {
+        return;
+      }
       if (!playReady) {
         return;
       }
-      var code = resolveCode(ev) || ev.code;
+      var code = initialCode;
       var key = held[code] || CODE_TO_KEY[code];
       if (key) {
         ev.preventDefault();
-        sendKey(key, 0);
+        var sent = sendKey(key, 0);
         if (code === 'KeyW' && moveF > 0) { moveF = 0; }
         else if (code === 'KeyS' && moveF < 0) { moveF = 0; }
         else if (code === 'KeyD' && moveR > 0) { moveR = 0; }
@@ -835,7 +1032,7 @@
         else if (code === 'Space' && moveU > 0) { moveU = 0; }
         else if (code === 'KeyC' && moveU < 0) { moveU = 0; }
         sendMove();
-        if (HOLD_KEYS[code] && HOLD_KEYS[code].charAt(0) === '+') {
+        if (!sent && HOLD_KEYS[code] && HOLD_KEYS[code].charAt(0) === '+') {
           engineCmd('-' + HOLD_KEYS[code].slice(1));
         }
         delete held[code];
@@ -849,7 +1046,8 @@
       }
       var rect = canvas.getBoundingClientRect();
       var mapped = window.ETJSInput
-        ? window.ETJSInput.letterboxTo640(ev.clientX, ev.clientY, rect)
+        ? window.ETJSInput.letterboxTo640(ev.clientX, ev.clientY, rect,
+          limboOpen() || intermissionOpen())
         : { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
       try { M._ETJS_SetCursor(mapped.x, mapped.y); } catch (e) { /* not ready */ }
     }
@@ -870,6 +1068,9 @@
       ev.preventDefault();
       ev.stopImmediatePropagation();
       if (!pointerLocked()) {
+        /* Browsers may emit large synthetic movement deltas while pointer lock
+         * recenters the cursor. They are not player look input. */
+        ignoreLookUntil = Date.now() + 350;
         lockPointer();
       }
       if (window.ETJSInput && !window.ETJSInput.shouldFireOnMouseDown(true, false, pointerLocked())) {
@@ -891,8 +1092,8 @@
       if (mkey) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
-        sendKey(mkey, 0);
-        if (MOUSE_HOLD[ev.button]) {
+        var sent = sendKey(mkey, 0);
+        if (!sent && MOUSE_HOLD[ev.button]) {
           engineCmd('-' + MOUSE_HOLD[ev.button].slice(1));
         }
         delete held[id];
@@ -904,12 +1105,13 @@
         return;
       }
       var limbo = limboOpen();
+      var gameUi = limbo || intermissionOpen();
       if (wasLimbo && !limbo) {
         ignoreLookUntil = Date.now() + 600;
       }
       wasLimbo = limbo;
       if (Date.now() < ignoreLookUntil) {
-        if (limbo || !inWorld()) {
+        if (gameUi || !inWorld()) {
           syncCursor();
           pushCursor(ev);
         }
@@ -917,7 +1119,7 @@
       }
       var mx = ev.movementX || ev.webkitMovementX || 0;
       var my = ev.movementY || ev.webkitMovementY || 0;
-      if (!inWorld() || limbo || !pointerLocked()) {
+      if (!inWorld() || gameUi || !pointerLocked()) {
         syncCursor();
         pushCursor(ev);
         return;
@@ -949,6 +1151,7 @@
       if (!playReady || uiOpen()) {
         return;
       }
+      ignoreLookUntil = Date.now() + 350;
       lockPointer();
     }
 
@@ -974,26 +1177,37 @@
     window.addEventListener('wheel', onWheel, { capture: true, passive: false });
     window.addEventListener('contextmenu', onContextMenu, true);
     window.addEventListener('blur', function () {
-      releaseAllHolds();
-      moveF = 0;
-      moveR = 0;
-      moveU = 0;
-      sendMove();
+      releaseInputHolds();
+    });
+    document.addEventListener('pointerlockchange', function () {
+      if (pointerLocked()) {
+        ignoreLookUntil = Date.now() + 350;
+      }
     });
     canvas.addEventListener('click', onCanvasClick, true);
     canvas.addEventListener('mouseout', onMouseOut, true);
     function pumpMove() {
       sendMove();
+      /* Intermission is entered by a snapshot rather than a DOM event. Polling
+       * here releases pointer lock immediately even if the mouse is stationary. */
+      syncCursor();
       if (typeof requestAnimationFrame === 'function') {
         requestAnimationFrame(pumpMove);
       }
     }
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(pumpMove);
+      requestAnimationFrame(monitorQuality);
     }
   }
 
   function startEngine(playerName) {
+    if (startupConsole) {
+      startupConsole.textContent = '';
+    }
+    lastLoadStatus = '';
+    appendStartupLine('Wolfenstein: Enemy Territory browser runtime');
+    appendStartupLine('Player: ' + playerName);
     if (loadPanel) {
       loadPanel.classList.remove('hidden');
     }
@@ -1033,7 +1247,7 @@
         },
         print: function (text) {
           console.log(text);
-          onEngineLine(text);
+          onEngineLine(text, 'info');
         },
         printErr: function (text) {
           var s = String(text || '');
@@ -1042,7 +1256,7 @@
           } else {
             console.error(s);
           }
-          onEngineLine(s);
+          onEngineLine(s, /WARNING|couldn't exec|not found|was not found|skipping/i.test(s) ? 'warn' : 'error');
         },
         onAbort: function (what) {
           console.error('ETJS abort', what);
@@ -1062,7 +1276,8 @@
             { parent: '/etmain', name: 'pak1.pk3', url: '/etmain/pak1.pk3', bytes: 51616 },
             { parent: '/etmain', name: 'pak2.pk3', url: '/etmain/pak2.pk3', bytes: 89910 },
             { parent: '/etmain', name: 'mp_bin.pk3', url: '/etmain/mp_bin.pk3', bytes: 400000 },
-            { parent: '/legacy', name: 'legacy_v2.84.0.pk3', url: '/legacy/legacy_v2.84.0.pk3', bytes: 34306898 }
+            { parent: '/legacy', name: 'legacy_v2.84.0.pk3', url: '/legacy/legacy_v2.84.0.pk3', bytes: 34306898 },
+            { parent: '/legacy', name: 'etjs.pk3', url: '/legacy/etjs.pk3', bytes: 400000 }
           ];
           var loaded = files.map(function () { return 0; });
           var totals = files.map(function (f) { return f.bytes || 1; });
@@ -1146,7 +1361,7 @@
           attrs = attrs || {};
           if (type && String(type).indexOf('webgl') !== -1) {
             attrs.preserveDrawingBuffer = true;
-            attrs.antialias = false;
+            attrs.antialias = selectedQualityLevel >= 3;
           }
           return origGetContext.call(this, type, attrs);
         };
@@ -1184,6 +1399,35 @@
       return;
     }
     var existing = window.ETJSName.loadPlayerName() || '';
+    try {
+      var savedGraphics = JSON.parse(localStorage.getItem(GRAPHICS_STORAGE_KEY) || '{}');
+      if (/^[0-3]$/.test(String(savedGraphics.level))) {
+        selectedQualityLevel = Number(savedGraphics.level);
+      }
+      if (/^(30|60|120)$/.test(String(savedGraphics.targetFps))) {
+        selectedFpsTarget = Number(savedGraphics.targetFps);
+      }
+      if (typeof savedGraphics.adaptive === 'boolean') {
+        adaptiveQuality = savedGraphics.adaptive;
+      }
+    } catch (e) { /* use maximum, adaptive 60 FPS defaults */ }
+    if (graphicsProfile) {
+      graphicsProfile.value = String(selectedQualityLevel);
+    }
+    if (dynamicQuality) {
+      dynamicQuality.checked = adaptiveQuality;
+    }
+    if (dynamicFps) {
+      dynamicFps.value = String(selectedFpsTarget);
+      dynamicFps.disabled = !adaptiveQuality;
+    }
+    if (dynamicQuality && dynamicQuality.addEventListener) {
+      dynamicQuality.addEventListener('change', function () {
+        if (dynamicFps) {
+          dynamicFps.disabled = !dynamicQuality.checked;
+        }
+      });
+    }
     if (nameInput) {
       nameInput.value = existing;
       nameInput.focus();
@@ -1202,6 +1446,22 @@
         }
         return;
       }
+      selectedQualityLevel = graphicsProfile ? Number(graphicsProfile.value) : 3;
+      if (!(selectedQualityLevel >= 0 && selectedQualityLevel <= 3)) {
+        selectedQualityLevel = 3;
+      }
+      selectedFpsTarget = dynamicFps ? Number(dynamicFps.value) : 60;
+      if ([30, 60, 120].indexOf(selectedFpsTarget) === -1) {
+        selectedFpsTarget = 60;
+      }
+      adaptiveQuality = dynamicQuality ? !!dynamicQuality.checked : true;
+      try {
+        localStorage.setItem(GRAPHICS_STORAGE_KEY, JSON.stringify({
+          level: selectedQualityLevel,
+          targetFps: selectedFpsTarget,
+          adaptive: adaptiveQuality
+        }));
+      } catch (e) { /* storage is optional */ }
       if (nameGate) {
         nameGate.classList.add('hidden');
       }

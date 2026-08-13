@@ -19,9 +19,8 @@ function findPlaywright() {
   }
 }
 
-function from640(x640, y640, width, height) {
-  /* Same mapping as etjs-input letterboxTo640 / QuakeJS stretch-to-window. */
-  return { x: x640 * width / 640, y: y640 * height / 480 };
+function from640(x640, y640, width, height, widescreenGame) {
+  return input.from640(x640, y640, width, height, widescreenGame);
 }
 
 async function canvasStats(page) {
@@ -51,6 +50,24 @@ async function canvasStats(page) {
     }
     let limbo = null;
     let ingame = null;
+    let glState = null;
+    try {
+      const gl = canvas && canvas.getContext('webgl2');
+      if (gl) {
+        glState = {
+          blend: gl.isEnabled(gl.BLEND),
+          depth: gl.isEnabled(gl.DEPTH_TEST),
+          depthMask: gl.getParameter(gl.DEPTH_WRITEMASK),
+          srcRgb: gl.getParameter(gl.BLEND_SRC_RGB),
+          dstRgb: gl.getParameter(gl.BLEND_DST_RGB),
+          activeTexture: gl.getParameter(gl.ACTIVE_TEXTURE) - gl.TEXTURE0,
+          boundTexture: (typeof GL !== 'undefined' && GL.textures)
+            ? GL.textures.indexOf(gl.getParameter(gl.TEXTURE_BINDING_2D)) : null
+        };
+      }
+    } catch (e) {
+      glState = { error: String(e && e.message ? e.message : e) };
+    }
     try {
       if (window.Module && typeof window.Module.ccall === 'function') {
         limbo = window.Module.ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_limbo']);
@@ -62,19 +79,40 @@ async function canvasStats(page) {
     return {
       loadHidden: !!(load && load.classList.contains('hidden')),
       painted, skyish, total, dataUrl, err, limbo, ingame,
+      glState,
       nameGate: !!(document.getElementById('name-gate') &&
         !document.getElementById('name-gate').classList.contains('hidden'))
     };
   }, SKY);
 }
 
+async function readCvars(page, names) {
+  return page.evaluate((requested) => {
+    const ccall = window.Module && window.Module.ccall;
+    const result = {};
+    requested.forEach((name) => {
+      result[name] = ccall
+        ? ccall('ETJS_CvarInt', 'number', ['string'], [name])
+        : 0;
+    });
+    return result;
+  }, names);
+}
+
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const logs = [];
+  const failures = [];
   const push = (s) => {
     logs.push(s);
     console.log(s);
     fs.writeFileSync(path.join(OUT, 'page-console.log'), logs.join('\n'));
+  };
+  const check = (condition, message) => {
+    push((condition ? 'PASS ' : 'FAIL ') + message);
+    if (!condition) {
+      failures.push(message);
+    }
   };
 
   let chromium;
@@ -149,7 +187,7 @@ async function canvasStats(page) {
 
   if (st && st.limbo === 1) {
     const allies = input.LIMBO_ALLIES_640;
-    const alliesClick = from640(allies.x + allies.w * 0.5, allies.y + allies.h * 0.5, 1280, 800);
+    const alliesClick = from640(allies.x + allies.w * 0.5, allies.y + allies.h * 0.5, 1280, 800, true);
     push('click Allies at ' + alliesClick.x.toFixed(0) + ',' + alliesClick.y.toFixed(0));
     await page.mouse.move(alliesClick.x, alliesClick.y);
     await page.waitForTimeout(80);
@@ -157,7 +195,7 @@ async function canvasStats(page) {
     await page.waitForTimeout(400);
 
     const ok = input.LIMBO_OK_640;
-    const okClick = from640(ok.x + ok.w * 0.5, ok.y + ok.h * 0.5, 1280, 800);
+    const okClick = from640(ok.x + ok.w * 0.5, ok.y + ok.h * 0.5, 1280, 800, true);
     push('click OK at ' + okClick.x.toFixed(0) + ',' + okClick.y.toFixed(0));
     await page.mouse.move(okClick.x, okClick.y);
     await page.waitForTimeout(80);
@@ -173,7 +211,7 @@ async function canvasStats(page) {
 
     if (st.limbo === 1) {
       const box = input.LIMBO_CANCEL_640;
-      const cancel = from640(box.x + box.w * 0.5, box.y + box.h * 0.5, 1280, 800);
+      const cancel = from640(box.x + box.w * 0.5, box.y + box.h * 0.5, 1280, 800, true);
       push('click Cancel at ' + cancel.x.toFixed(0) + ',' + cancel.y.toFixed(0));
       await page.mouse.click(cancel.x, cancel.y);
       await page.waitForTimeout(500);
@@ -187,7 +225,10 @@ async function canvasStats(page) {
   }
   await page.screenshot({ path: path.join(OUT, 'after-limbo-1-page.png') });
   const frac = st.total ? st.skyish / st.total : 1;
-  push('after-limbo painted=' + st.painted + ' skyFrac=' + frac.toFixed(3) + ' limbo=' + st.limbo + ' ingame=' + st.ingame);
+  push('after-limbo painted=' + st.painted + ' skyFrac=' + frac.toFixed(3) + ' limbo=' + st.limbo + ' ingame=' + st.ingame
+    + ' gl=' + JSON.stringify(st.glState));
+  check(st.limbo === 0 && st.ingame === 1, 'joined match and closed limbo');
+  check(frac < 0.4, 'world is rendered without sky-blue holes');
 
   if (st.limbo === 0 && st.ingame === 1) {
     await page.evaluate(() => {
@@ -197,57 +238,118 @@ async function canvasStats(page) {
         document.getElementById('viewport-frame').focus();
       }
     });
-    const before = await page.evaluate(() => {
-      const ccall = window.Module && window.Module.ccall;
-      if (!ccall) { return { ox: 0, oy: 0, fwd: 0 }; }
-      return {
-        ox: ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_ox']),
-        oy: ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_oy']),
-        fwd: ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_fwd'])
-      };
-    });
-    push('before-W ox=' + before.ox + ' oy=' + before.oy + ' fwd=' + before.fwd);
+    await page.waitForTimeout(700);
+    const before = await readCvars(page, ['etjs_ox', 'etjs_oy', 'etjs_fwd', 'etjs_viewyaw']);
+    push('before-W ' + JSON.stringify(before));
     await page.keyboard.down('w');
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'w', code: 'KeyW', bubbles: true, cancelable: true
-      }));
-    });
     await page.waitForTimeout(900);
-    const mid = await page.evaluate(() => {
-      const ccall = window.Module && window.Module.ccall;
-      if (!ccall) { return { ox: 0, oy: 0, fwd: 0, last: null }; }
-      return {
-        ox: ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_ox']),
-        oy: ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_oy']),
-        fwd: ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_fwd']),
-        last: window.__etjsLastMove || null
-      };
-    });
-    push('hold-W ox=' + mid.ox + ' oy=' + mid.oy + ' fwd=' + mid.fwd + ' last=' + JSON.stringify(mid.last));
+    const mid = await readCvars(page, ['etjs_ox', 'etjs_oy', 'etjs_fwd']);
+    const moved = Math.hypot(mid.etjs_ox - before.etjs_ox, mid.etjs_oy - before.etjs_oy);
+    const yawRadians = before.etjs_viewyaw * Math.PI / 180;
+    const forwardDot = moved > 0 ? (
+      (mid.etjs_ox - before.etjs_ox) * Math.cos(yawRadians) +
+      (mid.etjs_oy - before.etjs_oy) * Math.sin(yawRadians)
+    ) / moved : 0;
+    push('hold-W ' + JSON.stringify(mid) + ' dOrg=' + moved.toFixed(0));
+    check(mid.etjs_fwd === 127, 'W produces full forward input');
+    check(moved > 20, 'W changes authoritative player origin');
+    check(forwardDot > 0.75, 'W movement follows the rendered camera heading');
     await page.keyboard.up('w');
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent('keyup', {
-        key: 'w', code: 'KeyW', bubbles: true, cancelable: true
-      }));
-    });
+    await page.waitForTimeout(120);
+    check((await readCvars(page, ['etjs_fwd'])).etjs_fwd === 0, 'W release clears forward input');
+
+    const keyCases = [
+      { key: 's', cvar: 'etjs_fwd', expected: -127, label: 'S produces backward input' },
+      { key: 'a', cvar: 'etjs_right', expected: -127, label: 'A produces left strafe input' },
+      { key: 'd', cvar: 'etjs_right', expected: 127, label: 'D produces right strafe input' },
+      { key: 'Space', cvar: 'etjs_up', expected: 127, label: 'Space produces jump input' },
+      { key: 'c', cvar: 'etjs_up', expected: -127, label: 'C produces crouch input' }
+    ];
+    for (const test of keyCases) {
+      await page.keyboard.down(test.key);
+      await page.waitForTimeout(120);
+      const state = await readCvars(page, [test.cvar]);
+      check(state[test.cvar] === test.expected, test.label);
+      await page.keyboard.up(test.key);
+      await page.waitForTimeout(60);
+      check((await readCvars(page, [test.cvar]))[test.cvar] === 0, test.label.split(' produces')[0] + ' release clears input');
+    }
+
+    await page.keyboard.down('Tab');
+    await page.waitForTimeout(250);
+    check((await readCvars(page, ['etjs_scores'])).etjs_scores === 1, 'Tab opens the player scoreboard');
+    await page.screenshot({ path: path.join(OUT, 'scoreboard-tab.png') });
+    await page.keyboard.up('Tab');
+    await page.waitForTimeout(100);
+    check((await readCvars(page, ['etjs_scores'])).etjs_scores === 0, 'Tab release closes the player scoreboard');
+
+    await page.evaluate(() => document.exitPointerLock && document.exitPointerLock());
+    await page.waitForTimeout(150);
+    const beforeLock = await readCvars(page, ['etjs_yaw', 'etjs_pitch']);
     await page.mouse.click(640, 400);
-    await page.waitForTimeout(400);
-    const after = await page.evaluate(() => {
-      const ccall = window.Module && window.Module.ccall;
-      if (!ccall) { return { atk: 0 }; }
-      return { atk: ccall('ETJS_CvarInt', 'number', ['string'], ['etjs_atk']) };
+    await page.waitForTimeout(500);
+    const afterLock = await readCvars(page, ['etjs_yaw', 'etjs_pitch']);
+    check(Math.abs(afterLock.etjs_yaw - beforeLock.etjs_yaw) <= 2 &&
+      Math.abs(afterLock.etjs_pitch - beforeLock.etjs_pitch) <= 2,
+    'acquiring pointer lock does not jerk the view');
+
+    await page.mouse.down({ button: 'left' });
+    await page.waitForTimeout(120);
+    check((await readCvars(page, ['etjs_atk'])).etjs_atk === 1, 'mouse1 produces attack input');
+    await page.mouse.up({ button: 'left' });
+    await page.waitForTimeout(100);
+    check((await readCvars(page, ['etjs_atk'])).etjs_atk === 0, 'mouse1 release clears attack input');
+
+    const beforeLook = await readCvars(page, ['etjs_yaw']);
+    await page.evaluate(() => {
+      const ev = new MouseEvent('mousemove', { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, 'movementX', { value: 24 });
+      Object.defineProperty(ev, 'movementY', { value: 0 });
+      window.dispatchEvent(ev);
     });
+    await page.waitForTimeout(100);
+    const afterLook = await readCvars(page, ['etjs_yaw']);
+    check(afterLook.etjs_yaw !== beforeLook.etjs_yaw, 'pointer-locked mouse movement changes view yaw');
+
     st = await canvasStats(page);
     if (st.dataUrl) {
       fs.writeFileSync(path.join(OUT, 'browser-fire.png'), Buffer.from(st.dataUrl.split(',')[1], 'base64'));
     }
-    push('after-move-fire painted=' + st.painted + ' limbo=' + st.limbo
-      + ' dOrg=' + Math.hypot(mid.ox - before.ox, mid.oy - before.oy).toFixed(0)
-      + ' atk=' + after.atk);
+    push('input acceptance painted=' + st.painted + ' failures=' + failures.length);
+
+    if (process.env.ETJS_FOLLOW_SCAN === '1') {
+      const hookScan = process.env.ETJS_RSHOOK_SCAN === '1';
+      const engineCommand = async (command) => page.evaluate((text) => {
+        window.Module.ccall('Cbuf_AddText', null, ['string'], [text + '\n']);
+      }, command);
+
+      push('begin ' + (hookScan ? 'rshook' : 'normal-render') + ' follow scan');
+      await engineCommand('set cl_rshook ' + (hookScan ? '1' : '0'));
+      await engineCommand('team s');
+      await page.waitForTimeout(1200);
+      for (const clientNum of [1, 2, 3, 4, 5, 6, 8, 9, 12]) {
+        await engineCommand('follow ' + clientNum);
+        await page.waitForTimeout(700);
+        await page.screenshot({
+          path: path.join(OUT, 'follow-' + clientNum + '-' + (hookScan ? 'rshook' : 'normal') + '.png')
+        });
+        if (hookScan) {
+          /* The shell uses tcMod scroll; retain a nearby second frame so visual
+           * acceptance can distinguish animation from a static color wash. */
+          await page.waitForTimeout(350);
+          await page.screenshot({
+            path: path.join(OUT, 'follow-' + clientNum + '-rshook-b.png')
+          });
+        }
+      }
+      push('finished ' + (hookScan ? 'rshook' : 'normal-render') + ' follow scan');
+    }
   }
 
   await browser.close();
+  if (failures.length) {
+    throw new Error('acceptance failures:\n- ' + failures.join('\n- '));
+  }
 })().catch((err) => {
   console.error(err);
   fs.writeFileSync(path.join(OUT, 'playwright-env.log'), String(err && err.stack || err));

@@ -1,93 +1,153 @@
-# ETJS known issues
+# ETJS known issues and acceptance status
 
-What is still wrong as of 2026-08-13. Grouped the way you run into it, not by file.
+Status as of 2026-08-13. This file distinguishes an open defect from a fix that
+is compiled and covered by regression tests but still needs a fresh visual or
+gameplay check. The required check procedure is in [RUNBOOK.md](RUNBOOK.md).
 
-**How to work these:** [RUNBOOK.md](RUNBOOK.md) — start the real game, screenshot the failure, fix the cause, screenshot the same place, repeat. Separate loops for startup, aspect, in-game 3D/blue, and input. Do not inject connect to “see the world.”
+Hard-refresh after a client rebuild. A stale `etjs.js` paired with a new wasm
+can fail as `ASM_CONSTS[emAsmAddr] is not a function`.
 
-Hard-refresh after a client rebuild. Stale `etjs.js` + new wasm shows up as `ASM_CONSTS[emAsmAddr] is not a function`.
+## Open / externally blocked
 
----
+- **Latest browser acceptance pass is pending.** The in-app browser currently
+  has no attached browser session, so the newest WebAssembly build has not had
+  its complete name → console → logos → menu → join → spawn visit captured.
+  Source tests and builds pass, and earlier gameplay was checked by the project
+  owner, but the changes marked “retest” below still need one hard-refresh run.
+- **Public Cloudflare delivery needs configuration.** The official `pak0.pk3`
+  is about 228 MB, larger than the normal free orange-cloud response limit.
+  `wolfet.tedcharles.net` must be DNS-only or route the large PK3s around that
+  proxy. Local `:8088` delivery is unaffected.
+- **The original intro movie is not distributed.** The official paks available
+  from Splash Damage do not contain `etintro.roq`. ETJS uses skippable official
+  pak stills (`logo_id` → `logo_sd` → `et_logo`) instead.
+- **Dynamic quality cannot change latched texture settings mid-match.** The
+  selected startup profile controls texture resolution, filtering, compression,
+  and antialiasing before WebGL starts. During play, the 30/60/120 FPS governor
+  adjusts only live effects, shadows, decals, atmosphere, sky, and model LOD so
+  it never forces a disruptive renderer restart.
+- **A 120 FPS target requires a high-refresh browser/display.** On a 60 Hz
+  display the governor may reach its minimum live-effects tier without being
+  able to produce 120 presentation frames.
 
-## In the match (what you are hitting now)
+## Compiled fixes awaiting one fresh browser retest
 
-### World / picture
+### Startup and menus
 
-- **Blue / sky through the world.** After spawn or after closing limbo the canvas often goes to the sky-blue clear with holes in the map, or only brief triangle flashes. Dual-tex lightmaps are on; a lot of the remaining blue is the camera sitting in the void or looking into the floor/sky.
-- **Looks okay until the mouse moves.** The first spectator/world frame can look decent. Any mouse move then wrecks it — view slams (often pitch toward −85 from the last limbo click), you clip through geometry, and the blue comes back. Same family of bug as “look locks down.”
-- **Menu/world clouds do not scroll.** Official `et_clouds` uses `tcMod scroll`. The ES2 renderer never runs texmods, so the MAIN background is a still photo.
-- **Menu art is softer than desktop ET.** `r_picmip` is now 0; leftover blur is stretch-to-window + ES2 filtering, not the old picmip-1 soup.
-- **Connect flash can still show ET Legacy branding.** The renderer splash draw is disabled on WASM; the official ETL load panel / fonts can still leak “LEGACY” during map load.
+- Play opens an ET-style startup console that streams real engine output. It
+  uses the CC0 Modern DOS 8×16 font with light-gray text on desaturated blue.
+- ANSI terminal controls and engine timestamps are removed from the web console,
+  and the font is preloaded so raw `[0m` fragments and fallback typography do
+  not obscure initialization output.
+- The WebAssembly UI has a bounded 16 MiB menu-definition pool for ETJS's stock
+  options/chat/voice/class/team tree; the former 8 MiB pool aborted while
+  parsing `wm_class.menu`.
+- Ctrl/Cmd browser shortcuts bypass the game input bridge. Ctrl+Shift+R,
+  Ctrl+R, Cmd+R, address-bar shortcuts, and developer tools can be used without
+  ETJS cancelling their browser defaults; bare Ctrl remains a bindable ET key.
+- The name form has remembered Maximum/Balanced/Performance/Minimum profiles,
+  a dynamic-quality toggle, and 30/60/120 FPS targets.
+- Company-logo stills remain visible until the engine reports MAIN ready.
+- JOIN GAME is clickable without pointer lock. OPTIONS, CREDITS, EXIT, the
+  Escape in-game menu, chat entry, voice menus, class/team menus, and the full
+  options tree are loaded.
+- Routine ETJS renderer/parser diagnostics are developer-only. Missing favorites
+  cache and missing `menu2.wav` no longer spam the in-game console.
 
-### Movement, shoot, limbo, Escape
+### Rendering and HUD
 
-- **WASD does not move you.** Command can reach the engine (`etjs_fwd=127`) while origin stays put. Causes we have actually seen:
-  - leftover `KEYCATCH_UI|CGAME` marking the cmd as talk (pmove zeroes move)
-  - spawn / spectator view in solid or looking into the void
-  - you are in **follow-spectate** (right-click cycles players). In that mode WASD is not free-fly; you have to leave follow / open limbo and pick a team. Free-fly spectator is also supposed to work and currently often does not.
-- **Mouse1 does not shoot.** Same leftover-catcher / not-really-spawned / follow-spectate problems. First in-world click also used to only grab pointer lock; that path was changed so lock + attack should both happen once you are actually in the world.
-- **L does not open limbo.** You can close limbo (click) but L does nothing. The page only falls back to `openlimbomenu` if the engine key call *fails*. If the call succeeds, the bind is supposed to run — and often does not, because cgame never sees it or catchers get stripped the next frame.
-- **Escape does not open the in-game menu.** Two stacked reasons:
-  1. Every in-world frame currently **clears `KEYCATCH_UI` and `KEYCATCH_CGAME`** unless limbo is flagged open. Even if Escape opened the official ingame UI, the next frame would kill it.
-  2. We only load the slim official MAIN (`JOIN GAME / OPTIONS / CREDITS / EXIT`). Desktop `ingame.menu` + options / binds / crosshair trees are **not** loaded, so there is nothing useful for Escape to show yet.
-- **Right-click still cycles who you spectate.** That bind is working. It is also why it feels like “the only thing that works.”
-- **Spectator mouse can still steer the followed player.** Local look is supposed to no-op on `PMF_FOLLOW` (4096). If your mouse move is rotating the person you are watching, that guard is not winning.
-- **Other players’ bodies do not face their look.** Models can stay on a default yaw; spectate look must not turn *their* head.
+- The sky-blue/mostly-sky world defect was fixed by restoring world drawsurfs,
+  entity surfaces, the 3D depth state, proper shader stages, and lightmaps.
+  The project owner confirmed the blue defect was fixed.
+- Full official texture resolution is enabled (`r_picmip 0` on Maximum); the
+  old browser-wide 128-pixel texture clamp is gone. Fragment UVs use high
+  precision to prevent stretched single-column wall textures and lightmap
+  shimmer as the camera moves.
+- The WebGL 2D path now runs stretch pics, arbitrary polygons, rotated compass
+  items, and gradients through ET's shader-stage evaluator. This restores
+  per-stage blending, alpha, `tcMod` scrolling, animated menu clouds/lightning,
+  and transparent crosshair/scope/binocular/foliage edges.
+- HUD components use ETLegacy's aspect-correct 640×480 virtual space. A live
+  browser resize now invalidates and recomputes cached anchors, keeping the
+  crosshair, compass, edge HUD, overlays, and projected labels aligned with the
+  3D view. Scope masks height-fit and binocular masks cover full viewport width.
+- The stock compass minimap, scoreboard, names/stats, weapon HUD, construction
+  entities, dropped equipment, mines, guns, turrets, dynamite, radio gear,
+  players, and enemies all have active draw paths.
+- Mortar projectiles orient to their gravity-adjusted travel vector rather than
+  always pointing upward.
 
-### Team pick / staying in the world
+### Input, camera, and gameplay
 
-- **Limbo OK can crash the client out of the match.** Playwright: Allies click works, OK then `Hunk_AllocateTempMemory: failed on 1958832` (hunk is 48MB). Engine drops, MAIN comes back. That is why a “successful join” still does not leave you playing. Fix in flight: raise client hunk toward the desktop 128MB default (512MB wasm heap is supposed to have room).
+- WASD, mouse look/fire, jump/crouch/prone/lean/sprint, weapon banks/wheel,
+  reload, activate, limbo, scoreboard, stats, chat, team chat, voice menus,
+  objectives, map zoom, Escape, and tilde have browser-to-engine key paths.
+- A different dropped weapon is picked up with `+activate`, not by walking over
+  it. The default is `F`; old partial saved configs are merged with the complete
+  shipped bindings so Thompson pickup, T chat, and V voice remain present.
+- Pointer lock releases for MAIN, limbo, death, intermission, and debrief. It no
+  longer waits for a post-death shot before mouse look recovers.
+- Follow-spectate interpolates player state and ignores local look for the
+  followed entity. Other snapshot entities use ET's normal frame interpolation;
+  bot smoothness still needs confirmation in the fresh visit.
+- Deployment automatically taps out into one-second reinforcement waves instead
+  of remaining forever at “deploying in 1 second.”
+- Authoritative native qagame and browser prediction share 1.25× speed, double
+  jump, and unlimited stamina. The dedicated container is verified to load the
+  ETJS `qagame.mp.x86_64.so` rather than stock qagame.
+- The supervisor reasserts `g_speed 400`, friendly fire off, forced respawn,
+  and one-second reinforcement timers after ETLegacy's per-map config restores
+  stock values. Live RCON verifies the authoritative values, not just startup
+  arguments.
+- Bot reconciliation permits only one in-flight pass and completes local RCON
+  replies after a short quiet window. It no longer sends the unsupported
+  `bot minplayers` command or floods the host log with overlapping add/tick
+  output after the 12-slot target is reached.
+- Original ETJS-owned Double Kill through Monster Kill voice clips are packaged
+  separately from the official paks and play for rapid local enemy kills.
 
----
+### rshook / aimbot
 
-## Startup / menu
+- Targets must be alive enemies, never teammates, and pass a world trace before
+  selection. Visible nearby enemies rank ahead of farther targets.
+- Aim uses server-relative command angles, a slightly lowered head point, pitch
+  limits, finite-value checks, and maximum per-frame movement; it must not snap
+  straight up/down or select a target behind a wall.
+- Enemy players get an animated shader shell: blue when visible and red when
+  occluded. Teammates do not glow. Enemy deployables and normally hidden mines
+  receive the reveal shell.
 
-- **Company-logo splash is easy to miss.** Official `etintro.roq` is **not** in Steam ET or the paks we ship. We draw skippable pak0 stills (`logo_id` → `logo_sd` → `et_logo`). The engine used to open MAIN on frame 0 and skip them; that is gated on `etjs_splash==2` now. If you still never see logos, say so after a hard refresh.
-- **JOIN GAME used to highlight and not click.** Cause: MAIN was activated *before* the 640×480 background, so focus sat on a decoration; plus pointer lock on the first menu click froze the cursor (“input devices captured”). Official JOIN is `{22,48,116,18}` in 640-space. Playwright can click it and get `connect 127.0.0.1:27961`. If your browser still cannot, hard-refresh — do not inject connect.
-- **OPTIONS / CREDITS / EXIT do not do the desktop thing.** OPTIONS has no options tree loaded. CREDITS has no credits menu. EXIT only plays a click.
-- **Tilde / `` ` `` from MAIN** is supposed to send engine `K_CONSOLE` (297), not ASCII 96 into the UI. Confirm after refresh if the console still refuses to drop.
-- **No Host Game / no server browser.** Intentional. JOIN GAME is the only connect.
+## Confirmed by the project owner during this work
 
----
+- The mostly sky-blue rendering failure is fixed.
+- WASD/player movement works and the match is playable and fun.
+- Wall visibility for rshook worked in an earlier pass.
 
-## Window / hosting
+## Intentional product boundaries
 
-- **Aspect must follow the window like QuakeJS**, not a 4:3 letterbox. Canvas backbuffer = `#viewport-frame` size; engine `r_mode -1`. If you still get a **skewed** picture when the window is narrow, or an **orange strip** (`.70 .63 .49`) when it is wide, the engine `vidWidth/Height` is not matching the CSS box.
-- **Cloudflare free orange-cloud caps downloads at 100MB.** `pak0.pk3` is ~228MB. Public first load on `wolfet.tedcharles.net` fails unless that host is grey-cloud or paks bypass the proxy.
-- **This laptop is only the game host** (`0.0.0.0:8088`, `/ws` → UDP 27961). nginx/SSL live on the other box. Unraid Docker is later.
+- One shared 12-slot Objective match; Omni-Bot fills empty human slots.
+- No Host Game, public master list, or server browser.
+- ETLegacy and QuakeJS are ignored reference workspaces, not repository content.
+- Original Wolf: ET PK3s/installers and generated wasm/native binaries are not
+  committed. Setup fetches verified official data from Splash Damage.
+- Campaign/Stopwatch/LMS/map vote, PunkBuster, ETPro, public hosting deployment,
+  and the future Unraid image are not acceptance requirements for this phase.
 
----
+## What the next good visit must prove
 
-## Sound / persist
-
-- **`sound/misc/menu2.wav` missing** (item hover). Focus sound errors in the console; not fatal.
-- **HTML `menu_server.wav`** is the menu/loading music. It must not start on the name form. If the engine also decodes the 4.7MB wav into the wasm heap, first-frame memory dies.
-- **Binds** persist in `localStorage` (`etjs.binds`). **Paks** persist in IndexedDB. `localStorage` cannot hold pak0.
-
----
-
-## Engine / tab death (mostly fixed, still landmines)
-
-- **`Array buffer allocation failed`** — wasm `Memory.grow` copies old+new heap. Stay inside 512MB `INITIAL_MEMORY`. Do not raise the small zone (512KB). Do not decode huge TGAs/wavs on frame 0.
-- **`ASM_CONSTS[emAsmAddr] is not a function`** — stale `etjs.js` with a new wasm. One `ETJS_ASSET_VER`, `Cache-Control: no-store`, hard refresh.
-- **Do not reconfigure cmake.** A reconfigure has dropped required Emscripten GL flags before.
-
----
-
-## Intentionally not in scope
-
-Campaign, Stopwatch, LMS, map vote, public masters, PunkBuster, ETPro, pixel-perfect every BSP curve, a full objective round, nginx on this laptop, Unraid image, opening from `file://`, injecting `etjs_joingame` / `connect` to “see the world.”
-
----
-
-## What a good visit looks like (so you can tell what is still broken)
-
-1. Web name form, XP ET icon, **silence**
-2. Download official paks, **silence**
-3. Skippable company logos + `menu_server.wav`
-4. Official MAIN (stormy clouds, eagle, JOIN GAME) + music; no pointer lock; tilde console
-5. Click **JOIN GAME** only
-6. Official connect/loading + music
-7. Spectator limbo → pick team + OK → world **stays**
-8. WASD moves origin, mouse1 fires, L toggles limbo, Escape opens settings that persist
-
-If you stop before step 7, say which step. If you get in and only right-click works, that is the “in the match” block above.
+1. Name form is silent; Advanced settings remember profile, dynamic toggle, and
+   FPS target.
+2. Play shows the blue Modern DOS startup console with real initialization logs.
+3. Logos and animated official MAIN appear with music; menu has no pointer lock.
+4. JOIN GAME reaches loading and limbo without an injected connect command.
+5. Pick a team and spawn; world remains solid and lit through movement/look.
+6. Crosshair/HUD/labels align; Tab scoreboard, compass minimap, transparent
+   overlays, players, constructions, and foliage render correctly.
+7. WASD/mouse/fire work. F picks up a dropped Thompson. T opens chat, V opens
+   voice, L toggles limbo, Escape opens options, and the debrief cursor moves.
+8. Follow a moving bot and confirm smooth interpolation. Resize once while
+   playing and confirm the HUD and 3D center stay aligned.
+9. Toggle rshook: no teammates/occluded aim targets or vertical snaps; shells
+   follow players/deployables and use blue-visible/red-hidden colors.
+10. Confirm the chosen quality profile starts correctly and, when enabled, the
+    governor stays at or above its selected target where hardware permits.

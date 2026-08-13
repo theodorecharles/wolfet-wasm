@@ -6,6 +6,13 @@ const { sendRcon } = require('./rcon');
 
 const TEAMS = ['axis', 'allies'];
 const CLASSES = ['soldier', 'medic', 'engineer', 'fieldops', 'covertops'];
+const GAMEPLAY_CVARS = [
+  'set g_speed 400',
+  'set g_friendlyFire 0',
+  'set g_forcerespawn 1',
+  'set g_bluelimbotime 1000',
+  'set g_redlimbotime 1000'
+];
 
 function isLikelyHuman(player) {
   return player.kind === 'human';
@@ -91,16 +98,20 @@ async function reconcile(opts) {
     password: opts.password
   }, opts.log, botNames);
 
-  try {
-    /* Omni-Bot minplayers is total humans+bots. Always keep the 12-slot match full. */
-    await sendRcon('bot minplayers ' + MATCH_SLOTS, {
-      host: opts.host,
-      port: opts.port,
-      password: opts.password
-    });
-  } catch (err) {
-    if (opts.log) {
-      opts.log('botfill minplayers failed: ' + err.message);
+  /* ETLegacy's map config runs after command-line +sets and restores stock
+   * movement/friendly-fire values. Reassert the ETJS rules after map init and
+   * on later rotations. RCON accepts one console command per packet. */
+  for (let i = 0; i < GAMEPLAY_CVARS.length; i++) {
+    try {
+      await sendRcon(GAMEPLAY_CVARS[i], {
+        host: opts.host,
+        port: opts.port,
+        password: opts.password
+      });
+    } catch (err) {
+      if (opts.log) {
+        opts.log('gameplay cvar enforcement failed: ' + err.message);
+      }
     }
   }
   for (let i = 0; i < plan.add; i++) {
@@ -116,11 +127,13 @@ function startSupervisor(opts) {
   const intervalMs = (opts && opts.intervalMs) || 4000;
   let timer = null;
   let stopped = false;
+  let running = false;
 
   const tick = async () => {
-    if (stopped) {
+    if (stopped || running) {
       return;
     }
+    running = true;
     try {
       const result = await reconcile(opts);
       if (opts.onTick) {
@@ -130,16 +143,12 @@ function startSupervisor(opts) {
       if (opts.log) {
         opts.log('bot supervisor: ' + err.message);
       }
+    } finally {
+      running = false;
     }
   };
 
   timer = setInterval(tick, intervalMs);
-  // kick Omni-Bot's own minplayers as a belt-and-suspenders fill
-  sendRcon('bot minplayers ' + MATCH_SLOTS, {
-    host: opts.host,
-    port: opts.port,
-    password: opts.password
-  }).catch(() => {});
   tick();
 
   return {
@@ -158,5 +167,6 @@ module.exports = {
   startSupervisor: startSupervisor,
   applyFill: applyFill,
   TEAMS: TEAMS,
-  CLASSES: CLASSES
+  CLASSES: CLASSES,
+  GAMEPLAY_CVARS: GAMEPLAY_CVARS
 };

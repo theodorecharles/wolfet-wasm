@@ -29,12 +29,36 @@ describe('reproducible source repository', () => {
     assert.match(fetcher, /d1abab70f6e3e3af8f34dfb4d94542c8bd592b0a1a582f0107d2162ee23c679b/);
   });
 
+  it('provisions official data on the host and only serves same-origin URLs to browsers', () => {
+    const dedicated = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
+    const host = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+    const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    assert.match(dedicated, /function ensureGameData\(\)/);
+    assert.match(dedicated, /fetch-game-data\.sh/);
+    assert.match(host, /dedicated\.ensureGameData\(\)/);
+    assert.match(client, /url: '\/etmain\/pak0\.pk3'/);
+    assert.match(client, /url: '\/legacy\/legacy_v2\.84\.0\.pk3'/);
+    assert.doesNotMatch(client, /splashdamage\.com/i);
+  });
+
   it('pins and completely represents the current ET: Legacy engine delta', () => {
     const setup = fs.readFileSync(path.join(ROOT, 'scripts', 'setup-etlegacy.sh'), 'utf8');
     assert.match(setup, /a44ab4f396370a694109da33df901d85f6fe9626/);
     const patch = path.join(ROOT, 'patches', 'etlegacy-wasm.patch');
     assert.ok(fs.statSync(patch).size > 300000);
     execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', patch]);
+  });
+
+  it('builds and requires the matching native qagame module', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const script = fs.readFileSync(path.join(ROOT, 'scripts', 'build-server-mod.sh'), 'utf8');
+    const dedicated = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
+    assert.match(pkg.scripts['build:server-mod'], /build-server-mod\.sh/);
+    assert.match(pkg.scripts.setup, /build:server-mod/);
+    assert.match(script, /--target qagame/);
+    assert.match(script, /qagame\.mp\.x86_64\.so/);
+    assert.match(dedicated, /assertServerMod/);
+    assert.match(dedicated, /SERVER_MOD_HASH/);
   });
 
   it('does not ship the old shared RCON password', () => {

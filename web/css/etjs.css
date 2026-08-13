@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Modern DOS 8x16";
+  src: url("/fonts/ModernDOS8x16.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+}
+
 html, body {
   width: 100%;
   height: 100%;
@@ -109,6 +117,69 @@ html, body {
   font-size: 1.05rem;
 }
 
+.advanced-settings {
+  margin-top: 0.9rem;
+  padding: 0.7rem 0.8rem 0.8rem;
+  border: 1px solid #534526;
+  background: rgba(6, 5, 4, 0.35);
+}
+
+.advanced-settings summary {
+  color: #c4b48a;
+  cursor: pointer;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.advanced-settings[open] summary {
+  margin-bottom: 0.8rem;
+}
+
+.advanced-settings select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid #7a6234;
+  background: #16110b;
+  color: #f3e6c4;
+  font-size: 0.95rem;
+}
+
+.dynamic-settings-row {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.8rem;
+}
+
+.advanced-settings .toggle-setting {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.advanced-settings .toggle-setting input {
+  width: auto;
+  margin: 0;
+  accent-color: #a78643;
+}
+
+.advanced-settings .fps-setting {
+  min-width: 7.5rem;
+}
+
+.advanced-settings .setting-help {
+  margin: 0.55rem 0 0;
+  color: #897958;
+  font-size: 0.76rem;
+}
+
 .gate-card button {
   margin-top: 1rem;
   width: 100%;
@@ -153,6 +224,49 @@ html, body {
   margin: 0;
   color: #8a7a55;
   font-size: 0.82rem;
+}
+
+.load-card {
+  width: min(52rem, 92vw);
+  padding-top: 1.35rem;
+}
+
+.load-card h1,
+.load-card #load-status,
+.load-card .load-detail {
+  font-family: "Modern DOS 8x16", "Liberation Mono", "DejaVu Sans Mono", Consolas, monospace;
+  font-synthesis: none;
+}
+
+.startup-console {
+  box-sizing: border-box;
+  width: 100%;
+  height: min(19rem, 42vh);
+  margin-top: 1rem;
+  padding: 0.7rem 0.8rem;
+  overflow: hidden auto;
+  border: 2px solid #8c969e;
+  background: #354b61;
+  color: #d8dadd;
+  box-shadow: inset 0 0 18px rgba(8, 17, 26, 0.24);
+  font: 400 16px/16px "Modern DOS 8x16", "Liberation Mono", "DejaVu Sans Mono", Consolas, monospace;
+  font-synthesis: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-color: #a8b0b6 #2b3e51;
+}
+
+.startup-console-line::before {
+  content: "] ";
+  color: #aeb7be;
+}
+
+.startup-console-line[data-level="warn"] {
+  color: #f1d492;
+}
+
+.startup-console-line[data-level="error"] {
+  color: #ffaaa0;
 }
 
 #viewport-frame {

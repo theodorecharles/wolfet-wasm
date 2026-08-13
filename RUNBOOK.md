@@ -6,14 +6,21 @@ The game should be **the actual game** in a browser: official paks, official MAI
 
 The visit path is always:
 
-1. Web name form (XP ET icon, **no music**)
-2. Download official paks (**no music**)
-3. Skippable company logos + menu music
-4. Official MAIN + music
-5. Click **JOIN GAME**
-6. Official connect/loading + music
-7. Spectator limbo → pick team + OK → 3D world stays
-8. WASD moves you, mouse1 fires, L opens limbo, Escape opens settings
+1. Web name form + optional Advanced graphics settings (XP ET icon, **no music**)
+2. Play opens the blue Modern DOS startup console and streams real engine logs
+3. Browser downloads official paks from this ETJS host (**no music**)
+4. Skippable company logos + menu music
+5. Official MAIN + music
+6. Click **JOIN GAME**
+7. Official connect/loading + music
+8. Spectator limbo → pick team + OK → 3D world stays
+9. WASD moves, mouse1 fires, F activates/picks up, T chats, V opens voice,
+   Tab shows scores, L opens limbo, and Escape opens settings
+
+The browser must never fetch from Splash Damage. At host startup the server
+checks its ignored local data and invokes the pinned, checksum-verifying Splash
+Damage fetcher only if it needs to provision or repair that cache. Browsers then
+receive the files from same-origin `/etmain/` and `/legacy/` URLs.
 
 Never inject `etjs_joingame` / `connect` to “see the world.” If the real sequence is black or hangs, that is the bug.
 
@@ -40,7 +47,7 @@ Four classes, in this order. Later classes are meaningless if you cannot get int
 
 | Order | Class | Done when |
 | --- | --- | --- |
-| 1 | **Startup** | Name → download → logos → MAIN → click JOIN → loading → limbo, no skip, no hang |
+| 1 | **Startup** | Name/settings → console → host download → logos → MAIN → JOIN → loading → limbo, no skip, no hang |
 | 2 | **Aspect** | Window resize: canvas + engine resolution = the window. No 4:3 bars, no skew, no orange strip |
 | 3 | **Graphics** | In-game 3D stays map geometry + lightmaps after you look around. No sky-blue holes |
 | 4 | **Input** | WASD changes origin, mouse1 fires, L toggles limbo, Escape opens settings, look does not wreck the picture |
@@ -58,12 +65,16 @@ Public: `https://wolfet.tedcharles.net/` (this laptop is only `:8088`; nginx is 
 
 **Loop:**
 
-1. Open the real page. Screenshot the name form (XP icon, silence).
-2. Play. Screenshot the download bar (still silence).
-3. Screenshot each logo, then MAIN (clouds, eagle, JOIN GAME). Confirm music.
-4. Click JOIN GAME. Screenshot loading + music, then limbo.
-5. If any step is black, ETL-on-black, highlight-without-click, or a hang, fix **that** step. Do not jump to connect.
-6. Repeat from step 1 until a cold visit walks the whole path.
+1. Open the real page. Screenshot the name form (XP icon, silence). Expand
+   Advanced and confirm profile, dynamic toggle, and 30/60/120 target persist.
+2. Click Play. Screenshot the desaturated-blue startup console: light-gray
+   Modern DOS text must be real initialization output, not a canned animation.
+3. Screenshot the download bar (still silence). Network requests must be
+   same-origin `/etmain/` or `/legacy/`, never `splashdamage.com`.
+4. Screenshot each logo, then MAIN (animated clouds, eagle, JOIN GAME). Confirm music.
+5. Click JOIN GAME. Screenshot loading + music, then limbo.
+6. If any step is black, ETL-on-black, highlight-without-click, or a hang, fix **that** step. Do not jump to connect.
+7. Repeat from step 1 until a cold visit walks the whole path.
 
 **Forbidden:** `Cbuf_AddText("connect…")`, `etjs_joingame` from Playwright, `Module.ccall` join. Those shots do not count.
 
@@ -117,11 +128,45 @@ A menu screenshot is not a graphics pass. A world shot taken after injecting con
 1. Start the real game into the match (or free spectator if spawn is still broken).
 2. Screenshot / log **WASD**: origin must change, not just `etjs_fwd=127`.
 3. Screenshot / log **mouse1**: `+attack` while in-world.
-4. Press **L**: limbo opens. Close it, press L again: it opens again.
-5. Press **Escape**: in-game settings (binds, crosshair). Change one bind, reload, it stuck.
-6. Look while **following**: the followed player’s head does not turn with your mouse.
-7. If only right-click (next spec) works, that is not “input done.”
-8. Fix the cause (catchers eating keys, binds never issued, lock stealing menu clicks, follow look). Start again. Repeat until all of the above work in one visit.
+4. Aim at a dropped Thompson and press **F** (`+activate`): it is picked up.
+5. Hold **Tab**: names and stats appear. Press **T** for chat and **V** for the
+   voice menu. Verify text entry and the debrief cursor both move normally.
+6. Press **L**: limbo opens. Close it, press L again: it opens again.
+7. Press **Escape**: in-game settings (binds, crosshair). Change one bind, reload, it stuck.
+8. Look while **following**: the followed player’s head does not turn with your mouse.
+9. Die and respawn: look works without first firing and retains the full pitch range.
+10. If only right-click (next spec) works, that is not “input done.”
+11. Fix the cause (catchers eating keys, binds never issued, lock stealing menu clicks, follow look). Start again. Repeat until all of the above work in one visit.
+
+---
+
+### 5. HUD, entities, and overlays
+
+**Wanted:** the stock HUD is aligned with the 3D view at every aspect ratio. The
+crosshair has transparent edges and sits at the real view center; player labels
+sit on their players. Tab scoreboard and compass minimap are present. Scope,
+binocular, and mortar masks fill the correct window axis without stretching.
+
+In one spawned and one follow-spectator pass, confirm players, enemies, radio
+equipment, dropped weapons, foliage edges, mines, dynamite, construction
+materials, mounted guns, turrets, and other deployables are visible. Follow a bot
+long enough to judge interpolation. Resize while the HUD is visible and repeat
+the center/label/overlay checks after the resize.
+
+---
+
+### 6. Quality governor
+
+Start once with each graphics profile and inspect `window.__etjsQuality` when
+debugging. Maximum is the ceiling and begins with full-resolution textures,
+trilinear/anisotropic filtering, detailed geometry, dynamic lights, shadows,
+atmosphere, and full sky. Dynamic quality may step only live settings down and
+back up; it never raises quality above the selected profile and never restarts
+the renderer during a match.
+
+Test the 30, 60, and 120 targets. These are minimum performance goals rather
+than caps. Use a high-refresh display for meaningful 120 FPS acceptance. A
+source test or cvar dump proves configuration, not sustained visual performance.
 
 ---
 
@@ -132,15 +177,24 @@ A menu screenshot is not a graphics pass. A world shot taken after injecting con
 npm install
 npm run setup
 
-# already running is fine
-ETJS_KEEP_DED=1 npm start    # :8088 + dedicated 27961
+# npm start also validates/provisions missing server-side game data
+ETJS_KEEP_DED=1 npm start    # HTTP :8088 + dedicated UDP 27961
 
-# after client/ui/cgame/renderer edits — do not reconfigure cmake
+# rebuild each owned layer after changing it
+npm run build:pak
+npm run build:server-mod
 source /path/to/emsdk/emsdk_env.sh
 npm run build:web
 ```
 
 Then hard-refresh the browser.
+
+Host acceptance must also check the authoritative process, not only config
+files: `/health` returns 200, `/status` reports Oasis with 12 total players,
+the container log shows the mounted `qagame.mp.x86_64.so` loaded successfully,
+and RCON reports `g_speed 400`, `g_friendlyFire 0`, `g_forcerespawn 1`, and both
+team reinforcement timers at `1000`. Leave the supervisor running for several
+intervals; an unchanged roster should not print a line every 1.5 seconds.
 
 Playwright (real path only): `npm run test:e2e`
 In-repo tests: `npm test`
@@ -150,6 +204,12 @@ Tests do not replace the screenshot loop.
 
 ## Definition of done (one visit)
 
-A person (or Playwright acting as a person) can: enter a name → see logos → click JOIN GAME → pick a team → look around a solid lit map → walk with WASD → fire → open limbo with L → open settings with Escape. Resize the window at the menu and in-game; nothing skews or grows an orange slab.
+A person can: enter a name, choose/persist graphics settings, see the real startup
+console, receive data only from the ETJS host, watch logos, click JOIN GAME, pick
+a team, and look around a solid lit map. In the same visit they can move/fire,
+pick up with F, chat with T, use voice with V, see scores with Tab, use limbo and
+settings, see every entity/HUD/overlay class above, respawn with normal mouse
+look, and resize without moving the crosshair or projected labels away from the
+3D view. The chosen dynamic target responds without a renderer restart.
 
 Until that happens, keep looping the class that is still wrong.

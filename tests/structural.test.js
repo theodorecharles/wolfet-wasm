@@ -15,7 +15,7 @@ const TR_WORLD = path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_world.c');
 const TR_BACKEND = path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_backend.c');
 
 function extractFn(src, name) {
-  const startRe = new RegExp('(?:void|static void)\\s+' + name + '\\s*\\(');
+  const startRe = new RegExp('(?:void|static void|const void \\*)\\s*' + name + '\\s*\\(');
   const m = src.match(startRe);
   assert.ok(m, name + ' must exist');
   let i = m.index + m[0].length;
@@ -153,12 +153,107 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(fn, /while\s*\(\s*i\s*\+\s*2\s*<\s*numIndexes/);
   });
 
+  it('keeps large world UVs at fragment high precision', () => {
+    const es2 = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_es2.c'), 'utf8');
+    assert.match(es2, /precision highp float/);
+    assert.match(es2, /varying highp vec2 v_uv/);
+    assert.match(es2, /varying highp vec2 v_uv0/);
+    assert.match(es2, /varying highp vec2 v_uv1/);
+    assert.doesNotMatch(es2, /precision mediump float/);
+  });
+
+  it('keeps full-resolution official textures in the browser renderer', () => {
+    const image = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_image.c'), 'utf8');
+    assert.doesNotMatch(image, /scaled_width > 128 \|\| scaled_height > 128/);
+  });
+
+  it('recomputes HUD anchors when the browser viewport aspect changes', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
+    const hud = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw_hud.c'), 'utf8');
+    assert.match(view, /vidWidth != ow \|\| cgs\.glconfig\.vidHeight != oh[\s\S]*CG_InvalidateHudPositions\(\)/);
+    assert.match(hud, /void CG_InvalidateHudPositions\(void\)[\s\S]*hud->computed = qfalse/);
+    assert.match(hud, /hud->components\[j\]->computed = qfalse/);
+  });
+
+  it('runs HUD polygons, rotation, gradients, and menu clouds through ET shader stages', () => {
+    const backend = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_backend.c'), 'utf8');
+    const shade = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_shade.c'), 'utf8');
+    const helper = extractFn(backend, 'RB_DrawPolyShaderES2');
+    assert.match(helper, /RB_BeginSurface/);
+    assert.match(helper, /RB_EndSurface/);
+    assert.match(extractFn(backend, 'RB_Draw2dPolys'), /RB_DrawPolyShaderES2/);
+    assert.match(extractFn(backend, 'RB_RotatedPic'), /RB_DrawPolyShaderES2/);
+    assert.match(extractFn(backend, 'RB_StretchPicGradient'), /RB_DrawPolyShaderES2/);
+    assert.match(shade, /ComputeTexCoords\(pStage\)/);
+    assert.match(shade, /R_BindAnimatedImage\(&pStage->bundle\[0\]\)/);
+  });
+
+  it('orients mortar shells from gravity-adjusted trajectory velocity', () => {
+    const ents = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_ents.c'), 'utf8');
+    const missile = extractFn(ents, 'CG_Missile');
+    assert.match(missile, /type & WEAPON_TYPE_MORTAR/);
+    assert.match(missile, /BG_EvaluateTrajectoryDelta\(&s1->pos, cg.time, delta/);
+    assert.match(missile, /VectorNormalize2\(delta, ent\.axis\[0\]\)/);
+    assert.doesNotMatch(missile, /CHECKBITWISE[^\n]*WEAPON_TYPE_MORTAR \| WEAPON_TYPE_SET/);
+  });
+
   it('registers rshook icebot and ethook as the same console toggle', () => {
     const main = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_main.c'), 'utf8');
     assert.match(main, /Cmd_AddCommand\("rshook"/);
     assert.match(main, /Cmd_AddCommand\("icebot"/);
     assert.match(main, /Cmd_AddCommand\("ethook"/);
     assert.match(main, /CL_RsHook_f/);
+  });
+
+  it('rshook validates and ranks visible nearby enemy heads in server-relative command space', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
+    assert.match(view, /headRefEnt\.origin/);
+    assert.match(view, /headRefEnt\.axis\[2\]/);
+    assert.match(view, /currentValid/);
+    assert.match(view, /ETJS_RsTargetVisible/);
+    assert.match(view, /if \(!ETJS_RsTargetVisible\(i, shooterOrigin, aimPoint\)\)[\s\S]*?continue/);
+    assert.match(view, /score = len/);
+    assert.match(view, /trap_Cvar_Set\("etjs_target", "-1"\)/);
+    assert.match(view, /Q_fabs\(AngleNormalize180\(ang\[PITCH\]\)\) <= 70\.f/);
+    assert.match(view, /Q_fabs\(AngleDelta\(ang\[PITCH\]/);
+    assert.match(view, /cgs\.clientinfo\[i\]\.team == localTeam/);
+    assert.match(view, /cent->currentState\.teamNum == localTeam/);
+    assert.match(view, /enemyTeam/);
+    assert.match(view, /ANGLE2SHORT\(ang\[YAW\]\) - cg\.predictedPlayerState\.delta_angles\[YAW\]/);
+    assert.match(view, /VectorSubtract\(aimPoint, shooterOrigin, to\)/);
+    const players = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_players.c'), 'utf8');
+    assert.match(players, /es->teamNum != cg\.snap->ps\.teamNum/);
+    assert.match(players, /customShader = cgs\.media\.shoutcastLandmineShader/);
+    assert.match(players, /visible[\s\S]*?shaderRGBA\[2\]\s*=\s*255/);
+    assert.match(players, /RF_DEPTHHACK[\s\S]*?shaderRGBA\[0\]\s*=\s*255/);
+    const ents = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_ents.c'), 'utf8');
+    assert.match(ents, /ETJS_RevealEnemyDeployable/);
+    assert.match(ents, /WP_LANDMINE[\s\S]*?WP_DYNAMITE[\s\S]*?WP_SATCHEL/);
+    assert.match(ents, /ETJS_AddDeployableHookShell/);
+    assert.match(ents, /customShader\s*=\s*cgs\.media\.shoutcastLandmineShader/);
+  });
+
+  it('releases browser pointer lock and routes debrief cursor input', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
+    const draw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_newDraw.c'), 'utf8');
+    const input = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_input.c'), 'utf8');
+    const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    assert.match(view, /trap_Cvar_Set\("etjs_intermission"/);
+    assert.match(client, /cvarInt\('etjs_intermission'\)/);
+    assert.match(client, /document\.exitPointerLock\(\)/);
+    assert.match(draw, /PM_INTERMISSION[\s\S]*?CG_Debriefing_MouseEvent\(x, y\)/);
+    assert.match(input, /KEYCATCH_CGAME[\s\S]*?CG_MOUSE_EVENT/);
+    assert.match(client, /function pumpMove\(\)[\s\S]*?syncCursor\(\)/);
+  });
+
+  it('keeps death-camera freelook and limits pitch only for automated aim', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
+    const input = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_input.c'), 'utf8');
+    assert.match(view, /etjsDeadFreeLook/);
+    assert.match(view, /PM_NORMAL[\s\S]*?STAT_HEALTH\] > 0/);
+    assert.match(input, /viewangles\[PITCH\] = AngleNormalize180\(cl\.viewangles\[PITCH\]\)/);
+    assert.match(input, /worldPitch\) <= 70\.f/);
+    assert.match(input, /Cvar_Set\("etjs_target", "-1"\)/);
   });
 
   it('R_AddEntitySurfaces walks entities and adds MD3 surfaces', () => {
@@ -184,6 +279,7 @@ describe('no overlay theater in the shipped draw path', () => {
     const begin = extractFn(es2, 'R_ES2_BeginView');
     assert.match(begin, /glEnable\s*\(\s*GL_DEPTH_TEST\s*\)/);
     assert.match(begin, /glDepthMask\s*\(\s*1\s*\)/);
+    assert.match(begin, /glDisable\s*\(\s*GL_BLEND\s*\)/);
     assert.match(begin, /GLS_DEFAULT/);
     const world = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_world.c'), 'utf8');
     const rec = extractFn(world, 'R_RecursiveWorldNode');
@@ -196,6 +292,41 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(drawSplash, /return;/);
     const shade = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_shade.c'), 'utf8');
     assert.match(shade, /isLightmap \|\| pStage->bundle\[1\]\.isLightmap/);
+  });
+
+  it('does not draw the legacy RECORD marker in the browser HUD', () => {
+    const hud = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw_hud.c'), 'utf8');
+    assert.match(hud, /CG_DrawDemoMessage[\s\S]*?#ifdef __EMSCRIPTEN__[\s\S]*?return;[\s\S]*?#endif/);
+  });
+
+  it('draws the stock ET compass minimap in the browser HUD', () => {
+    const hud = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw_hud.c'), 'utf8');
+    const fn = extractFn(hud, 'CG_DrawNewCompass');
+    assert.match(fn, /CG_DrawAutoMap\s*\(/);
+    assert.match(fn, /comp->location\.x/);
+    assert.doesNotMatch(fn, /#ifdef\s+__EMSCRIPTEN__[\s\S]*?return\s*;/);
+  });
+
+  it('ships the ETJS fun movement rules in shared prediction and server config', () => {
+    const pmove = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'bg_pmove.c'), 'utf8');
+    const bg = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'bg_public.h'), 'utf8');
+    const dedicated = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
+    assert.match(bg, /doubleJumped/);
+    assert.match(pmove, /PM_CheckDoubleJump/);
+    assert.match(pmove, /doubleJumped\s*=\s*qfalse/);
+    assert.match(pmove, /sprintTime\s*=\s*SPRINTTIME;[\s\S]*?return;/);
+    assert.match(dedicated, /'g_speed', '400'/);
+  });
+
+  it('ships original ETJS multikill announcements', () => {
+    const event = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_event.c'), 'utf8');
+    const main = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_main.c'), 'utf8');
+    assert.match(event, /etjsMultiKillCount/);
+    assert.match(event, /cg\.time - etjsLastKillTime <= 4000/);
+    assert.match(event, /ci->team != ca->team/);
+    assert.match(main, /sound\/announcer\/doublekill\.wav/);
+    assert.match(main, /sound\/announcer\/ultrakill\.wav/);
+    assert.ok(fs.existsSync(path.join(ROOT, 'assets', 'etjs', 'sound', 'announcer', 'doublekill.wav')));
   });
 
   it('does not hide the load overlay on renderer/UI-init prints', () => {
@@ -216,6 +347,39 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_menus.txt'), 'utf8'), /etjs_official\.menu/);
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_official.menu'), 'utf8'), /ui\/assets\/et_clouds/);
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_official.menu'), 'utf8'), /ui\/assets\/et_logo_huge/);
+  });
+
+  it('streams real engine startup output into the loading console', () => {
+    const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    const html = fs.readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8');
+    assert.match(html, /id="startup-console"[^>]*role="log"/);
+    assert.match(page, /function appendStartupLine/);
+    assert.match(page, /print:\s*function \(text\)[\s\S]*?onEngineLine\(text, 'info'\)/);
+    assert.match(page, /printErr:\s*function \(text\)[\s\S]*?onEngineLine\(s,/);
+    assert.match(page, /MAX_STARTUP_LINES\s*=\s*180/);
+    assert.match(page, /\\u001b\\\[/);
+    assert.match(html, /rel="preload"[^>]*ModernDOS8x16\.ttf/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'web', 'css', 'etjs.css'), 'utf8'),
+      /font:\s*400 16px\/16px "Modern DOS 8x16"/);
+  });
+
+  it('gives the browser UI enough bounded menu memory and preserves refresh shortcuts', () => {
+    const shared = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_shared.c'), 'utf8');
+    const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    assert.match(shared, /defined\(__EMSCRIPTEN__\).*MEM_POOL_SIZE \(16 \* 1024 \* 1024\)/s);
+    assert.match(shared, /MEM_POOL_SIZE - allocPoint/);
+    assert.match(page, /ev\.metaKey \|\| \(ev\.ctrlKey/);
+    assert.match(page, /Ctrl\+Shift\+R/);
+  });
+
+  it('keeps browser diagnostics out of the normal in-game console', () => {
+    const ui = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_main.c'), 'utf8');
+    const parse = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_parse.c'), 'utf8');
+    const favs = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_ui.c'), 'utf8');
+    assert.doesNotMatch(ui, /trap_Print\("ETJS UI_Init/);
+    assert.match(ui, /Com_DPrintf\("ETJS UI_Init/);
+    assert.match(parse, /Com_DPrintf\("ETJS CL_ParseSnapshot begin/);
+    assert.match(favs, /no server browser/);
   });
 
   it('follow look is not applied to the followed player and join uses the in-game command', () => {
@@ -298,6 +462,7 @@ describe('no overlay theater in the shipped draw path', () => {
   it('hosts the game on 8088 with /ws and a remote-nginx snippet (no nginx on this box)', () => {
     const server = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
     assert.match(server, /ETJS_HTTP_PORT \|\| 8088/);
+    assert.match(server, /'\.ttf': 'font\/ttf'/);
     assert.match(server, /wsPath: '\/ws'/);
     assert.match(server, /connect: '127\.0\.0\.1:' \+ DED_PORT/);
     const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');

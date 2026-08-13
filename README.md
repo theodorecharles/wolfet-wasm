@@ -1,10 +1,10 @@
 # ETJS
 
-ETJS is an in-progress port of **Wolfenstein: Enemy Territory** to the browser. It combines a WebAssembly/WebGL build of [ET: Legacy](https://github.com/etlegacy/etlegacy), browser behavior learned from [QuakeJS](https://github.com/inolen/quakejs), the original Wolf: ET data downloaded by each developer from Splash Damage, and a Dockerized ET: Legacy dedicated server.
+ETJS is an in-progress port of **Wolfenstein: Enemy Territory** to the browser. It combines a WebAssembly/WebGL build of [ET: Legacy](https://github.com/etlegacy/etlegacy), browser behavior learned from [QuakeJS](https://github.com/inolen/quakejs), server-side provisioning of the original Wolf: ET data from Splash Damage, and a Dockerized ET: Legacy dedicated server.
 
 The intended product is the actual ET visit path in a browser: enter a name, download the official data, watch the logos, use the official main menu, click **JOIN GAME**, choose a team in limbo, and play one shared 12-slot Objective match. Omni-Bot fills every slot not occupied by a human. There is intentionally no server browser or Host Game flow.
 
-This is a development snapshot, not a finished game. The browser reaches the shared match, but spawning, camera/rendering stability, movement, shooting, limbo, and in-game menu behavior still have known failures. See [KNOWN_ISSUES.md](KNOWN_ISSUES.md) for the current inventory and [RUNBOOK.md](RUNBOOK.md) for the required screenshot-driven debugging loop.
+The core browser match is implemented and playable. The latest rendering, HUD, input, rshook, and adaptive-quality changes still need the fresh browser acceptance pass listed in [KNOWN_ISSUES.md](KNOWN_ISSUES.md). [RUNBOOK.md](RUNBOOK.md) is the authoritative validation procedure.
 
 ## Repository boundary
 
@@ -21,11 +21,11 @@ The repository contains ETJS-owned browser/server code, tests, build glue, runti
 
 - Linux
 - Node.js 18 or newer
-- Git, a C compiler, curl, unzip, and ImageMagick
+- Git, CMake, Ninja, a C/C++ compiler, curl, unzip, and ImageMagick
 - Docker with permission to pull and run images
 - Emscripten/emsdk and Ninja when rebuilding the browser client
 
-The initial game-data download is about 276 MB. The browser later transfers roughly 262 MB on a cold visit and caches PK3s in IndexedDB.
+The host's initial game-data provision is about 276 MB. A browser later transfers roughly 262 MB from the ETJS host on a cold visit and caches PK3s in IndexedDB. Browsers never download directly from Splash Damage.
 
 ## Setup
 
@@ -35,13 +35,20 @@ npm run playwright:install
 npm run setup
 ```
 
-`npm run setup` does three things:
+`npm run setup` does five things:
 
 1. clones the pinned ET: Legacy source and applies the ETJS patch;
-2. downloads the official Linux game archive from [Splash Damage](https://www.splashdamage.com/games/wolfenstein-enemy-territory/), verifies fixed SHA-256 checksums, and extracts only the required data and web assets;
-3. extracts the matching ET: Legacy data PK3 from the pinned dedicated-server image and builds the native Huffman helper.
+2. downloads the official Linux game archive on the host from [Splash Damage](https://www.splashdamage.com/games/wolfenstein-enemy-territory/), verifies fixed SHA-256 checksums, and extracts only the required data and web assets;
+3. extracts the matching ET: Legacy data PK3 from the pinned dedicated-server image and builds the native Huffman helper;
+4. packages ETJS-owned announcer assets separately from the original game data;
+5. builds the native ETJS qagame module used by the dedicated server, so browser prediction and authoritative movement use the same rules.
 
 The original game data remains ignored and local. Downloading and using it is subject to the Wolfenstein: Enemy Territory license included in Splash Damage's installer.
+
+`npm start` also runs the checksum-based data provisioner before opening the
+HTTP service. Missing or invalid official data is fetched on the server; valid
+cached files are reused. The web client only sees same-origin paths such as
+`/etmain/pak0.pk3` and `/legacy/legacy_v2.84.0.pk3`.
 
 Activate Emscripten, then build the browser client:
 
@@ -65,6 +72,11 @@ ETJS_KEEP_DED=1 npm start
 
 Open <http://127.0.0.1:8088/>. The server also exposes `/health`, `/status`, and the `/ws` WebSocket-to-UDP game proxy. The dedicated server listens on UDP 27961 by default.
 
+Before Play, the name gate's **Advanced settings** selects a Maximum, Balanced,
+Performance, or Minimum graphics ceiling. Dynamic quality can be disabled or
+assigned a 30, 60, or 120 FPS target. The target is a quality-governor goal,
+not a frame-rate cap; 120 FPS requires a high-refresh browser/display.
+
 The RCON password is read from `ETJS_RCON` when set. Otherwise ETJS creates a random local password in the ignored `runtime/.rcon-password` file. Do not expose that file or commit runtime logs.
 
 Useful commands:
@@ -73,6 +85,8 @@ Useful commands:
 npm run setup:data       # revalidate/fetch ignored game and ETL data
 npm run setup:engine     # prepare or verify the patched ET: Legacy checkout
 npm run build:tools      # rebuild tools/huffpack
+npm run build:pak        # package ETJS-owned sounds/data
+npm run build:server-mod # rebuild/deploy native qagame movement rules
 npm run build:web        # rebuild etjs.js + etjs.wasm
 npm run test:e2e
 ```
@@ -84,9 +98,11 @@ Automated tests are guardrails, not acceptance evidence. A fix is complete only 
 ```text
 browser
   HTML name gate + asset cache + input bridge
+    -> same-origin /etmain and /legacy data served by Node
     -> patched ET: Legacy client (WebAssembly + WebGL 2)
     -> WebSocket /ws
 Node host
+    -> checksum-based provisioning from Splash Damage when local data is absent
     -> one UDP socket per browser client
     -> ET protocol UDP 27961
 Docker

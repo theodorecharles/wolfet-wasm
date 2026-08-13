@@ -288,7 +288,7 @@ index b9bcb5864..0c7f08617 100644
  		target_link_libraries(os_libraries INTERFACE  m ${CMAKE_DL_LIBS} rt pthread)
  		set(LIB_SUFFIX ".mp.")
 diff --git a/cmake/ETLSetupFeatures.cmake b/cmake/ETLSetupFeatures.cmake
-index 6ef1e2069..0a5a86efe 100644
+index 6ef1e2069..025a7a105 100644
 --- a/cmake/ETLSetupFeatures.cmake
 +++ b/cmake/ETLSetupFeatures.cmake
 @@ -10,7 +10,7 @@ set(SRC "${PROJECT_SOURCE_DIR}/src")
@@ -363,8 +363,8 @@ index 6ef1e2069..0a5a86efe 100644
  endif()
  
 -if(NOT BUNDLED_CJSON)
-+if(EMSCRIPTEN)
-+	# vendored cJSON
++if(EMSCRIPTEN OR EXISTS "${CMAKE_SOURCE_DIR}/../third_party/cjson/cJSON.c")
++	# ETJS vendored cJSON (Web client and the matching native qagame module).
 +	if(NOT TARGET etjs_cjson)
 +		set(_etjs_cjson "${CMAKE_SOURCE_DIR}/../third_party/cjson")
 +		if(NOT EXISTS "${_etjs_cjson}/cJSON.c")
@@ -427,10 +427,10 @@ index 0131569f4..9017cf66e 100644
  		wm_set_round_timelimit	30
  
 diff --git a/src/botlib/l_script.c b/src/botlib/l_script.c
-index e8e0e4aa9..77f3c1dc4 100644
+index e8e0e4aa9..1ac781928 100644
 --- a/src/botlib/l_script.c
 +++ b/src/botlib/l_script.c
-@@ -1513,9 +1513,14 @@ script_t *LoadScriptFile(const char *filename)
+@@ -1513,10 +1513,11 @@ script_t *LoadScriptFile(const char *filename)
  	length = botimport.FS_FOpenFile(pathname, &fp, FS_READ);
  	if (!fp)
  	{
@@ -440,12 +440,10 @@ index e8e0e4aa9..77f3c1dc4 100644
 +#endif
  		return NULL;
  	}
-+#ifdef __EMSCRIPTEN__
-+	botimport.Print(PRT_MESSAGE, "ETJS LoadScriptFile %s len=%d\n", pathname, length);
-+#endif
- 
+-
  	buffer = GetClearedMemory(sizeof(script_t) + (unsigned int)length + 1);
  	script = (script_t *) buffer;
+ 	Com_Memset(script, 0, sizeof(script_t));
 diff --git a/src/cgame/cg_commandmap.c b/src/cgame/cg_commandmap.c
 index 954ed8ba4..87bcd22b9 100644
 --- a/src/cgame/cg_commandmap.c
@@ -462,10 +460,30 @@ index 954ed8ba4..87bcd22b9 100644
  	expanded = qfalse;
  
 diff --git a/src/cgame/cg_consolecmds.c b/src/cgame/cg_consolecmds.c
-index ca44a94d1..6406b2221 100644
+index ca44a94d1..89fb8b5de 100644
 --- a/src/cgame/cg_consolecmds.c
 +++ b/src/cgame/cg_consolecmds.c
-@@ -3942,11 +3942,13 @@ void CG_InitConsoleCommands(void)
+@@ -300,6 +300,9 @@ void CG_objectivesUp_f(void)
+  */
+ void CG_ScoresDown_f(void)
+ {
++#ifdef __EMSCRIPTEN__
++	trap_Cvar_Set("etjs_scores", "1");
++#endif
+ #if defined(FEATURE_RATING)
+ 	if (
+ 		cgs.skillRating
+@@ -387,6 +390,9 @@ void CG_ScoresDown_f(void)
+  */
+ void CG_ScoresUp_f(void)
+ {
++#ifdef __EMSCRIPTEN__
++	trap_Cvar_Set("etjs_scores", "0");
++#endif
+ 	if (cg.showScores)
+ 	{
+ 		cg.showScores    = qfalse;
+@@ -3942,11 +3948,13 @@ void CG_InitConsoleCommands(void)
  	// game console commands
  	CG_AddGameConsoleCommand();
  
@@ -535,75 +553,279 @@ index a238bea96..97da1e6ed 100644
  	if (!(cg.limboEndCinematicTime > cg.time && cg.showGameView))
  	{
 diff --git a/src/cgame/cg_draw_hud.c b/src/cgame/cg_draw_hud.c
-index 259f96f5c..01ef1d79f 100644
+index 259f96f5c..4501ca744 100644
 --- a/src/cgame/cg_draw_hud.c
 +++ b/src/cgame/cg_draw_hud.c
-@@ -2802,13 +2802,25 @@ static void CG_CompasMoveLocation(float *basex, float *basey, float basew, qbool
-  */
- void CG_DrawNewCompass(hudComponent_t *comp)
- {
--	float      basex           = comp->location.x;
--	float      basey           = comp->location.y;
--	float      basew           = comp->location.w;
--	float      baseh           = comp->location.h;
--	float      expandedMapFrac = cg_commandMapTime.value / 250.f;
-+	float      basex;
-+	float      basey;
-+	float      basew;
-+	float      baseh;
-+	float      expandedMapFrac;
- 	snapshot_t *snap;
--	qboolean   drawExpandedAutoMap = qfalse;
-+	qboolean   drawExpandedAutoMap;
-+#ifdef __EMSCRIPTEN__
-+	(void)comp;
-+	(void)basex; (void)basey; (void)basew; (void)baseh;
-+	(void)expandedMapFrac; (void)snap; (void)drawExpandedAutoMap;
-+	return;
-+#endif
-+	basex              = comp->location.x;
-+	basey              = comp->location.y;
-+	basew              = comp->location.w;
-+	baseh              = comp->location.h;
-+	expandedMapFrac    = cg_commandMapTime.value / 250.f;
-+	drawExpandedAutoMap = qfalse;
+@@ -2184,6 +2184,12 @@ void CG_DrawDemoMessage(hudComponent_t *comp)
+ 	char demostatus[128];
+ 	char wavestatus[128];
  
- 	if (cg.nextSnap && !cg.nextFrameTeleport && !cg.thisFrameTeleport)
- 	{
-diff --git a/src/cgame/cg_drawtools.c b/src/cgame/cg_drawtools.c
-index df6f257de..30bedca85 100644
---- a/src/cgame/cg_drawtools.c
-+++ b/src/cgame/cg_drawtools.c
-@@ -44,6 +44,19 @@
-  */
- void CG_AdjustFrom640(float *x, float *y, float *w, float *h)
- {
 +#ifdef __EMSCRIPTEN__
-+	/* Uniform 4:3 virtual scale, letterboxed in the canvas. */
-+	{
-+		float scale = cgs.screenYScale > 0.f ? cgs.screenYScale : 1.f;
-+		float xoff  = ((float)cgs.glconfig.vidWidth - 640.f * scale) * 0.5f;
-+
-+		*x = *x * scale + xoff;
-+		*y = *y * scale;
-+		*w = *w * scale;
-+		*h = *h * scale;
-+	}
++	/* ETJS does not expose demo/wave recording.  The legacy HUD preview state can
++	 * otherwise leave a misleading red RECORD marker permanently on screen. */
 +	return;
-+#else
- 	// scale for screen sizes
- 	*x *= cgs.screenXScale;
- 	*y *= cgs.screenYScale;
-@@ -66,6 +79,7 @@ void CG_AdjustFrom640(float *x, float *y, float *w, float *h)
- 		*w *= 0.78f;
- 		*h *= 0.78f;
- 	}
 +#endif
++
+ 	if (!cl_demorecording.integer && !cl_waverecording.integer && !cg.demoPlayback && !cg.generatingNoiseHud)
+ 	{
+ 		return;
+@@ -4451,6 +4457,32 @@ void CG_ComputeComponentPositions(hudStucture_t *hud)
+ 	hud->computed = qtrue;
  }
  
- /**
++/**
++ * @brief Invalidate cached widescreen anchors after a live viewport resize.
++ */
++void CG_InvalidateHudPositions(void)
++{
++	unsigned int i, j;
++
++	for (i = 0; i < hudData.count; i++)
++	{
++		hudStucture_t *hud = hudData.list[i];
++
++		if (!hud)
++		{
++			continue;
++		}
++		hud->computed = qfalse;
++		for (j = 0; j < HUD_COMPONENTS_NUM; j++)
++		{
++			if (hud->components[j])
++			{
++				hud->components[j]->computed = qfalse;
++			}
++		}
++	}
++}
++
+ static ID_INLINE qboolean CG_Hud_HasParent(hudComponent_t *comp, hudComponent_t *has)
+ {
+ 	hudComponent_t *tmp = comp;
+diff --git a/src/cgame/cg_ents.c b/src/cgame/cg_ents.c
+index a9639bb6c..8075c6879 100644
+--- a/src/cgame/cg_ents.c
++++ b/src/cgame/cg_ents.c
+@@ -1231,6 +1231,69 @@ static qboolean CG_LerpRifleGrenadeDir(centity_t *cent, vec3_t outDir)
+ 	return qtrue;
+ }
+ 
++#ifdef __EMSCRIPTEN__
++static qboolean ETJS_IsHookDeployable(const entityState_t *state)
++{
++	return state->weapon == WP_LANDMINE || state->weapon == WP_DYNAMITE ||
++	       state->weapon == WP_SATCHEL;
++}
++
++static qboolean ETJS_RevealEnemyDeployable(const entityState_t *state)
++{
++	int localTeam;
++
++	if (!cg_rshook.integer || !cg.snap || !ETJS_IsHookDeployable(state))
++	{
++		return qfalse;
++	}
++	localTeam = cg.snap->ps.teamNum;
++	if (localTeam != TEAM_AXIS && localTeam != TEAM_ALLIES)
++	{
++		localTeam = cgs.clientinfo[cg.snap->ps.clientNum].team;
++	}
++	return (state->teamNum == TEAM_AXIS || state->teamNum == TEAM_ALLIES) &&
++	       state->teamNum != localTeam;
++}
++
++static void ETJS_AddDeployableHookShell(refEntity_t *ent, centity_t *cent)
++{
++	refEntity_t shell;
++	trace_t     trace;
++	qboolean    visible;
++
++	if (!ETJS_RevealEnemyDeployable(&cent->currentState) ||
++	    !cgs.media.shoutcastLandmineShader)
++	{
++		return;
++	}
++
++	CG_Trace(&trace, cg.refdef.vieworg, NULL, NULL, ent->origin,
++	         cg.snap->ps.clientNum, CONTENTS_SOLID);
++	visible = trace.fraction > 0.98f || trace.entityNum == cent->currentState.number;
++
++	shell              = *ent;
++	shell.customSkin    = 0;
++	shell.customShader  = cgs.media.shoutcastLandmineShader;
++	shell.renderfx     |= RF_NOSHADOW;
++	shell.shaderRGBA[3] = 230;
++	if (visible)
++	{
++		shell.renderfx     &= ~RF_DEPTHHACK;
++		shell.shaderRGBA[0] = 48;
++		shell.shaderRGBA[1] = 128;
++		shell.shaderRGBA[2] = 255;
++	}
++	else
++	{
++		shell.renderfx     |= RF_DEPTHHACK;
++		shell.shaderRGBA[0] = 255;
++		shell.shaderRGBA[1] = 48;
++		shell.shaderRGBA[2] = 48;
++	}
++	trap_R_AddRefEntityToScene(&shell);
++}
++#endif
++
+ static void CG_Missile(centity_t *cent)
+ {
+ 	refEntity_t        ent;
+@@ -1382,6 +1445,9 @@ static void CG_Missile(centity_t *cent)
+ 		// shoutcasters can see armed landmines
+ 		if (cgs.clientinfo[cg.clientNum].team == TEAM_SPECTATOR && !cgs.clientinfo[cg.clientNum].shoutcaster)
+ 		{
++#ifdef __EMSCRIPTEN__
++			if (!ETJS_RevealEnemyDeployable(&cent->currentState))
++#endif
+ 			return;
+ 		}
+ 
+@@ -1421,6 +1487,9 @@ static void CG_Missile(centity_t *cent)
+ 
+ 						if (distSquared > Square(256))
+ 						{
++#ifdef __EMSCRIPTEN__
++							if (!ETJS_RevealEnemyDeployable(&cent->currentState))
++#endif
+ 							return;
+ 						}
+ 						else
+@@ -1430,6 +1499,9 @@ static void CG_Missile(centity_t *cent)
+ 					}
+ 					else
+ 					{
++#ifdef __EMSCRIPTEN__
++						if (!ETJS_RevealEnemyDeployable(&cent->currentState))
++#endif
+ 						return;
+ 					}
+ 				}
+@@ -1457,27 +1529,22 @@ static void CG_Missile(centity_t *cent)
+ 		}
+ 	}
+ 
+-	// convert direction of travel into axis
+-	// reverted to vanilla behaviour
+-	// FIXME: check FEATURE_EDV weapon cam (see else condition below)
+-	if (/*GetWeaponTableData(cent->currentState.weapon)->type & (WEAPON_TYPE_RIFLENADE | WEAPON_TYPE_PANZER | WEAPON_TYPE_GRENADE)
+-	    &&*/(CHECKBITWISE(GetWeaponTableData(cent->currentState.weapon)->type, WEAPON_TYPE_MORTAR | WEAPON_TYPE_SET)
+-	     || cent->currentState.weapon == WP_MAPMORTAR /*|| cent->currentState.weapon == WP_SMOKE_MARKER
+-	        || cent->currentState.weapon == WP_SMOKE_BOMB || cent->currentState.weapon == WP_DYNAMITE*/))
++	// Convert mortar direction of travel into the model's forward axis.  The
++	// old all-bits MORTAR|SET test missed non-set mortar entity variants, and
++	// differencing two rendered origins often collapsed to an upward fallback.
++	// Trajectory velocity is authoritative and includes the current gravity arc.
++	if ((GetWeaponTableData(cent->currentState.weapon)->type & WEAPON_TYPE_MORTAR)
++	    || cent->currentState.weapon == WP_MAPMORTAR)
+ 	{
+ 		vec3_t delta;
+ 
+-		if (VectorCompare(cent->rawOrigin, vec3_origin))
+-		{
+-			VectorSubtract(cent->lerpOrigin, s1->pos.trBase, delta);
+-			VectorCopy(cent->lerpOrigin, cent->rawOrigin);
+-		}
+-		else
++		BG_EvaluateTrajectoryDelta(&s1->pos, cg.time, delta, qfalse,
++		                           cent->currentState.effect2Time);
++		if (VectorNormalize2(delta, ent.axis[0]) == 0.f)
+ 		{
+-			VectorSubtract(cent->lerpOrigin, cent->rawOrigin, delta);
+-			if (!VectorCompare(cent->lerpOrigin, cent->rawOrigin))
++			if (VectorNormalize2(s1->pos.trDelta, ent.axis[0]) == 0.f)
+ 			{
+-				VectorCopy(cent->lerpOrigin, cent->rawOrigin);
++				VectorSet(ent.axis[0], 0.f, 0.f, 1.f);
+ 			}
+ 		}
+ 
+@@ -1501,10 +1568,6 @@ static void CG_Missile(centity_t *cent)
+ 		}
+ #endif
+ 
+-		if (VectorNormalize2(delta, ent.axis[0]) == 0.f)
+-		{
+-			ent.axis[0][2] = 1;
+-		}
+ 	}
+ 	else if (!riflenadeAxis && cent->lerpAngles[0] == 0.f && cent->lerpAngles[1] == 0.f && cent->lerpAngles[2] == 0.f)
+ 	{
+@@ -1538,6 +1601,9 @@ static void CG_Missile(centity_t *cent)
+ 	{
+ 		// add to refresh list, possibly with quad glow
+ 		CG_AddRefEntityWithPowerups(&ent, s1->powerups, TEAM_FREE, s1, vec3_origin);
++#ifdef __EMSCRIPTEN__
++		ETJS_AddDeployableHookShell(&ent, cent);
++#endif
+ 	}
+ 
+ #ifdef FEATURE_EDV
+diff --git a/src/cgame/cg_event.c b/src/cgame/cg_event.c
+index 10e7f55f8..c2f4f5ea0 100644
+--- a/src/cgame/cg_event.c
++++ b/src/cgame/cg_event.c
+@@ -194,6 +194,14 @@ static void CG_Obituary(entityState_t *ent)
+ 	char               attackerName[MAX_NAME_LENGTH];
+ 	clientInfo_t       *ci, *ca; // ca = attacker
+ 	int                i;
++#ifdef __EMSCRIPTEN__
++	static int         etjsMultiKillCount;
++	static int         etjsLastKillTime;
++	static const char *etjsMultiKillText[5] = {
++		"^1DOUBLE KILL!", "^1MULTI KILL!", "^1MEGA KILL!",
++		"^1ULTRA KILL!", "^1MONSTER KILL!"
++	};
++#endif
+ 
+ 	if (target < 0 || target >= MAX_CLIENTS)
+ 	{
+@@ -223,6 +231,38 @@ static void CG_Obituary(entityState_t *ent)
+ 		ca = &cgs.clientinfo[attacker];
+ 	}
+ 
++#ifdef __EMSCRIPTEN__
++	if (target == cg.clientNum)
++	{
++		etjsMultiKillCount = 0;
++		etjsLastKillTime   = 0;
++	}
++	else if (attacker == cg.clientNum && ca && ci->team != ca->team)
++	{
++		int multiIndex;
++
++		if (etjsLastKillTime && cg.time - etjsLastKillTime <= 4000)
++		{
++			etjsMultiKillCount++;
++		}
++		else
++		{
++			etjsMultiKillCount = 1;
++		}
++		etjsLastKillTime = cg.time;
++		if (etjsMultiKillCount >= 2)
++		{
++			multiIndex = etjsMultiKillCount - 2;
++			if (multiIndex > 4)
++			{
++				multiIndex = 4;
++			}
++			trap_S_StartLocalSound(cgs.media.etjsMultiKillSounds[multiIndex], CHAN_ANNOUNCER);
++			CG_PriorityCenterPrint(etjsMultiKillText[multiIndex], 2);
++		}
++	}
++#endif
++
+ 	// check for kill messages from the current clientNum
+ 	if (attacker != target)
+ 	{
 diff --git a/src/cgame/cg_limbopanel.c b/src/cgame/cg_limbopanel.c
-index 65af36c2c..52eb4e68c 100644
+index 65af36c2c..ff849a45c 100644
 --- a/src/cgame/cg_limbopanel.c
 +++ b/src/cgame/cg_limbopanel.c
 @@ -1244,6 +1244,9 @@ qboolean CG_LimboPanel_CancelButton_KeyDown(panel_button_t *button, int key)
@@ -611,7 +833,7 @@ index 65af36c2c..52eb4e68c 100644
  	if (key == K_MOUSE1)
  	{
 +#ifdef __EMSCRIPTEN__
-+		CG_Printf("ETJS limbo cancel\n");
++		CG_DPrintf("ETJS limbo cancel\n");
 +#endif
  		//SOUND_CANCEL;
  		SOUND_SELECT;
@@ -689,34 +911,70 @@ index 65af36c2c..52eb4e68c 100644
 +	ETJS_SyncLimboCursor();
 +	if (down && key == K_MOUSE1)
 +	{
-+		CG_Printf("ETJS limbo click %d,%d\n", cgs.cursorX, cgs.cursorY);
++		CG_DPrintf("ETJS limbo click %d,%d\n", cgs.cursorX, cgs.cursorY);
 +	}
 +#endif
 +
  	if (BG_PanelButtonsKeyEvent(key, down, limboPanelButtons))
  	{
  		return;
+diff --git a/src/cgame/cg_local.h b/src/cgame/cg_local.h
+index fe80f329a..92744d3b0 100644
+--- a/src/cgame/cg_local.h
++++ b/src/cgame/cg_local.h
+@@ -1879,6 +1879,7 @@ typedef struct
+ 	sfxHandle_t headShot;
+ 	sfxHandle_t bodyShot;
+ 	sfxHandle_t teamShot;
++	sfxHandle_t etjsMultiKillSounds[5];
+ 
+ 	sfxHandle_t grenadePulseSound[4];
+ 
+@@ -4353,6 +4354,7 @@ void CG_CalculateComponentInternals(hudStucture_t *hud, hudComponent_t *comp);
+ qboolean CG_ComputeComponentPosition(hudComponent_t *comp, int depth);
+ void CG_GenerateHudAnchors(hudStucture_t *hud);
+ void CG_ComputeComponentPositions(hudStucture_t *hud);
++void CG_InvalidateHudPositions(void);
+ void CG_CalculateComponentLocation(hudComponent_t *comp, int depth, rectDef_t *out);
+ 
+ void CG_DrawNewCompass(hudComponent_t *comp);
 diff --git a/src/cgame/cg_main.c b/src/cgame/cg_main.c
-index 63cc6792d..4b2cd8878 100644
+index 63cc6792d..dcdacdbe5 100644
 --- a/src/cgame/cg_main.c
 +++ b/src/cgame/cg_main.c
-@@ -2211,7 +2211,11 @@ void CG_Init(int serverMessageNum, int serverCommandSequence, int clientNum, qbo
- 	// screen support ...
- 	cgs.adr43       = cgs.glconfig.windowAspect * RPRATIO43;       // aspectratio / (4/3)
- 	cgs.r43da       = RATIO43 * 1.0f / cgs.glconfig.windowAspect;  // (4/3) / aspectratio
+@@ -850,6 +850,13 @@ static void CG_RegisterSounds(void)
+ 	cgs.media.headShot = trap_S_RegisterSound("sound/hitsounds/hithead.wav", qfalse);
+ 	cgs.media.bodyShot = trap_S_RegisterSound("sound/hitsounds/hit.wav", qfalse);
+ 	cgs.media.teamShot = trap_S_RegisterSound("sound/hitsounds/hitteam.wav", qfalse);
 +#ifdef __EMSCRIPTEN__
-+	cgs.wideXoffset = 0.0f;
-+#else
- 	cgs.wideXoffset = (cgs.glconfig.windowAspect > RATIO43) ? (640.0f * cgs.adr43 - 640.0f) * 0.5f : 0.0f;
++	cgs.media.etjsMultiKillSounds[0] = trap_S_RegisterSound("sound/announcer/doublekill.wav", qfalse);
++	cgs.media.etjsMultiKillSounds[1] = trap_S_RegisterSound("sound/announcer/multikill.wav", qfalse);
++	cgs.media.etjsMultiKillSounds[2] = trap_S_RegisterSound("sound/announcer/megakill.wav", qfalse);
++	cgs.media.etjsMultiKillSounds[3] = trap_S_RegisterSound("sound/announcer/ultrakill.wav", qfalse);
++	cgs.media.etjsMultiKillSounds[4] = trap_S_RegisterSound("sound/announcer/monsterkill.wav", qfalse);
 +#endif
  
- 	// default to visible mouse cursor so that we have cursor on intermission,
- 	// in case we never call event handling change during a match
+ 	cgs.media.flameSound       = trap_S_RegisterSound("sound/weapons/flamethrower/flame_burn.wav", qfalse);
+ 	cgs.media.flameBlowSound   = trap_S_RegisterSound("sound/weapons/flamethrower/flame_pilot.wav", qfalse);
 diff --git a/src/cgame/cg_newDraw.c b/src/cgame/cg_newDraw.c
-index 5f8ed0d5d..6516941f5 100644
+index 5f8ed0d5d..7facb0b33 100644
 --- a/src/cgame/cg_newDraw.c
 +++ b/src/cgame/cg_newDraw.c
-@@ -889,6 +889,10 @@ void CG_EventHandling(int type, qboolean fForced)
+@@ -660,6 +660,13 @@ int old_mouse_x_pos = 0, old_mouse_y_pos = 0;
+  */
+ void CG_MouseEvent(int x, int y)
+ {
++	/* The debrief uses its own panel cursor while eventHandling remains NONE. */
++	if (cg.snap && cg.snap->ps.pm_type == PM_INTERMISSION)
++	{
++		CG_Debriefing_MouseEvent(x, y);
++		return;
++	}
++
+ 	switch (cgs.eventHandling)
+ 	{
+ 	case CGAME_EVENT_DEMO:
+@@ -889,6 +896,10 @@ void CG_EventHandling(int type, qboolean fForced)
  		if (cgs.eventHandling == CGAME_EVENT_GAMEVIEW)
  		{
  			cg.showGameView = qfalse;
@@ -727,7 +985,7 @@ index 5f8ed0d5d..6516941f5 100644
  			trap_S_FadeBackgroundTrack(0.0f, 500, 0);
  
  			trap_S_StopStreamingSound(-1);
-@@ -990,6 +994,7 @@ void CG_EventHandling(int type, qboolean fForced)
+@@ -990,6 +1001,7 @@ void CG_EventHandling(int type, qboolean fForced)
  	{
  		cg.showGameView = qtrue;
  		CG_LimboPanel_Setup();
@@ -736,7 +994,7 @@ index 5f8ed0d5d..6516941f5 100644
  	}
  	else if (type == CGAME_EVENT_MULTIVIEW)
 diff --git a/src/cgame/cg_players.c b/src/cgame/cg_players.c
-index 8d1bb35da..52ac0e2c7 100644
+index 8d1bb35da..a9dd72156 100644
 --- a/src/cgame/cg_players.c
 +++ b/src/cgame/cg_players.c
 @@ -1797,6 +1797,17 @@ static void CG_PlayerAngles(centity_t *cent, vec3_t legs[3], vec3_t torso[3], ve
@@ -749,7 +1007,7 @@ index 8d1bb35da..52ac0e2c7 100644
 +		static qboolean etjsFaced;
 +		if (!etjsFaced && cent->currentState.eType == ET_PLAYER)
 +		{
-+			CG_Printf("ETJS player face yaw=%.1f\n", headAngles[YAW]);
++			CG_DPrintf("ETJS player face yaw=%.1f\n", headAngles[YAW]);
 +			etjsFaced = qtrue;
 +		}
 +	}
@@ -781,7 +1039,7 @@ index 8d1bb35da..52ac0e2c7 100644
  	}
  
  	// --------- pitch -------------
-@@ -2688,6 +2709,36 @@ void CG_AddRefEntityWithPowerups(refEntity_t *ent, int powerups, int team, entit
+@@ -2688,6 +2709,56 @@ void CG_AddRefEntityWithPowerups(refEntity_t *ent, int powerups, int team, entit
  
  	trap_R_AddRefEntityToScene(ent);
  
@@ -791,24 +1049,44 @@ index 8d1bb35da..52ac0e2c7 100644
 +	    && cg.snap
 +	    && es->number != cg.snap->ps.clientNum
 +	    && !(es->eFlags & EF_DEAD)
-+	    && cgs.media.whiteShader)
++	    && (cg.snap->ps.teamNum == TEAM_SPECTATOR ||
++	        ((es->teamNum == TEAM_AXIS || es->teamNum == TEAM_ALLIES)
++	         ? es->teamNum != cg.snap->ps.teamNum
++	         : team != cg.snap->ps.teamNum))
++	    && cgs.media.shoutcastLandmineShader)
 +	{
 +		refEntity_t glow = *ent;
++		trace_t       trace;
++		vec3_t        tracePoint;
++		qboolean      visible;
 +
-+		glow.renderfx    |= RF_DEPTHHACK | RF_NOSHADOW;
++		VectorCopy(cg_entities[es->number].lerpOrigin, tracePoint);
++		tracePoint[2] += (es->eFlags & EF_PRONE) ? 18.f : ((es->eFlags & EF_CROUCHING) ? 28.f : 40.f);
++		CG_Trace(&trace, cg.refdef.vieworg, NULL, NULL, tracePoint,
++		         cg.snap->ps.clientNum, CONTENTS_SOLID);
++		visible = trace.fraction > 0.98f;
++
++		glow.renderfx    |= RF_NOSHADOW;
 +		glow.customSkin   = 0;
-+		glow.customShader = cgs.media.whiteShader;
-+		if (team == TEAM_AXIS)
++		/* ETL's shoutcast shell is a translucent, slightly expanded
++		 * environment-mapped construction texture with tcMod scroll.  It gives
++		 * the moving liquid/weapon-shine layer the hook originally intended. */
++		glow.customShader = cgs.media.shoutcastLandmineShader;
++		if (visible)
 +		{
-+			glow.shaderRGBA[0] = 255;
-+			glow.shaderRGBA[1] = 48;
-+			glow.shaderRGBA[2] = 48;
++			/* Blue: directly visible enemy, depth-tested against the world. */
++			glow.renderfx      &= ~RF_DEPTHHACK;
++			glow.shaderRGBA[0]  = 48;
++			glow.shaderRGBA[1]  = 128;
++			glow.shaderRGBA[2]  = 255;
 +		}
 +		else
 +		{
-+			glow.shaderRGBA[0] = 48;
-+			glow.shaderRGBA[1] = 220;
-+			glow.shaderRGBA[2] = 255;
++			/* Red: world-occluded enemy, pulled forward for the wall silhouette. */
++			glow.renderfx      |= RF_DEPTHHACK;
++			glow.shaderRGBA[0]  = 255;
++			glow.shaderRGBA[1]  = 48;
++			glow.shaderRGBA[2]  = 48;
 +		}
 +		glow.shaderRGBA[3] = 210;
 +		trap_R_AddRefEntityToScene(&glow);
@@ -986,10 +1264,61 @@ index fa102ceb7..02dd1ee7b 100644
  
  /**
 diff --git a/src/cgame/cg_view.c b/src/cgame/cg_view.c
-index 87cd79f2e..7afa5fb78 100644
+index 87cd79f2e..d13853fc0 100644
 --- a/src/cgame/cg_view.c
 +++ b/src/cgame/cg_view.c
-@@ -1227,8 +1227,16 @@ static int CG_CalcFov(void)
+@@ -331,6 +331,10 @@ void CG_OffsetThirdPersonView(void)
+ 	vec3_t        focusPoint;
+ 	float         focusDist;
+ 	float         forwardScale, sideScale;
++#ifdef __EMSCRIPTEN__
++	qboolean      etjsDeadFreeLook = (cg.predictedPlayerState.stats[STAT_HEALTH] <= 0
++	                                 && !(cg.predictedPlayerState.pm_flags & PMF_LIMBO));
++#endif
+ 
+ 	cg.refdef_current->vieworg[2] += cg.predictedPlayerState.viewheight;
+ 
+@@ -340,6 +344,9 @@ void CG_OffsetThirdPersonView(void)
+ 	if (cg.predictedPlayerState.stats[STAT_HEALTH] <= 0
+ 	    && !(cg.predictedPlayerState.pm_flags & PMF_LIMBO))
+ 	{
++	#ifdef __EMSCRIPTEN__
++		/* Browser players retain mouse freelook while waiting to tap out. */
++	#else
+ 		// Force yaw to 0 if we're tracking a medic
+ 		if (cg.snap->ps.viewlocked != VIEWLOCK_MEDIC)
+ 		{
+@@ -347,9 +354,14 @@ void CG_OffsetThirdPersonView(void)
+ 			focusAngles[YAW]         = SHORT2ANGLE(cg.predictedPlayerState.stats[STAT_DEAD_YAW]);
+ 			cg.refdefViewAngles[YAW] = SHORT2ANGLE(cg.predictedPlayerState.stats[STAT_DEAD_YAW]);
+ 		}
++	#endif
+ 	}
+ 
+-	if (focusAngles[PITCH] > 45)
++	if (focusAngles[PITCH] > 45
++#ifdef __EMSCRIPTEN__
++	    && !etjsDeadFreeLook
++#endif
++	    )
+ 	{
+ 		focusAngles[PITCH] = 45;        // don't go too far overhead
+ 	}
+@@ -367,7 +379,12 @@ void CG_OffsetThirdPersonView(void)
+ 	VectorCopy(cg.refdef_current->vieworg, view);
+ 
+ 	view[2]                    += 8;
+-	cg.refdefViewAngles[PITCH] *= 0.5;
++#ifdef __EMSCRIPTEN__
++	if (!etjsDeadFreeLook)
++#endif
++	{
++		cg.refdefViewAngles[PITCH] *= 0.5;
++	}
+ 
+ 	AngleVectors(cg.refdefViewAngles, forward, right, up);
+ 
+@@ -1227,8 +1244,16 @@ static int CG_CalcFov(void)
  	// allow freelook when dead until we tap out into limbo
  	if (cg.snap->ps.pm_type == PM_FREEZE || (cg.snap->ps.pm_type == PM_DEAD && (cg.snap->ps.pm_flags & PMF_LIMBO)) || (cg.snap->ps.pm_flags & PMF_TIME_LOCKPLAYER))
  	{
@@ -1006,7 +1335,63 @@ index 87cd79f2e..7afa5fb78 100644
  	}
  	else if (!cg.zoomedBinoc)
  	{
-@@ -2498,6 +2506,31 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2487,6 +2512,55 @@ static void CG_PlayAnnouncement()
+ 	CG_PlayAnnouncementTickTock();
+ }
+ 
++#ifdef __EMSCRIPTEN__
++/**
++ * Return a sane, slightly-low head target for the ETJS assist.  Head tags are
++ * generated while drawing a model, so never trust one without also checking
++ * that the entity belongs to the current snapshot and that the tag remains
++ * close to its interpolated player origin.
++ */
++static qboolean ETJS_RsAimPoint(int clientNum, vec3_t aimPoint)
++{
++	centity_t *cent = &cg_entities[clientNum];
++	vec3_t     tagDelta;
++
++	if (!cent->currentValid || cent->currentState.eType != ET_PLAYER ||
++	    cent->currentState.clientNum != clientNum ||
++	    (cent->currentState.eFlags & EF_DEAD))
++	{
++		return qfalse;
++	}
++
++	VectorCopy(cent->pe.headRefEnt.origin, aimPoint);
++	VectorSubtract(aimPoint, cent->lerpOrigin, tagDelta);
++	if (!cent->pe.headRefEnt.hModel || VectorLengthSquared(tagDelta) > Square(128.f))
++	{
++		VectorCopy(cent->lerpOrigin, aimPoint);
++		aimPoint[2] += ((cent->currentState.eFlags & EF_PRONE)
++		                ? PRONE_VIEWHEIGHT
++		                : ((cent->currentState.eFlags & EF_CROUCHING)
++		                   ? CROUCH_VIEWHEIGHT : DEFAULT_VIEWHEIGHT)) - 4.f;
++	}
++	else
++	{
++		/* The old +6.5 hitbox-top offset aimed above the useful head area.
++		 * Keep the animated lean/rotation but bias four units lower. */
++		VectorMA(aimPoint, 2.5f, cent->pe.headRefEnt.axis[2], aimPoint);
++		VectorMA(aimPoint, 0.5f, cent->pe.headRefEnt.axis[0], aimPoint);
++	}
++
++	return aimPoint[0] == aimPoint[0] && aimPoint[1] == aimPoint[1] && aimPoint[2] == aimPoint[2];
++}
++
++static qboolean ETJS_RsTargetVisible(int clientNum, const vec3_t from, const vec3_t aimPoint)
++{
++	trace_t trace;
++
++	CG_Trace(&trace, from, NULL, NULL, aimPoint, cg.clientNum, MASK_SHOT);
++	return trace.fraction > 0.98f || trace.entityNum == clientNum;
++}
++#endif
++
+ /**
+  * @brief Generates and draws a game scene and status information at the given time.
+  * @param[in] serverTime
+@@ -2498,6 +2572,33 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  	int dbgTime = trap_Milliseconds(), elapsed;
  	int dbgCnt = 0;
  #endif
@@ -1029,16 +1414,18 @@ index 87cd79f2e..7afa5fb78 100644
 +				(float)cgs.glconfig.vidWidth / (float)cgs.glconfig.vidHeight;
 +			cgs.adr43       = cgs.glconfig.windowAspect * RPRATIO43;
 +			cgs.r43da       = RATIO43 * 1.0f / cgs.glconfig.windowAspect;
-+			cgs.wideXoffset = 0.0f;
++			cgs.wideXoffset = (cgs.glconfig.windowAspect > RATIO43)
++				? (640.0f * cgs.adr43 - 640.0f) * 0.5f : 0.0f;
 +			cgDC.xscale     = cgs.screenXScale;
 +			cgDC.yscale     = cgs.screenYScale;
++			CG_InvalidateHudPositions();
 +		}
 +	}
 +#endif
  
  	cg.oldTime                  = cg.time;
  	cg.time                     = serverTime;
-@@ -2534,7 +2567,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2534,7 +2635,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  	// pacifier, don't even try to read snapshots
  	if (cg.infoScreenText[0] != 0)
  	{
@@ -1050,14 +1437,30 @@ index 87cd79f2e..7afa5fb78 100644
  		return;
  	}
  
-@@ -2570,7 +2607,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2553,6 +2658,15 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+ 	// set up cg.snap and possibly cg.nextSnap
+ 	CG_ProcessSnapshots();
+ 
++#ifdef __EMSCRIPTEN__
++	/* The page owns browser pointer lock.  Publish intermission explicitly so
++	 * it can release the gameplay mouse as soon as the debrief starts. */
++	trap_Cvar_Set("etjs_intermission",
++	              (cg.snap && cg.snap->ps.pm_type == PM_INTERMISSION) ? "1" : "0");
++	trap_Cvar_Set("etjs_dead",
++	              (cg.snap && cg.snap->ps.stats[STAT_HEALTH] <= 0) ? "1" : "0");
++#endif
++
+ 	DEBUGTIME
+ 
+ 	// demo rewind happened, fix time based effects
+@@ -2570,7 +2684,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  	// we can draw is the information screen
  	if (!cg.snap || (cg.snap->snapFlags & SNAPFLAG_NOT_ACTIVE))
  	{
 +#ifdef __EMSCRIPTEN__
 +		if (etjsFrameLog <= 5)
 +		{
-+			CG_Printf("ETJS frame %d waiting for snap (%p flags=%d)\n",
++			CG_DPrintf("ETJS frame %d waiting for snap (%p flags=%d)\n",
 +			          etjsFrameLog, (void *)cg.snap, cg.snap ? cg.snap->snapFlags : -1);
 +		}
 +		CG_DrawActive();
@@ -1067,7 +1470,7 @@ index 87cd79f2e..7afa5fb78 100644
  		return;
  	}
  
-@@ -2621,6 +2667,82 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2621,6 +2744,140 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  
  	// update cg.predictedPlayerState
  	CG_PredictPlayerState();
@@ -1082,66 +1485,124 @@ index 87cd79f2e..7afa5fb78 100644
 +		{
 +			static int angLog;
 +
-+			cg.predictedPlayerState.viewangles[YAW]   = SHORT2ANGLE(ucmd.angles[YAW]);
-+			cg.predictedPlayerState.viewangles[PITCH] = SHORT2ANGLE(ucmd.angles[PITCH]);
++			/* usercmd angles are relative to the server-provided delta_angles.
++			 * Rendering the raw command made the camera disagree with pmove: the
++			 * keys stayed orthogonal, but every direction was rotated on screen. */
++			cg.predictedPlayerState.viewangles[YAW] = SHORT2ANGLE(
++				ucmd.angles[YAW] + cg.predictedPlayerState.delta_angles[YAW]);
++			cg.predictedPlayerState.viewangles[PITCH] = SHORT2ANGLE(
++				ucmd.angles[PITCH] + cg.predictedPlayerState.delta_angles[PITCH]);
++			trap_Cvar_Set("etjs_viewyaw", va("%d", (int)cg.predictedPlayerState.viewangles[YAW]));
 +			if (angLog < 12)
 +			{
-+				CG_Printf("ETJS predangles yaw=%.1f pitch=%.1f\n",
++				CG_DPrintf("ETJS predangles yaw=%.1f pitch=%.1f\n",
 +				          cg.predictedPlayerState.viewangles[YAW],
 +				          cg.predictedPlayerState.viewangles[PITCH]);
 +				angLog++;
 +			}
-+			if (cg_rshook.integer && (ucmd.buttons & BUTTON_ATTACK) && cg.snap)
++			/* Invalidate every frame before CL_FinishMove consumes the result.
++			 * This also prevents attack-to-tap-out while dead from reusing aim. */
++			trap_Cvar_Set("etjs_target", "-1");
++			if (cg_rshook.integer && (ucmd.buttons & BUTTON_ATTACK) && cg.snap
++			    && cg.predictedPlayerState.pm_type == PM_NORMAL
++			    && cg.predictedPlayerState.stats[STAT_HEALTH] > 0)
 +			{
-+				int    i, best = -1;
-+				float  bestDot = 0.25f;
-+				vec3_t fwd, to, ang;
++				int      i, best = -1;
++				float    bestScore = 1e30f;
++				vec3_t   fwd, to, ang, aimPoint, shooterOrigin;
++				int      localTeam = cg.snap->ps.teamNum;
++				int      enemyTeam;
++
++				if (localTeam != TEAM_AXIS && localTeam != TEAM_ALLIES)
++				{
++					localTeam = cgs.clientinfo[cg.clientNum].team;
++				}
++				enemyTeam = (localTeam == TEAM_AXIS) ? TEAM_ALLIES
++				            : ((localTeam == TEAM_ALLIES) ? TEAM_AXIS : TEAM_FREE);
 +
 +				AngleVectors(cg.predictedPlayerState.viewangles, fwd, NULL, NULL);
++				VectorCopy(cg.predictedPlayerState.origin, shooterOrigin);
++				shooterOrigin[2] += cg.predictedPlayerState.viewheight;
 +				for (i = 0; i < MAX_CLIENTS; i++)
 +				{
 +					centity_t *cent = &cg_entities[i];
-+					float     d, len;
++					float     d, len, score;
 +
 +					if (i == cg.clientNum || !cgs.clientinfo[i].infoValid)
 +					{
 +						continue;
 +					}
-+					if (cent->currentState.eType != ET_PLAYER)
++					if (!ETJS_RsAimPoint(i, aimPoint))
 +					{
 +						continue;
 +					}
-+					if (cent->currentState.eFlags & EF_DEAD)
++					/* Require a positively identified enemy from both live entity and
++					 * client metadata where available. Never infer enemy from "not self". */
++					if (enemyTeam == TEAM_FREE ||
++					    (cent->currentState.teamNum != enemyTeam &&
++					     cgs.clientinfo[i].team != enemyTeam) ||
++					    cent->currentState.teamNum == localTeam ||
++					    cgs.clientinfo[i].team == localTeam)
 +					{
 +						continue;
 +					}
-+					if (cgs.clientinfo[i].team == TEAM_SPECTATOR)
-+					{
-+						continue;
-+					}
-+					VectorSubtract(cent->lerpOrigin, cg.predictedPlayerState.origin, to);
-+					to[2] += 36.f;
++
++					VectorSubtract(aimPoint, shooterOrigin, to);
 +					len    = VectorNormalize(to);
-+					if (len < 8.f)
++					if (len < 8.f || len > 32768.f || Q_fabs(to[2]) > 0.94f)
 +					{
 +						continue;
 +					}
 +					d = DotProduct(fwd, to);
-+					if (d > bestDot)
++					if (d < 0.55f)
 +					{
-+						bestDot = d;
-+						best    = i;
++						continue;
++					}
++
++					/* Never acquire through world geometry.  Treat visibility as a
++					 * hard safety condition instead of a score preference. */
++					if (!ETJS_RsTargetVisible(i, shooterOrigin, aimPoint))
++					{
++						continue;
++					}
++
++					/* Distance is primary while angular error breaks close calls. */
++					score = len / (0.35f + d * d);
++					if (score < bestScore)
++					{
++						bestScore = score;
++						best      = i;
 +					}
 +				}
 +				if (best >= 0)
 +				{
-+					VectorSubtract(cg_entities[best].lerpOrigin, cg.predictedPlayerState.origin, to);
-+					to[2] += 36.f;
-+					vectoangles(to, ang);
-+					trap_Cvar_Set("etjs_addyaw", va("%f", ang[YAW]));
-+					trap_Cvar_Set("etjs_addpitch", va("%f", ang[PITCH]));
-+					cg.predictedPlayerState.viewangles[YAW]   = ang[YAW];
-+					cg.predictedPlayerState.viewangles[PITCH] = ang[PITCH];
++					int rawYaw, rawPitch;
++
++					if (ETJS_RsAimPoint(best, aimPoint))
++					{
++						VectorSubtract(aimPoint, shooterOrigin, to);
++						vectoangles(to, ang);
++						/* Reject malformed/stale transforms at the last possible point.
++						 * Keep both the absolute pitch and the one-frame vertical turn well
++						 * away from a straight-up/down camera snap. */
++						if (Q_fabs(AngleNormalize180(ang[PITCH])) <= 70.f
++						    && Q_fabs(AngleDelta(ang[PITCH],
++						                         cg.predictedPlayerState.viewangles[PITCH])) <= 45.f)
++						{
++							/* CL_FinishMove writes raw usercmd angles; pmove adds the
++							 * server delta_angles. Convert the desired world aim back to
++							 * command space so the shot and rendered crosshair coincide. */
++							rawYaw = ANGLE2SHORT(ang[YAW]) - cg.predictedPlayerState.delta_angles[YAW];
++							rawPitch = ANGLE2SHORT(ang[PITCH]) - cg.predictedPlayerState.delta_angles[PITCH];
++							trap_Cvar_Set("etjs_addyaw", va("%f", SHORT2ANGLE(rawYaw)));
++							trap_Cvar_Set("etjs_addpitch", va("%f", SHORT2ANGLE(rawPitch)));
++							trap_Cvar_Set("etjs_aimworldpitch",
++							              va("%f", AngleNormalize180(ang[PITCH])));
++							trap_Cvar_Set("etjs_target", va("%d", best));
++							cg.predictedPlayerState.viewangles[YAW]   = ang[YAW];
++							cg.predictedPlayerState.viewangles[PITCH] = ang[PITCH];
++						}
++					}
 +				}
 +			}
 +		}
@@ -1150,14 +1611,14 @@ index 87cd79f2e..7afa5fb78 100644
  
  	DEBUGTIME
  
-@@ -2660,6 +2782,20 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2660,6 +2917,20 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  		// build cg.refdef
  		inwater = CG_CalcViewValues();
  		CG_SetupFrustum();
 +#ifdef __EMSCRIPTEN__
 +		if (cg.clientFrame < 64 || (cg.clientFrame & 15) == 0)
 +		{
-+			CG_Printf("ETJS view team=%d pm=%d org=%.0f %.0f %.0f yaw=%.1f frame=%d fl=%d\n",
++			CG_DPrintf("ETJS view team=%d pm=%d org=%.0f %.0f %.0f yaw=%.1f frame=%d fl=%d\n",
 +			          cg.snap ? cgs.clientinfo[cg.clientNum].team : -1,
 +			          cg.snap ? cg.snap->ps.pm_type : -1,
 +			          cg.refdef.vieworg[0], cg.refdef.vieworg[1], cg.refdef.vieworg[2],
@@ -1171,7 +1632,7 @@ index 87cd79f2e..7afa5fb78 100644
  
  		DEBUGTIME
  
-@@ -2685,7 +2821,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2685,7 +2956,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  #endif
  
  		// draw the skyboxportal
@@ -1183,14 +1644,14 @@ index 87cd79f2e..7afa5fb78 100644
  
  		DEBUGTIME
  
-@@ -2707,8 +2847,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2707,8 +2982,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  		// build the render lists
  		if (!cg.hyperspace)
  		{
 +#ifdef __EMSCRIPTEN__
 +			if (etjsFrameLog <= 8)
 +			{
-+				CG_Printf("ETJS frame %d after CalcView before ents\n", etjsFrameLog);
++				CG_DPrintf("ETJS frame %d after CalcView before ents\n", etjsFrameLog);
 +			}
 +#endif
  			CG_AddPacketEntities();         // after calcViewValues, so predicted player state is correct
@@ -1200,7 +1661,7 @@ index 87cd79f2e..7afa5fb78 100644
  
  			DEBUGTIME
  
-@@ -2730,8 +2878,10 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2730,8 +3013,10 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  
  			DEBUGTIME
  
@@ -1211,7 +1672,7 @@ index 87cd79f2e..7afa5fb78 100644
  
  			if (cg_drawSpawnpoints.integer
  			    && (cgs.gamestate == GS_WARMUP || cgs.gamestate == GS_WARMUP_COUNTDOWN || cgs.sv_cheats))
-@@ -2741,15 +2891,19 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2741,15 +3026,19 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  
  			DEBUGTIME
  
@@ -1231,14 +1692,14 @@ index 87cd79f2e..7afa5fb78 100644
  		}
  
  		if (!cg.showGameView && !cgs.dbShowing)
-@@ -2757,8 +2911,17 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2757,8 +3046,17 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  			// stationary heavy weapon (e.g. misc_mg42, misc_aagun)
  			if (!cg.snap->ps.persistant[PERS_HWEAPON_USE])
  			{
 +#ifdef __EMSCRIPTEN__
 +				if (etjsFrameLog <= 8)
 +				{
-+					CG_Printf("ETJS frame %d after ents before viewweapon team=%d\n",
++					CG_DPrintf("ETJS frame %d after ents before viewweapon team=%d\n",
 +					          etjsFrameLog,
 +					          cg.predictedPlayerState.persistant[PERS_TEAM]);
 +				}
@@ -1249,7 +1710,7 @@ index 87cd79f2e..7afa5fb78 100644
  			else
  			{
  				if (cg.time - cg.predictedPlayerEntity.overheatTime < 3000)
-@@ -2779,6 +2942,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2779,6 +3077,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  					}
  				}
  			}
@@ -1257,7 +1718,7 @@ index 87cd79f2e..7afa5fb78 100644
  		}
  
  		// play buffered voice chats
-@@ -2786,6 +2950,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2786,6 +3085,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  
  		DEBUGTIME
  		// trails
@@ -1265,7 +1726,7 @@ index 87cd79f2e..7afa5fb78 100644
  		if (!cg.hyperspace)
  		{
  			CG_AddFlameChunks();
-@@ -2793,6 +2958,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2793,6 +3093,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  			// this must come last, so the trails dropped this frame get drawn
  			CG_AddTrails();
  		}
@@ -1273,14 +1734,14 @@ index 87cd79f2e..7afa5fb78 100644
  
  		DEBUGTIME
  
-@@ -2819,7 +2985,21 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2819,7 +3120,21 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  		trap_SetClientLerpOrigin(cg.refdef.vieworg[0], cg.refdef.vieworg[1], cg.refdef.vieworg[2]);
  
  		// actually issue the rendering calls
 +#ifdef __EMSCRIPTEN__
 +		if (etjsFrameLog <= 5)
 +		{
-+			CG_Printf("ETJS frame %d before DrawActive showGameView=%d team=%d\n",
++			CG_DPrintf("ETJS frame %d before DrawActive showGameView=%d team=%d\n",
 +			          etjsFrameLog, (int)cg.showGameView,
 +			          cg.snap ? cgs.clientinfo[cg.clientNum].team : -1);
 +		}
@@ -1289,14 +1750,14 @@ index 87cd79f2e..7afa5fb78 100644
 +#ifdef __EMSCRIPTEN__
 +		if (etjsFrameLog <= 5)
 +		{
-+			CG_Printf("ETJS frame %d after DrawActive\n", etjsFrameLog);
++			CG_DPrintf("ETJS frame %d after DrawActive\n", etjsFrameLog);
 +		}
 +#endif
  
  		DEBUGTIME
  
 diff --git a/src/client/cl_cgame.c b/src/client/cl_cgame.c
-index ddb8e87d2..5fe0b95ca 100644
+index ddb8e87d2..240b246a8 100644
 --- a/src/client/cl_cgame.c
 +++ b/src/client/cl_cgame.c
 @@ -52,6 +52,10 @@ static ext_trap_keys_t cg_extensionTraps[] =
@@ -1310,19 +1771,24 @@ index ddb8e87d2..5fe0b95ca 100644
  void Key_GetBindingBuf(int keynum, char *buf, int buflen);
  void Key_KeynumToStringBuf(int keynum, char *buf, int buflen);
  
-@@ -239,6 +243,11 @@ static void CL_InterpolationCheckRange(void)
+@@ -239,6 +243,16 @@ static void CL_InterpolationCheckRange(void)
   */
  void CL_SetSnapshotLerp(void)
  {
 +#ifdef __EMSCRIPTEN__
-+	/* Large clSnapshot_t copies + interpolation range checks PAGECRASH
-+	 * wasm after the second in-match snapshot. Snapshots still apply. */
++	/* The WebAssembly build does not need a second full snapshot copy here,
++	 * but the client clock still consumes these fields in
++	 * CL_AdjustTimeDelta and CL_SetCGameTime. Leaving snapLerp at zero
++	 * freezes cl.serverTime after the first snapshot, which makes every
++	 * subsequent usercmd stale and also prevents smooth interpolation. */
++	cl.snapLerp.serverTime = cl.snap.serverTime;
++	cl.snapLerp.messageNum = cl.snap.messageNum;
 +	return;
 +#endif
  	int i = 0, snapshotNumber = cl.snap.messageNum;
  
  	CL_InterpolationCheckRange();
-@@ -273,6 +282,12 @@ void CL_SetUserCmdValue(int userCmdValue, int flags, int mask, float sensitivity
+@@ -273,6 +287,12 @@ void CL_SetUserCmdValue(int userCmdValue, int flags, int mask, float sensitivity
  	cl.cgameUserCmdValue  = userCmdValue;
  	cl.cgameFlags         = (cl.cgameFlags & ~mask) | (flags & mask);
  	cl.cgameSensitivity   = sensitivityScale;
@@ -1335,7 +1801,7 @@ index ddb8e87d2..5fe0b95ca 100644
  	cl.cgameMpIdentClient = mpIdentClient;
  }
  
-@@ -755,6 +770,13 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
+@@ -755,6 +775,13 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
  		CL_AddReliableCommand(VMA(1));
  		return 0;
  	case CG_UPDATESCREEN:
@@ -1349,7 +1815,7 @@ index ddb8e87d2..5fe0b95ca 100644
  		SCR_UpdateScreen();
  		return 0;
  	case CG_CM_LOADMAP:
-@@ -788,8 +810,12 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
+@@ -788,8 +815,12 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
  		return re.MarkFragments(args[1], VMA(2), VMA(3), args[4], VMA(5), args[6], VMA(7));
  
  	case CG_R_PROJECTDECAL:
@@ -1362,7 +1828,7 @@ index ddb8e87d2..5fe0b95ca 100644
  	case CG_R_CLEARDECALS:
  		re.ClearDecals();
  		return 0;
-@@ -1132,9 +1158,16 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
+@@ -1132,9 +1163,16 @@ intptr_t CL_CgameSystemCalls(intptr_t *args)
  	case CG_CVAR_SET_DESCRIPTION:
  		return Cvar_SetDescriptionByName(VMA(1), VMA(2));
  
@@ -1379,25 +1845,25 @@ index ddb8e87d2..5fe0b95ca 100644
  	}
  	return 0;
  }
-@@ -1299,6 +1332,10 @@ void CL_InitCGame(void)
+@@ -1299,6 +1337,10 @@ void CL_InitCGame(void)
  
  	Com_Printf("CL_InitCGame: %5.2f seconds\n", (t2 - t1) / 1000.0);
  
 +#ifdef __EMSCRIPTEN__
-+	Com_Printf("ETJS skipping EndRegistration/TouchMemory\n");
++	Com_DPrintf("ETJS skipping EndRegistration/TouchMemory\n");
 +	Con_ClearNotify();
 +#else
  	// have the renderer touch all its images, so they are present
  	// on the card even if the driver does deferred loading
  	re.EndRegistration();
-@@ -1308,12 +1345,17 @@ void CL_InitCGame(void)
+@@ -1308,12 +1350,17 @@ void CL_InitCGame(void)
  	{
  		Com_TouchMemory();
  	}
 +#endif
  
 +#ifdef __EMSCRIPTEN__
-+	Com_Printf("ETJS CL_InitCGame done, entering frames\n");
++	Com_DPrintf("ETJS CL_InitCGame done, entering frames\n");
 +#else
  	// clear anything that got printed
  	Con_ClearNotify();
@@ -1408,7 +1874,7 @@ index ddb8e87d2..5fe0b95ca 100644
  }
  
  /**
-@@ -1350,7 +1392,30 @@ qboolean CL_GameCompleteCommand(void)
+@@ -1350,7 +1397,30 @@ qboolean CL_GameCompleteCommand(void)
   */
  void CL_CGameRendering(void)
  {
@@ -1428,7 +1894,7 @@ index ddb8e87d2..5fe0b95ca 100644
 +	ETJS_DrawLiveOasis();
  	VM_Call(cgvm, CG_DRAW_ACTIVE_FRAME, cl.serverTime, 0, clc.demo.playing);
 +	etjsInCGameFrame = 0;
-+	if (etjsCgLog < 8)
++	if (etjsCgLog < 1)
 +	{
 +		Com_Printf("ETJS CGameRendering vm %d\n", etjsCgLog);
 +		etjsCgLog++;
@@ -1440,7 +1906,7 @@ index ddb8e87d2..5fe0b95ca 100644
  }
  
 diff --git a/src/client/cl_input.c b/src/client/cl_input.c
-index 6651a0127..6c60ae4ff 100644
+index 6651a0127..63ee14dc8 100644
 --- a/src/client/cl_input.c
 +++ b/src/client/cl_input.c
 @@ -34,6 +34,9 @@
@@ -1465,7 +1931,7 @@ index 6651a0127..6c60ae4ff 100644
  
  // doubleTap button mapping
  static kbuttons_t dtmapping[] =
-@@ -769,9 +777,40 @@ void CL_KeyMove(usercmd_t *cmd)
+@@ -769,9 +777,42 @@ void CL_KeyMove(usercmd_t *cmd)
  	forward += movespeed * CL_KeyState(&kb[KB_FORWARD]);
  	forward -= movespeed * CL_KeyState(&kb[KB_BACK]);
  
@@ -1502,11 +1968,13 @@ index 6651a0127..6c60ae4ff 100644
  	cmd->upmove      = ClampChar(up);
 +#ifdef __EMSCRIPTEN__
 +	Cvar_Set("etjs_fwd", va("%d", (int)cmd->forwardmove));
++	Cvar_Set("etjs_right", va("%d", (int)cmd->rightmove));
++	Cvar_Set("etjs_up", va("%d", (int)cmd->upmove));
 +#endif
  
  	// double tap
  	cmd->doubleTap = DT_NONE; // reset
-@@ -1043,6 +1082,20 @@ void CL_CmdButtons(usercmd_t *cmd)
+@@ -1043,6 +1084,21 @@ void CL_CmdButtons(usercmd_t *cmd)
  		kb[KB_WBUTTONS0 + i].wasPressed = qfalse;
  	}
  
@@ -1517,7 +1985,8 @@ index 6651a0127..6c60ae4ff 100644
 +	 * KEYCATCH_UI or Escape / the in-game menu can never stay up. */
 +	if (cls.state == CA_ACTIVE && !(cls.keyCatchers & KEYCATCH_CONSOLE))
 +	{
-+		if (!Cvar_VariableIntegerValue("etjs_limbo"))
++		if (!Cvar_VariableIntegerValue("etjs_limbo")
++		    && !Cvar_VariableIntegerValue("etjs_intermission"))
 +		{
 +			cls.keyCatchers &= ~KEYCATCH_CGAME;
 +		}
@@ -1527,7 +1996,7 @@ index 6651a0127..6c60ae4ff 100644
  	if (cls.keyCatchers && !cl_bypassMouseInput->integer)
  	{
  		cmd->buttons |= BUTTON_TALK;
-@@ -1060,6 +1113,9 @@ void CL_CmdButtons(usercmd_t *cmd)
+@@ -1060,6 +1116,9 @@ void CL_CmdButtons(usercmd_t *cmd)
  	{
  		kb[dtmapping[i]].wasPressed = qfalse;
  	}
@@ -1537,7 +2006,7 @@ index 6651a0127..6c60ae4ff 100644
  }
  
  /**
-@@ -1081,10 +1137,29 @@ void CL_FinishMove(usercmd_t *cmd)
+@@ -1081,10 +1140,42 @@ void CL_FinishMove(usercmd_t *cmd)
  	// can be determined without allowing cheating
  	cmd->serverTime = cl.serverTime;
  
@@ -1553,21 +2022,34 @@ index 6651a0127..6c60ae4ff 100644
  		cmd->angles[i] = ANGLE2SHORT(cl.viewangles[i]);
  	}
 +#ifdef __EMSCRIPTEN__
-+	if (Cvar_VariableIntegerValue("cl_rshook") && (cmd->buttons & BUTTON_ATTACK))
++	if (Cvar_VariableIntegerValue("cl_rshook") &&
++	    Cvar_VariableIntegerValue("etjs_target") >= 0 &&
++	    (cmd->buttons & BUTTON_ATTACK))
 +	{
-+		float y = Cvar_VariableValue("etjs_addyaw");
-+		float p = Cvar_VariableValue("etjs_addpitch");
++		float y          = AngleNormalize180(Cvar_VariableValue("etjs_addyaw"));
++		float p          = AngleNormalize180(Cvar_VariableValue("etjs_addpitch"));
++		float worldPitch = AngleNormalize180(Cvar_VariableValue("etjs_aimworldpitch"));
 +
-+		cl.viewangles[YAW]     = y;
-+		cl.viewangles[PITCH]   = p;
-+		cmd->angles[YAW]       = ANGLE2SHORT(y);
-+		cmd->angles[PITCH]     = ANGLE2SHORT(p);
++		/* SHORT2ANGLE commonly represents a small upward command as 350..360.
++		 * Keep the equivalent signed value in cl.viewangles; otherwise the next
++		 * browser mouse event sees > 89 and snaps the camera straight down.  The
++		 * independent world-space pitch is written by cgame and makes stale or
++		 * malformed hook data fail closed before it can alter the usercmd. */
++		if (!Q_isnan(y) && !Q_isnan(p) && !Q_isnan(worldPitch)
++		    && Q_fabs(worldPitch) <= 70.f)
++		{
++			cl.viewangles[YAW]     = y;
++			cl.viewangles[PITCH]   = p;
++			cmd->angles[YAW]       = ANGLE2SHORT(y);
++			cmd->angles[PITCH]     = ANGLE2SHORT(p);
++		}
++		Cvar_Set("etjs_target", "-1");
 +	}
 +#endif
  }
  
  #define MASK_CGAMEFLAGS_SERVERTIMEDELTA 0x6 // 0b00000110
-@@ -1166,6 +1241,14 @@ void CL_CreateNewCommands(void)
+@@ -1166,6 +1257,14 @@ void CL_CreateNewCommands(void)
  {
  	int cmdNum;
  
@@ -1582,7 +2064,7 @@ index 6651a0127..6c60ae4ff 100644
  	// no need to create usercmds until we have a gamestate
  	if (cls.state < CA_PRIMED)
  	{
-@@ -1288,7 +1371,11 @@ qboolean CL_ReadyToSendPacket(void)
+@@ -1288,7 +1387,11 @@ qboolean CL_ReadyToSendPacket(void)
  void CL_WritePacket(void)
  {
  	msg_t     buf;
@@ -1595,7 +2077,7 @@ index 6651a0127..6c60ae4ff 100644
  	int       i, j;
  	usercmd_t *cmd, *oldcmd;
  	usercmd_t nullcmd;
-@@ -1296,6 +1383,18 @@ void CL_WritePacket(void)
+@@ -1296,6 +1399,18 @@ void CL_WritePacket(void)
  	int       oldPacketNum;
  	int       count, key;
  
@@ -1614,7 +2096,7 @@ index 6651a0127..6c60ae4ff 100644
  	// don't send anything if playing back a demo
  	if (clc.demo.playing || cls.state == CA_CINEMATIC)
  	{
-@@ -1330,6 +1429,12 @@ void CL_WritePacket(void)
+@@ -1330,6 +1445,12 @@ void CL_WritePacket(void)
  	// typically several unacknowledged cp or userinfo commands stacked up
  	for (i = clc.reliableAcknowledge + 1 ; i <= clc.reliableSequence ; i++)
  	{
@@ -1627,7 +2109,7 @@ index 6651a0127..6c60ae4ff 100644
  		MSG_WriteByte(&buf, clc_clientCommand);
  		MSG_WriteLong(&buf, i);
  		MSG_WriteString(&buf, clc.reliableCommands[i & (MAX_RELIABLE_COMMANDS - 1)]);
-@@ -1348,6 +1453,9 @@ void CL_WritePacket(void)
+@@ -1348,6 +1469,9 @@ void CL_WritePacket(void)
  	}
  	oldPacketNum = (clc.netchan.outgoingSequence - 1 - cl_packetdup->integer) & PACKET_MASK;
  	count        = cl.cmdNumber - cl.outPackets[oldPacketNum].p_cmdNumber;
@@ -1637,7 +2119,7 @@ index 6651a0127..6c60ae4ff 100644
  	if (count > MAX_PACKET_USERCMDS)
  	{
  		Com_DPrintf("WARNING: exceeded max usercmds per packet limit %i/%i\n", count, MAX_PACKET_USERCMDS);
-@@ -1361,6 +1469,9 @@ void CL_WritePacket(void)
+@@ -1361,6 +1485,9 @@ void CL_WritePacket(void)
  		}
  
  		// begin a client move command
@@ -1647,7 +2129,7 @@ index 6651a0127..6c60ae4ff 100644
  		if (cl_nodelta->integer || !cl.snap.valid || clc.demo.waiting
  		    || clc.serverMessageSequence != cl.snap.messageNum)
  		{
-@@ -1370,6 +1481,7 @@ void CL_WritePacket(void)
+@@ -1370,6 +1497,7 @@ void CL_WritePacket(void)
  		{
  			MSG_WriteByte(&buf, clc_move);
  		}
@@ -1655,7 +2137,7 @@ index 6651a0127..6c60ae4ff 100644
  
  		// write the command count
  		MSG_WriteByte(&buf, count);
-@@ -1385,9 +1497,21 @@ void CL_WritePacket(void)
+@@ -1385,9 +1513,21 @@ void CL_WritePacket(void)
  		for (i = 0 ; i < count ; i++)
  		{
  			j   = (cl.cmdNumber - count + i + 1) & cl.cmdMask;
@@ -1677,7 +2159,7 @@ index 6651a0127..6c60ae4ff 100644
  		}
  	}
  
-@@ -1402,6 +1526,17 @@ void CL_WritePacket(void)
+@@ -1402,6 +1542,17 @@ void CL_WritePacket(void)
  	{
  		Com_Printf("%i ", buf.cursize);
  	}
@@ -1686,7 +2168,7 @@ index 6651a0127..6c60ae4ff 100644
 +		static int etjsWriteLog;
 +		if (etjsWriteLog < 8)
 +		{
-+			Com_Printf("ETJS WritePacket state=%d size=%d overflow=%d countReady=%d\n",
++			Com_DPrintf("ETJS WritePacket state=%d size=%d overflow=%d countReady=%d\n",
 +			           cls.state, buf.cursize, (int)buf.overflowed, cl.cmdNumber);
 +			etjsWriteLog++;
 +		}
@@ -1695,7 +2177,7 @@ index 6651a0127..6c60ae4ff 100644
  	CL_Netchan_Transmit(&clc.netchan, &buf);
  
  	// clients never really should have messages large enough
-@@ -1452,6 +1587,26 @@ void CL_SendCmd(void)
+@@ -1452,6 +1603,26 @@ void CL_SendCmd(void)
  	CL_WritePacket();
  }
  
@@ -1715,14 +2197,14 @@ index 6651a0127..6c60ae4ff 100644
 +		delta = 30.f;
 +	}
 +	ETJS_AddLook(delta, 0.f);
-+	Com_Printf("ETJS yaw now %.1f (delta %.1f)\n", cl.viewangles[YAW], delta);
++	Com_DPrintf("ETJS yaw now %.1f (delta %.1f)\n", cl.viewangles[YAW], delta);
 +}
 +#endif
 +
  /**
   * @brief CL_InitInput
   */
-@@ -1463,6 +1618,9 @@ void CL_InitInput(void)
+@@ -1463,6 +1634,9 @@ void CL_InitInput(void)
  	Cmd_AddCommand("-movedown", IN_DownUp);
  	Cmd_AddCommand("+left", IN_LeftDown);
  	Cmd_AddCommand("-left", IN_LeftUp);
@@ -1732,7 +2214,7 @@ index 6651a0127..6c60ae4ff 100644
  	Cmd_AddCommand("+right", IN_RightDown);
  	Cmd_AddCommand("-right", IN_RightUp);
  	Cmd_AddCommand("+forward", IN_ForwardDown);
-@@ -1532,3 +1690,177 @@ void CL_ClearKeys(void)
+@@ -1532,3 +1706,184 @@ void CL_ClearKeys(void)
  {
  	Com_Memset(kb, 0, sizeof(kb));
  }
@@ -1758,22 +2240,27 @@ index 6651a0127..6c60ae4ff 100644
 +		Cvar_Set("etjs_resetlook", "0");
 +	}
 +
++	/* Usercmd pitch is cyclic. Canonicalize hook-produced values such as 355
++	 * to -5 before applying the browser delta and the manual-look clamp. */
++	cl.viewangles[PITCH] = AngleNormalize180(cl.viewangles[PITCH]);
 +	cl.viewangles[YAW]   += yaw;
 +	cl.viewangles[PITCH] += pitch;
-+	if (cl.viewangles[PITCH] > 85.f)
++	if (cl.viewangles[PITCH] > 89.f)
 +	{
-+		cl.viewangles[PITCH] = 85.f;
++		cl.viewangles[PITCH] = 89.f;
 +	}
-+	else if (cl.viewangles[PITCH] < -85.f)
++	else if (cl.viewangles[PITCH] < -89.f)
 +	{
-+		cl.viewangles[PITCH] = -85.f;
++		cl.viewangles[PITCH] = -89.f;
 +	}
 +	/* Absolute angles for rshook. Do not also add these in cgame. */
 +	Cvar_Set("etjs_addyaw", va("%f", cl.viewangles[YAW]));
 +	Cvar_Set("etjs_addpitch", va("%f", cl.viewangles[PITCH]));
++	Cvar_Set("etjs_yaw", va("%d", (int)cl.viewangles[YAW]));
++	Cvar_Set("etjs_pitch", va("%d", (int)cl.viewangles[PITCH]));
 +	if (lookLog < 8 && (yaw != 0.f || pitch != 0.f))
 +	{
-+		Com_Printf("ETJS look yaw=%.1f pitch=%.1f -> %.1f %.1f\n",
++		Com_DPrintf("ETJS look yaw=%.1f pitch=%.1f -> %.1f %.1f\n",
 +		           yaw, pitch, cl.viewangles[YAW], cl.viewangles[PITCH]);
 +		lookLog++;
 +	}
@@ -1793,7 +2280,7 @@ index 6651a0127..6c60ae4ff 100644
 +		if (Cvar_VariableIntegerValue("etjs_splash") == 1)
 +		{
 +			Cvar_Set("etjs_splash", "2");
-+			Com_Printf("ETJS splash skip\n");
++			Com_DPrintf("ETJS splash skip\n");
 +			return;
 +		}
 +		/* Official parsed MAIN owns clicks. The leftover C-drawn JOIN
@@ -1823,15 +2310,10 @@ index 6651a0127..6c60ae4ff 100644
 +void ETJS_SetMove(int forward, int right, int up)
 +{
 +	static int moveLog;
-+	extern qboolean com_fullyInitialized;
 +
 +	etjsMoveForward = forward;
 +	etjsMoveRight   = right;
 +	etjsMoveUp      = up;
-+	if (com_fullyInitialized)
-+	{
-+		Cvar_Set("etjs_fwd", va("%d", forward));
-+	}
 +
 +	kb[KB_FORWARD].active   = (forward > 0) ? qtrue : qfalse;
 +	kb[KB_BACK].active      = (forward < 0) ? qtrue : qfalse;
@@ -1842,7 +2324,7 @@ index 6651a0127..6c60ae4ff 100644
 +
 +	if (moveLog < 8 && (forward || right || up))
 +	{
-+		Com_Printf("ETJS SetMove f=%d r=%d u=%d catchers=%d\n",
++		Com_DPrintf("ETJS SetMove f=%d r=%d u=%d catchers=%d\n",
 +		           forward, right, up, cls.keyCatchers);
 +		moveLog++;
 +	}
@@ -1872,6 +2354,13 @@ index 6651a0127..6c60ae4ff 100644
 +		/* Pin then place so a page click hits the official 640-space control. */
 +		VM_Call(uivm, UI_MOUSE_EVENT, -10000, -10000);
 +		VM_Call(uivm, UI_MOUSE_EVENT, (int)x, (int)y);
++	}
++	else if (cgvm && (cls.keyCatchers & KEYCATCH_CGAME))
++	{
++		/* Cgame panels consume relative deltas. Pin and place the cursor so
++		 * browser coordinates remain exact across limbo/debrief transitions. */
++		VM_Call(cgvm, CG_MOUSE_EVENT, -10000, -10000);
++		VM_Call(cgvm, CG_MOUSE_EVENT, (int)x, (int)y);
 +	}
 +}
 +
@@ -1911,7 +2400,7 @@ index 6651a0127..6c60ae4ff 100644
 +}
 +#endif
 diff --git a/src/client/cl_main.c b/src/client/cl_main.c
-index 28b4bb510..ee8abd4e5 100644
+index 28b4bb510..508e1be37 100644
 --- a/src/client/cl_main.c
 +++ b/src/client/cl_main.c
 @@ -1587,6 +1587,16 @@ static void CL_CheckForResend(void)
@@ -2000,7 +2489,7 @@ index 28b4bb510..ee8abd4e5 100644
 +		static int etjsClFrameLog;
 +		if (etjsClFrameLog < 16)
 +		{
-+			Com_Printf("ETJS CL_Frame active %d before SendCmd\n", etjsClFrameLog);
++			Com_DPrintf("ETJS CL_Frame active %d before SendCmd\n", etjsClFrameLog);
 +			etjsClFrameLog++;
 +		}
 +	}
@@ -2020,7 +2509,21 @@ index 28b4bb510..ee8abd4e5 100644
  
  	// decide on the serverTime to render
  	CL_SetCGameTime();
-@@ -3135,6 +3182,33 @@ void CL_InitRef(void)
+@@ -2986,7 +3033,13 @@ void CL_RegisterConsoleFont(void)
+ 	}
+ 
+ 	Com_Memset(&cls.etIconFont, 0, sizeof(cls.etIconFont));
++#ifdef __EMSCRIPTEN__
++	/* Browser builds use the original pre-rendered font data from pak0; the
++	 * ETLegacy TTFs require FreeType, which is intentionally not linked. */
++	re.RegisterFont("ariblk", smallCharHeight, &cls.etIconFont, qfalse);
++#else
+ 	re.RegisterFont("ETL-icon-font", smallCharHeight, &cls.etIconFont, qfalse);
++#endif
+ }
+ 
+ 
+@@ -3135,6 +3188,33 @@ void CL_InitRef(void)
  
  //===========================================================================================
  
@@ -2046,7 +2549,7 @@ index 28b4bb510..ee8abd4e5 100644
 +	{
 +		addr = "127.0.0.1:27961";
 +	}
-+	Com_Printf("ETJS join name=%s connect=%s\n", name ? name : "", addr);
++	Com_DPrintf("ETJS join name=%s connect=%s\n", name ? name : "", addr);
 +	Cbuf_AddText(va("connect %s\n", addr));
 +}
 +#endif
@@ -2054,7 +2557,7 @@ index 28b4bb510..ee8abd4e5 100644
  /**
   * @brief CL_Init
   */
-@@ -3164,6 +3238,22 @@ void CL_Init(void)
+@@ -3164,6 +3244,31 @@ void CL_Init(void)
  	Cvar_Get("etl_bUUID", ETLEGACY_VERSION_ID, CVAR_USERINFO | CVAR_ROM | CVAR_NOTABCOMPLETE);
  	#endif
  	// register our commands
@@ -2062,8 +2565,17 @@ index 28b4bb510..ee8abd4e5 100644
 +	Cvar_Get("cl_rshook", "0", 0);
 +	Cvar_Get("etjs_connect", "127.0.0.1:27961", 0);
 +	Cvar_Get("etjs_ingame", "0", 0);
++	Cvar_Get("etjs_uiopen", "0", 0);
++	Cvar_Get("etjs_intermission", "0", 0);
++	Cvar_Get("etjs_dead", "0", 0);
++	Cvar_Get("etjs_target", "-1", 0);
++	Cvar_Get("etjs_aimworldpitch", "0", 0);
 +	Cvar_Get("etjs_fwd", "0", 0);
++	Cvar_Get("etjs_right", "0", 0);
++	Cvar_Get("etjs_up", "0", 0);
 +	Cvar_Get("etjs_atk", "0", 0);
++	Cvar_Get("etjs_yaw", "0", 0);
++	Cvar_Get("etjs_pitch", "0", 0);
 +	Cvar_Get("etjs_ox", "0", 0);
 +	Cvar_Get("etjs_oy", "0", 0);
 +	Cvar_Get("etjs_resetlook", "0", 0);
@@ -2095,7 +2607,7 @@ index 11ea52188..a0c50fd25 100644
  	{
  		// modify the key with the last sent and with this message acknowledged client command
 diff --git a/src/client/cl_parse.c b/src/client/cl_parse.c
-index 9196a0161..c4409fd89 100644
+index 9196a0161..bcff238a3 100644
 --- a/src/client/cl_parse.c
 +++ b/src/client/cl_parse.c
 @@ -212,7 +212,13 @@ void CL_DeltaEntity(msg_t *msg, clSnapshot_t *frame, int newnum, entityState_t *
@@ -2126,12 +2638,12 @@ index 9196a0161..c4409fd89 100644
  
  	newframe->parseEntitiesNum = cl.parseEntitiesNum;
  	newframe->numEntities      = 0;
-+#ifdef __EMSCRIPTEN__
++	#ifdef __EMSCRIPTEN__
 +	{
 +		static int etjsEntStart;
 +		if (etjsEntStart < 8)
 +		{
-+			Com_Printf("ETJS ParsePacketEntities start old=%d read=%d size=%d\n",
++			Com_DPrintf("ETJS ParsePacketEntities start old=%d read=%d size=%d\n",
 +			           oldframe ? oldframe->numEntities : -1, msg->readcount, msg->cursize);
 +			etjsEntStart++;
 +		}
@@ -2151,7 +2663,7 @@ index 9196a0161..c4409fd89 100644
 +		{
 +			if (etjsEntGuard > MAX_GENTITIES)
 +			{
-+				Com_Printf("ETJS CL_ParsePacketEntities guard (ents=%d read=%d size=%d)\n",
++				Com_DPrintf("ETJS CL_ParsePacketEntities guard (ents=%d read=%d size=%d)\n",
 +				           newframe->numEntities, msg->readcount, msg->cursize);
 +			}
 +			break;
@@ -2169,7 +2681,7 @@ index 9196a0161..c4409fd89 100644
  		if (msg->readcount > msg->cursize)
  		{
 +#ifdef __EMSCRIPTEN__
-+			Com_Printf("ETJS CL_ParsePacketEntities: end of message\n");
++			Com_DPrintf("ETJS CL_ParsePacketEntities: end of message\n");
 +			break;
 +#else
  			Com_Error(ERR_DROP, "CL_ParsePacketEntities: end of message");
@@ -2186,7 +2698,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsEntDone;
 +		if (etjsEntDone < 8)
 +		{
-+			Com_Printf("ETJS ParsePacketEntities done ents=%d read=%d overflowed=%d\n",
++			Com_DPrintf("ETJS ParsePacketEntities done ents=%d read=%d overflowed=%d\n",
 +			           newframe->numEntities, msg->readcount, (int)msg->overflowed);
 +			etjsEntDone++;
 +		}
@@ -2211,7 +2723,7 @@ index 9196a0161..c4409fd89 100644
 +#ifdef __EMSCRIPTEN__
 +	if (!msg || !msg->data || msg->cursize < 8 || msg->readcount < 0 || msg->readcount > msg->cursize)
 +	{
-+		Com_Printf("ETJS CL_ParseSnapshot dropped (cursize=%d readcount=%d)\n",
++		Com_DPrintf("ETJS CL_ParseSnapshot dropped (cursize=%d readcount=%d)\n",
 +		           msg ? msg->cursize : -1, msg ? msg->readcount : -1);
 +		return;
 +	}
@@ -2229,7 +2741,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsSnapLog;
 +		if (etjsSnapLog < 8)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot begin size=%d read=%d bit=%d\n",
++			Com_DPrintf("ETJS CL_ParseSnapshot begin size=%d read=%d bit=%d\n",
 +			           msg->cursize, msg->readcount, msg->bit);
 +			etjsSnapLog++;
 +		}
@@ -2242,7 +2754,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsAfterTime;
 +		if (etjsAfterTime < 6)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot after time %d\n", newSnap.serverTime);
++			Com_DPrintf("ETJS CL_ParseSnapshot after time %d\n", newSnap.serverTime);
 +			etjsAfterTime++;
 +		}
 +	}
@@ -2275,7 +2787,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsPsLog;
 +		if (etjsPsLog < 8)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot playerstate old=%d read=%d\n",
++			Com_DPrintf("ETJS CL_ParseSnapshot playerstate old=%d read=%d\n",
 +			           old ? 1 : 0, msg->readcount);
 +			etjsPsLog++;
 +		}
@@ -2293,7 +2805,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsEntLog;
 +		if (etjsEntLog < 8)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot after ps read=%d overflowed=%d\n",
++			Com_DPrintf("ETJS CL_ParseSnapshot after ps read=%d overflowed=%d\n",
 +			           msg->readcount, (int)msg->overflowed);
 +			etjsEntLog++;
 +		}
@@ -2306,7 +2818,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsEntStart;
 +		if (etjsEntStart < 8)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot ents start old=%d\n", old ? 1 : 0);
++			Com_DPrintf("ETJS CL_ParseSnapshot ents start old=%d\n", old ? 1 : 0);
 +			etjsEntStart++;
 +		}
 +	}
@@ -2317,7 +2829,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsEntDone;
 +		if (etjsEntDone < 8)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot ents done n=%d\n", newSnap.numEntities);
++			Com_DPrintf("ETJS CL_ParseSnapshot ents done n=%d\n", newSnap.numEntities);
 +			etjsEntDone++;
 +		}
 +	}
@@ -2326,7 +2838,7 @@ index 9196a0161..c4409fd89 100644
 +#ifdef __EMSCRIPTEN__
 +	if (msg->readcount > msg->cursize + 4 || msg->overflowed)
 +	{
-+		Com_Printf("ETJS CL_ParseSnapshot overflowed (read=%d size=%d valid=%d)\n",
++		Com_DPrintf("ETJS CL_ParseSnapshot overflowed (read=%d size=%d valid=%d)\n",
 +		           msg->readcount, msg->cursize, (int)newSnap.valid);
 +		return;
 +	}
@@ -2334,7 +2846,7 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsAfterEnts;
 +		if (etjsAfterEnts < 8)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot store valid=%d msg=%d\n",
++			Com_DPrintf("ETJS CL_ParseSnapshot store valid=%d msg=%d\n",
 +			           (int)newSnap.valid, newSnap.messageNum);
 +			etjsAfterEnts++;
 +		}
@@ -2384,7 +2896,7 @@ index 9196a0161..c4409fd89 100644
  
  	if (cl_shownet->integer == 3)
  	{
-@@ -582,7 +750,20 @@ void CL_ParseSnapshot(msg_t *msg)
+@@ -582,6 +750,17 @@ void CL_ParseSnapshot(msg_t *msg)
  
  	cl.newSnapshots = qtrue;
  
@@ -2393,24 +2905,21 @@ index 9196a0161..c4409fd89 100644
 +		static int etjsSnapEnd;
 +		if (etjsSnapEnd < 8)
 +		{
-+			Com_Printf("ETJS CL_ParseSnapshot copied valid=%d ping=%d\n",
++			Com_DPrintf("ETJS CL_ParseSnapshot copied valid=%d ping=%d\n",
 +			           (int)cl.snap.valid, cl.snap.ping);
 +			etjsSnapEnd++;
 +		}
 +	}
-+	/* Lerp copy of a second full snapshot has been crashing the tab. */
-+#else
++	#endif
  	CL_SetSnapshotLerp();
-+#endif
  }
  
- //=====================================================================
-@@ -1136,7 +1317,12 @@ void CL_ParseServerMessage(msg_t *msg)
+@@ -1136,7 +1315,12 @@ void CL_ParseServerMessage(msg_t *msg)
  	{
  		if (msg->readcount > msg->cursize)
  		{
 +#ifdef __EMSCRIPTEN__
-+			Com_Printf("ETJS parse: read past end of server message\n");
++			Com_DPrintf("ETJS parse: read past end of server message\n");
 +			break;
 +#else
  			Com_Error(ERR_DROP, "CL_ParseServerMessage: read past end of server message");
@@ -2418,7 +2927,7 @@ index 9196a0161..c4409fd89 100644
  		}
  
  		cmd = MSG_ReadByte(msg);
-@@ -1170,7 +1356,12 @@ void CL_ParseServerMessage(msg_t *msg)
+@@ -1170,7 +1354,12 @@ void CL_ParseServerMessage(msg_t *msg)
  		switch (cmd)
  		{
  		default:
@@ -2431,7 +2940,7 @@ index 9196a0161..c4409fd89 100644
  		case svc_nop:
  			break;
  		case svc_serverCommand:
-@@ -1188,5 +1379,9 @@ void CL_ParseServerMessage(msg_t *msg)
+@@ -1188,5 +1377,9 @@ void CL_ParseServerMessage(msg_t *msg)
  		}
  	}
  
@@ -2442,7 +2951,7 @@ index 9196a0161..c4409fd89 100644
 +#endif
  }
 diff --git a/src/client/cl_scrn.c b/src/client/cl_scrn.c
-index f26b96a08..c7b104bfd 100644
+index f26b96a08..4989d7f0f 100644
 --- a/src/client/cl_scrn.c
 +++ b/src/client/cl_scrn.c
 @@ -35,6 +35,10 @@
@@ -2547,12 +3056,12 @@ index f26b96a08..c7b104bfd 100644
 +	{
 +		etjsSplashSlide++;
 +		etjsSplashSlideAt = cls.realtime;
-+		Com_Printf("ETJS splash slide %d\n", etjsSplashSlide);
++		Com_DPrintf("ETJS splash slide %d\n", etjsSplashSlide);
 +	}
 +	else if (etjsSplashSlide >= 2 && cls.realtime - etjsSplashSlideAt > 2500)
 +	{
 +		Cvar_Set("etjs_splash", "2");
-+		Com_Printf("ETJS splash skip\n");
++		Com_DPrintf("ETJS splash skip\n");
 +		return;
 +	}
 +
@@ -2606,13 +3115,13 @@ index f26b96a08..c7b104bfd 100644
 +	if (Cvar_VariableIntegerValue("etjs_splash") == 1)
 +	{
 +		Cvar_Set("etjs_splash", "2");
-+		Com_Printf("ETJS splash skip\n");
++		Com_DPrintf("ETJS splash skip\n");
 +		return qtrue;
 +	}
 +	if (x640 >= 170.f && x640 <= 470.f && y640 >= 260.f && y640 <= 310.f)
 +	{
 +		Cbuf_AddText("etjs_joingame\n");
-+		Com_Printf("ETJS menu click join\n");
++		Com_DPrintf("ETJS menu click join\n");
 +		return qtrue;
 +	}
 +	return qfalse;
@@ -2784,18 +3293,19 @@ index f26b96a08..c7b104bfd 100644
  			break;
  		}
  	}
-@@ -573,6 +877,10 @@ void SCR_UpdateScreen(void)
+@@ -573,6 +877,11 @@ void SCR_UpdateScreen(void)
  	{
  		return;             // not initialized yet
  	}
 +#ifdef __EMSCRIPTEN__
 +	etjsInMatch = (cls.state == CA_ACTIVE);
 +	Cvar_Set("etjs_ingame", etjsInMatch ? "1" : "0");
++	Cvar_Set("etjs_uiopen", (cls.keyCatchers & KEYCATCH_UI) ? "1" : "0");
 +#endif
  
  	if (++recursive >= 2)
  	{
-@@ -585,6 +893,17 @@ void SCR_UpdateScreen(void)
+@@ -585,6 +894,17 @@ void SCR_UpdateScreen(void)
  
  	SCR_DrawScreenField();
  
@@ -2805,7 +3315,7 @@ index f26b96a08..c7b104bfd 100644
 +		static int etjsEndFrameLog;
 +		if (etjsEndFrameLog < 8)
 +		{
-+			Com_Printf("ETJS before EndFrame active %d\n", etjsEndFrameLog);
++			Com_DPrintf("ETJS before EndFrame active %d\n", etjsEndFrameLog);
 +		}
 +		etjsEndFrameLog++;
 +	}
@@ -2813,7 +3323,7 @@ index f26b96a08..c7b104bfd 100644
  	if (com_speeds->integer)
  	{
  		re.EndFrame(&time_frontend, &time_backend);
-@@ -593,6 +912,17 @@ void SCR_UpdateScreen(void)
+@@ -593,6 +913,17 @@ void SCR_UpdateScreen(void)
  	{
  		re.EndFrame(NULL, NULL);
  	}
@@ -2823,7 +3333,7 @@ index f26b96a08..c7b104bfd 100644
 +		static int etjsEndFrameDoneLog;
 +		if (etjsEndFrameDoneLog < 8)
 +		{
-+			Com_Printf("ETJS after EndFrame active %d\n", etjsEndFrameDoneLog);
++			Com_DPrintf("ETJS after EndFrame active %d\n", etjsEndFrameDoneLog);
 +			etjsEndFrameDoneLog++;
 +		}
 +	}
@@ -2832,7 +3342,7 @@ index f26b96a08..c7b104bfd 100644
  	recursive = 0;
  }
 diff --git a/src/client/cl_ui.c b/src/client/cl_ui.c
-index 87490741c..96d8d0035 100644
+index 87490741c..08ab95243 100644
 --- a/src/client/cl_ui.c
 +++ b/src/client/cl_ui.c
 @@ -54,6 +54,17 @@ static ext_trap_keys_t ui_extensionTraps[] =
@@ -2853,7 +3363,31 @@ index 87490741c..96d8d0035 100644
  /**
   * @brief GetClientState
   * @param[out] state
-@@ -1055,6 +1066,17 @@ static int GetConfigString(int index, char *buf, size_t size)
+@@ -97,6 +108,12 @@ void LAN_LoadCachedServers(void)
+ 	Com_Memset(&cls.favoriteServers, 0, sizeof(cls.favoriteServers));
+ 	Com_Memset(&cls.numGlobalServerAddresses, 0, sizeof(cls.numGlobalServerAddresses));
+ 
++#ifdef __EMSCRIPTEN__
++	/* ETJS has one JOIN GAME target and intentionally no server browser.
++	 * Avoid probing a nonexistent favcache.json every time menus reload. */
++	return;
++#endif
++
+ #ifdef FEATURE_DBMS
+ 	if (cl_profile->string[0] && db_mode->integer > 0)
+ 	{
+@@ -165,6 +182,10 @@ void LAN_SaveServersToFile(void)
+ 	cJSON *root = NULL, *serverObj;
+ 	char  filename[MAX_QPATH];
+ 
++#ifdef __EMSCRIPTEN__
++	return;
++#endif
++
+ 	CL_FavCacheFile(filename, sizeof(filename));
+ 
+ 	root = cJSON_CreateArray();
+@@ -1055,6 +1076,17 @@ static int GetConfigString(int index, char *buf, size_t size)
   */
  intptr_t CL_UISystemCalls(intptr_t *args)
  {
@@ -2863,7 +3397,7 @@ index 87490741c..96d8d0035 100644
 +
 +		if (etjsUiTrapLog < 4)
 +		{
-+			Com_Printf("ETJS UI trap[%d]=%ld\n", etjsUiTrapLog, (long int)args[0]);
++			Com_DPrintf("ETJS UI trap[%d]=%ld\n", etjsUiTrapLog, (long int)args[0]);
 +			etjsUiTrapLog++;
 +		}
 +	}
@@ -2871,7 +3405,7 @@ index 87490741c..96d8d0035 100644
  	switch (args[0])
  	{
  	case UI_ERROR:
-@@ -1125,6 +1147,8 @@ intptr_t CL_UISystemCalls(intptr_t *args)
+@@ -1125,6 +1157,8 @@ intptr_t CL_UISystemCalls(intptr_t *args)
  		return 0;
  	case UI_FS_DELETEFILE:
  		return FS_Delete(VMA(1));
@@ -2880,7 +3414,7 @@ index 87490741c..96d8d0035 100644
  	case UI_FS_GETFILELIST:
  		return FS_GetFileList(VMA(1), VMA(2), VMA(3), args[4]);
  	case UI_R_REGISTERMODEL:
-@@ -1175,6 +1199,8 @@ intptr_t CL_UISystemCalls(intptr_t *args)
+@@ -1175,6 +1209,8 @@ intptr_t CL_UISystemCalls(intptr_t *args)
  		return 0;
  	case UI_CM_LERPTAG:
  		return re.LerpTag(VMA(1), VMA(2), VMA(3), args[4]);
@@ -2889,7 +3423,7 @@ index 87490741c..96d8d0035 100644
  	case UI_S_REGISTERSOUND:
  		return S_RegisterSound(VMA(1), (qboolean)args[2]);
  	case UI_S_STARTLOCALSOUND:
-@@ -1224,6 +1250,16 @@ intptr_t CL_UISystemCalls(intptr_t *args)
+@@ -1224,6 +1260,16 @@ intptr_t CL_UISystemCalls(intptr_t *args)
  		return 0;
  	case UI_GETCONFIGSTRING:
  		return GetConfigString(args[1], VMA(2), args[3]);
@@ -2906,7 +3440,7 @@ index 87490741c..96d8d0035 100644
  	case UI_LAN_LOADCACHEDSERVERS:
  		LAN_LoadCachedServers();
  		return 0;
-@@ -1274,7 +1310,22 @@ intptr_t CL_UISystemCalls(intptr_t *args)
+@@ -1274,7 +1320,22 @@ intptr_t CL_UISystemCalls(intptr_t *args)
  		return LAN_CompareServers(args[1], args[2], args[3], args[4], args[5]);
  	case UI_MEMORY_REMAINING:
  		return Hunk_MemoryRemaining();
@@ -2929,7 +3463,7 @@ index 87490741c..96d8d0035 100644
  		re.RegisterFont(VMA(1), args[2], VMA(3), (args[4] == qtrue));
  		return 0;
  	case UI_MEMSET:
-@@ -1296,20 +1347,46 @@ intptr_t CL_UISystemCalls(intptr_t *args)
+@@ -1296,20 +1357,46 @@ intptr_t CL_UISystemCalls(intptr_t *args)
  	case UI_CEIL:
  		return Q_FloatAsInt(ceil(VMF(1)));
  	case UI_PC_ADD_GLOBAL_DEFINE:
@@ -2978,7 +3512,7 @@ index 87490741c..96d8d0035 100644
  		return 0;
  	case UI_S_STOPBACKGROUNDTRACK:
  		S_StopBackgroundTrack();
-@@ -1361,7 +1438,12 @@ intptr_t CL_UISystemCalls(intptr_t *args)
+@@ -1361,7 +1448,12 @@ intptr_t CL_UISystemCalls(intptr_t *args)
  	case UI_CVAR_SET_DESCRIPTION:
  		return Cvar_SetDescriptionByName(VMA(1), VMA(2));
  	default:
@@ -3016,8 +3550,144 @@ index f96a346f9..2b8ef163c 100644
 -#endif
  
  #endif // #ifndef INCLUDE_CLIENT_H
+diff --git a/src/game/bg_pmove.c b/src/game/bg_pmove.c
+index d4164bc9e..8b0e16bcd 100644
+--- a/src/game/bg_pmove.c
++++ b/src/game/bg_pmove.c
+@@ -832,6 +832,40 @@ static qboolean PM_CheckJump(void)
+ 	return qtrue;
+ }
+ 
++/**
++ * @brief ETJS second jump while airborne.
++ *
++ * The release requirement keeps a held space bar from spending both jumps in
++ * adjacent prediction frames.  doubleJumped is reset only after ground trace
++ * confirms a landing, so client prediction and the server make the same call.
++ */
++static qboolean PM_CheckDoubleJump(void)
++{
++	if (pml.walking || pm->ps->groundEntityNum != ENTITYNUM_NONE || pm->waterlevel > 1 || pml.ladder)
++	{
++		return qfalse;
++	}
++
++	if (pm->pmext->doubleJumped || pm->ps->jumpTime <= 0 ||
++	    pm->cmd.serverTime - pm->ps->jumpTime < PM_JUMP_DELAY)
++	{
++		return qfalse;
++	}
++
++	if (pm->cmd.upmove < 10 || (pm->ps->pm_flags & PMF_JUMP_HELD) ||
++	    (pm->ps->eFlags & (EF_PRONE | EF_MOUNTEDTANK)))
++	{
++		return qfalse;
++	}
++
++	pm->pmext->doubleJumped = qtrue;
++	pm->ps->pm_flags       |= PMF_JUMP_HELD;
++	pm->ps->velocity[2]     = JUMP_VELOCITY;
++	pm->ps->jumpTime        = pm->cmd.serverTime;
++	PM_PlayJumpAnim();
++	return qtrue;
++}
++
+ /**
+  * @brief PM_CheckWaterJump
+  * @return
+@@ -4964,6 +4998,12 @@ void PM_LadderMove(void)
+  */
+ void PM_Sprint(void)
+ {
++	/* ETJS fun rules: sprint is always available and the HUD stays full. */
++	pm->pmext->sprintTime  = SPRINTTIME;
++	pm->ps->sprintExertTime = 0;
++	return;
++
++	/* Kept below for an easy future cvar-backed classic mode. */
+ 	if (pm->waterlevel <= 1) // no sprint & no stamina recharge under water
+ 	{
+ 		if ((pm->cmd.buttons & BUTTON_SPRINT) && (pm->cmd.forwardmove || pm->cmd.rightmove)
+@@ -5270,6 +5310,14 @@ void PmoveSingle(pmove_t *pmove)
+ 
+ 	// set groundentity
+ 	PM_GroundTrace();
++	if (pml.walking)
++	{
++		pm->pmext->doubleJumped = qfalse;
++	}
++	else
++	{
++		PM_CheckDoubleJump();
++	}
+ 
+ 	if (pm->ps->pm_type == PM_DEAD)
+ 	{
+diff --git a/src/game/bg_public.h b/src/game/bg_public.h
+index ebdba6d25..330c4cc7c 100644
+--- a/src/game/bg_public.h
++++ b/src/game/bg_public.h
+@@ -555,6 +555,7 @@ typedef struct pmoveExt_s
+ 	qboolean bAutoReload;          ///< do we predict autoreload of weapons
+ 
+ 	int jumpTime;                  ///< used in MP to prevent jump accel
++	qboolean doubleJumped;         ///< ETJS: one extra jump before touching ground
+ 
+ 	int silencedSideArm;           ///< Keep track of whether the luger/colt is silenced "in holster", prolly want to do this for the kar98 etc too
+ 	float sprintTime;
+diff --git a/src/game/g_xp_saver.c b/src/game/g_xp_saver.c
+index e01df66a6..0889cb901 100644
+--- a/src/game/g_xp_saver.c
++++ b/src/game/g_xp_saver.c
+@@ -26,9 +26,6 @@
+ 
+ #ifdef FEATURE_DBMS
+ #include <sqlite3.h>
+-#else
+-#error Well here we are. Fix this. This whole file and functionality needs to be macroed away.
+-#endif
+ 
+ #ifndef _MSC_VER
+ #define __FUNCTION__ __func__
+@@ -764,3 +761,36 @@ void G_XPImportAll_IntoDatabase()
+ 	Com_Dealloc(fileList);
+ 	G_Printf("=== Import Complete ===\n");
+ }
++
++#else
++
++/* XP persistence is a database feature.  Keep the public game API available
++ * in lean dedicated builds so Objective gameplay (including ETJS movement
++ * rules) does not require SQLite just to load qagame. */
++int G_XPSaver_CheckDB(char *db_path, int db_mode)
++{
++	(void)db_path;
++	(void)db_mode;
++	return 0;
++}
++
++void G_XPSaver_Load(gclient_t *cl)
++{
++	(void)cl;
++}
++
++void G_XPSaver_Store(gclient_t *cl)
++{
++	(void)cl;
++}
++
++int G_XPSaver_Clear(void)
++{
++	return 0;
++}
++
++void G_XPSaver_Convert(void)
++{
++}
++
++#endif /* FEATURE_DBMS */
 diff --git a/src/qcommon/common.c b/src/qcommon/common.c
-index 855517351..c02a25669 100644
+index 855517351..e0185b2d1 100644
 --- a/src/qcommon/common.c
 +++ b/src/qcommon/common.c
 @@ -36,6 +36,10 @@
@@ -3168,7 +3838,7 @@ index 855517351..c02a25669 100644
  	}
  	Z_ClearZone(smallzone, s_smallZoneTotal);
 +#ifdef __EMSCRIPTEN__
-+	Com_Printf("ETJS small zone %d bytes\n", s_smallZoneTotal);
++	Com_DPrintf("ETJS small zone %d bytes\n", s_smallZoneTotal);
 +#endif
  }
  
@@ -3178,7 +3848,7 @@ index 855517351..c02a25669 100644
  	}
  	Z_ClearZone(mainzone, s_zoneTotal);
 +#ifdef __EMSCRIPTEN__
-+	Com_Printf("ETJS main zone %d bytes\n", s_zoneTotal);
++	Com_DPrintf("ETJS main zone %d bytes\n", s_zoneTotal);
 +#endif
  }
  
@@ -4618,7 +5288,7 @@ index 1f0c37f53..e65b7b3db 100644
  		tess.numIndexes += indexes;
  	}
 diff --git a/src/renderer/tr_backend.c b/src/renderer/tr_backend.c
-index 54efa40ab..cafdab640 100644
+index 54efa40ab..3a6aac363 100644
 --- a/src/renderer/tr_backend.c
 +++ b/src/renderer/tr_backend.c
 @@ -33,6 +33,12 @@
@@ -4706,7 +5376,7 @@ index 54efa40ab..cafdab640 100644
  
  	// set the window clipping
  	glViewport(backEnd.viewParms.viewportX, backEnd.viewParms.viewportY,
-@@ -448,6 +472,42 @@ void RB_BeginDrawingView(void)
+@@ -448,6 +472,47 @@ void RB_BeginDrawingView(void)
  {
  	int clearBits = 0;
  
@@ -4731,6 +5401,11 @@ index 54efa40ab..cafdab640 100644
 +		glViewport(vx, vy, vw, vh);
 +		glScissor(vx, vy, vw, vh);
 +		glEnable(GL_DEPTH_TEST);
++		/* glClear(GL_DEPTH_BUFFER_BIT) obeys the depth write mask. The 2D/UI
++		 * pass leaves it disabled, so clearing before restoring the mask keeps
++		 * stale world/weapon depth from the previous frame and punches the
++		 * clear colour through the next view. */
++		glDepthMask(GL_TRUE);
 +		glDisable(GL_CULL_FACE);
 +		if (backEnd.refdef.rdflags & RDF_NOWORLDMODEL)
 +		{
@@ -4749,7 +5424,7 @@ index 54efa40ab..cafdab640 100644
  	// sync with gl if needed
  	if (r_finish->integer == 1 && !glState.finishCalled)
  	{
-@@ -641,6 +701,7 @@ void RB_BeginDrawingView(void)
+@@ -641,6 +706,7 @@ void RB_BeginDrawingView(void)
  	{
  		glDisable(GL_CLIP_PLANE0);
  	}
@@ -4757,7 +5432,7 @@ index 54efa40ab..cafdab640 100644
  }
  
  /**
-@@ -663,6 +724,16 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -663,6 +729,16 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
  
  	// clear the z buffer, set the modelview, etc
  	RB_BeginDrawingView();
@@ -4766,7 +5441,7 @@ index 54efa40ab..cafdab640 100644
 +		static int surfLog;
 +		if (surfLog < 8)
 +		{
-+			ri.Printf(PRINT_ALL, "RB_RenderDrawSurfList numDrawSurfs=%d\n", numDrawSurfs);
++			ri.Printf(PRINT_DEVELOPER, "RB_RenderDrawSurfList numDrawSurfs=%d\n", numDrawSurfs);
 +			surfLog++;
 +		}
 +	}
@@ -4774,7 +5449,7 @@ index 54efa40ab..cafdab640 100644
  
  	// draw everything
  	oldEntityNum          = -1;
-@@ -678,6 +749,13 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -678,6 +754,13 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
  
  	for (i = 0, drawSurf = drawSurfs ; i < numDrawSurfs ; i++, drawSurf++)
  	{
@@ -4788,7 +5463,7 @@ index 54efa40ab..cafdab640 100644
  		if (drawSurf->sort == oldSort)
  		{
  			// fast path, same as previous sort
-@@ -686,6 +764,12 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -686,6 +769,12 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
  		}
  		oldSort = drawSurf->sort;
  		R_DecomposeSort(drawSurf->sort, &entityNum, &shader, &fogNum, &frontFace, &dlighted);
@@ -4801,7 +5476,7 @@ index 54efa40ab..cafdab640 100644
  
  		// change the tess parameters if needed
  		// a "entityMergable" shader is a shader that can have surfaces from seperate
-@@ -747,6 +831,21 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -747,6 +836,21 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
  				R_TransformDlights(backEnd.refdef.num_dlights, backEnd.refdef.dlights, &backEnd.orientation);
  			}
  
@@ -4823,7 +5498,7 @@ index 54efa40ab..cafdab640 100644
  			glLoadMatrixf(backEnd.orientation.modelMatrix);
  
  			// change depthrange if needed
-@@ -762,6 +861,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -762,6 +866,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
  				}
  				oldDepthRange = depthRange;
  			}
@@ -4831,7 +5506,7 @@ index 54efa40ab..cafdab640 100644
  
  			oldEntityNum = entityNum;
  		}
-@@ -780,6 +880,13 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -780,6 +885,13 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
  	backEnd.currentEntity    = &tr.worldEntity;
  	backEnd.refdef.floatTime = originalTime;
  	backEnd.orientation      = backEnd.viewParms.world;
@@ -4845,7 +5520,7 @@ index 54efa40ab..cafdab640 100644
  	R_TransformDlights(backEnd.refdef.num_dlights, backEnd.refdef.dlights, &backEnd.orientation);
  
  	glLoadMatrixf(backEnd.viewParms.world.modelMatrix);
-@@ -796,6 +903,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -796,6 +908,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
  
  	// add light flares on lights that aren't obscured
  	RB_RenderFlares();
@@ -4853,7 +5528,7 @@ index 54efa40ab..cafdab640 100644
  }
  
  /*
-@@ -809,24 +917,34 @@ RENDER BACK END FUNCTIONS
+@@ -809,24 +922,34 @@ RENDER BACK END FUNCTIONS
   */
  void RB_SetGL2D(void)
  {
@@ -4888,7 +5563,7 @@ index 54efa40ab..cafdab640 100644
  
  	// set time for 2D shaders
  	backEnd.refdef.time      = ri.Milliseconds();
-@@ -867,6 +985,24 @@ void RE_StretchRaw(int x, int y, int w, int h, int cols, int rows, const byte *d
+@@ -867,6 +990,24 @@ void RE_StretchRaw(int x, int y, int w, int h, int cols, int rows, const byte *d
  		RB_SetGL2D();
  	}
  
@@ -4913,7 +5588,7 @@ index 54efa40ab..cafdab640 100644
  	glColor3f(tr.identityLight, tr.identityLight, tr.identityLight);
  
  	glBegin(GL_QUADS);
-@@ -879,6 +1015,7 @@ void RE_StretchRaw(int x, int y, int w, int h, int cols, int rows, const byte *d
+@@ -879,6 +1020,7 @@ void RE_StretchRaw(int x, int y, int w, int h, int cols, int rows, const byte *d
  	glTexCoord2f(0.5f / cols, (rows - 0.5f) / rows);
  	glVertex2f(x, y + h);
  	glEnd();
@@ -4921,44 +5596,47 @@ index 54efa40ab..cafdab640 100644
  
  	// Without binding a texture the cinematic will not be displayed correctly
  	GL_Bind(tr.defaultImage);
-@@ -976,12 +1113,54 @@ const void *RB_SetColor(const void *data)
+@@ -976,12 +1118,75 @@ const void *RB_SetColor(const void *data)
   * @param[in] data
   * @return
   */
 +#ifdef __EMSCRIPTEN__
-+static void RB_DrawStretchPicES2(float x, float y, float w, float h,
-+                                 float s1, float t1, float s2, float t2, shader_t *shader)
++static void RB_DrawPolyShaderES2(shader_t *shader, const polyVert_t *verts, int numVerts)
 +{
-+	float   verts[12];
-+	float   uv[8];
-+	image_t *image = NULL;
++	int i;
 +
++	if (!shader || !verts || numVerts < 3 || numVerts >= SHADER_MAX_VERTEXES)
++	{
++		return;
++	}
++	if (tess.numIndexes)
++	{
++		RB_EndSurface();
++	}
 +	if (!backEnd.projection2D)
 +	{
 +		RB_SetGL2D();
 +	}
-+	if (shader && shader->stages[0] && shader->stages[0]->bundle[0].image[0])
++
++	backEnd.currentEntity = &backEnd.entity2D;
++	RB_BeginSurface(shader, 0);
++	for (i = 0; i < numVerts - 2; i++)
 +	{
-+		image = shader->stages[0]->bundle[0].image[0];
++		tess.indexes[tess.numIndexes++] = 0;
++		tess.indexes[tess.numIndexes++] = i + 1;
++		tess.indexes[tess.numIndexes++] = i + 2;
 +	}
-+	if (!image)
++	for (i = 0; i < numVerts; i++)
 +	{
-+		image = tr.whiteImage;
++		tess.xyz[i][0] = verts[i].xyz[0];
++		tess.xyz[i][1] = verts[i].xyz[1];
++		tess.xyz[i][2] = verts[i].xyz[2];
++		tess.texCoords[i][0][0] = verts[i].st[0];
++		tess.texCoords[i][0][1] = verts[i].st[1];
++		Com_Memcpy(tess.vertexColors[i], verts[i].modulate, sizeof(tess.vertexColors[i]));
 +	}
-+	if (image)
-+	{
-+		GL_Bind(image);
-+	}
-+	verts[0] = x;     verts[1] = y;     verts[2] = 0;
-+	verts[3] = x + w; verts[4] = y;     verts[5] = 0;
-+	verts[6] = x + w; verts[7] = y + h; verts[8] = 0;
-+	verts[9] = x;     verts[10] = y + h; verts[11] = 0;
-+	uv[0] = s1; uv[1] = t1;
-+	uv[2] = s2; uv[3] = t1;
-+	uv[4] = s2; uv[5] = t2;
-+	uv[6] = s1; uv[7] = t2;
-+	glDisable(GL_DEPTH_TEST);
-+	R_ES2_DrawQuad(verts, uv, backEnd.color2D);
++	tess.numVertexes = numVerts;
++	RB_EndSurface();
 +}
 +#endif
 +
@@ -4969,47 +5647,115 @@ index 54efa40ab..cafdab640 100644
  	int                       numVerts, numIndexes;
  
 +#ifdef __EMSCRIPTEN__
-+	RB_DrawStretchPicES2(cmd->x, cmd->y, cmd->w, cmd->h, cmd->s1, cmd->t1, cmd->s2, cmd->t2, cmd->shader);
++	{
++		polyVert_t verts[4];
++		int        i;
++
++		for (i = 0; i < 4; i++)
++		{
++			verts[i].xyz[2] = 0.f;
++			Com_Memcpy(verts[i].modulate, backEnd.color2D, sizeof(verts[i].modulate));
++		}
++		verts[0].xyz[0] = verts[3].xyz[0] = cmd->x;
++		verts[1].xyz[0] = verts[2].xyz[0] = cmd->x + cmd->w;
++		verts[0].xyz[1] = verts[1].xyz[1] = cmd->y;
++		verts[2].xyz[1] = verts[3].xyz[1] = cmd->y + cmd->h;
++		verts[0].st[0] = verts[3].st[0] = cmd->s1;
++		verts[1].st[0] = verts[2].st[0] = cmd->s2;
++		verts[0].st[1] = verts[1].st[1] = cmd->t1;
++		verts[2].st[1] = verts[3].st[1] = cmd->t2;
++		RB_DrawPolyShaderES2(cmd->shader, verts, 4);
++	}
 +	return (const void *)(cmd + 1);
 +#endif
 +
  	if (!backEnd.projection2D)
  	{
  		RB_SetGL2D();
-@@ -1059,6 +1238,10 @@ const void *RB_Draw2dPolys(const void *data)
+@@ -1059,6 +1264,11 @@ const void *RB_Draw2dPolys(const void *data)
  	shader_t              *shader;
  	int                   i;
  
 +#ifdef __EMSCRIPTEN__
++	RB_DrawPolyShaderES2(cmd->shader, cmd->verts, cmd->numverts);
 +	return ( const void * ) (cmd + 1);
 +#endif
 +
  	if (!backEnd.projection2D)
  	{
  		RB_SetGL2D();
-@@ -1116,6 +1299,10 @@ const void *RB_RotatedPic(const void *data)
+@@ -1116,6 +1326,37 @@ const void *RB_RotatedPic(const void *data)
  	int                       numVerts, numIndexes;
  	float                     angle;
  
 +#ifdef __EMSCRIPTEN__
++	{
++		polyVert_t verts[4];
++		int        i;
++
++		for (i = 0; i < 4; i++)
++		{
++			Com_Memcpy(verts[i].modulate, backEnd.color2D, sizeof(verts[i].modulate));
++			verts[i].xyz[2] = 0.f;
++		}
++		angle = cmd->angle * M_TAU_F;
++		verts[0].xyz[0] = cmd->x + cos(angle) * cmd->w;
++		verts[0].xyz[1] = cmd->y + sin(angle) * cmd->h;
++		angle += 0.25f * M_TAU_F;
++		verts[1].xyz[0] = cmd->x + cos(angle) * cmd->w;
++		verts[1].xyz[1] = cmd->y + sin(angle) * cmd->h;
++		angle += 0.25f * M_TAU_F;
++		verts[2].xyz[0] = cmd->x + cos(angle) * cmd->w;
++		verts[2].xyz[1] = cmd->y + sin(angle) * cmd->h;
++		angle += 0.25f * M_TAU_F;
++		verts[3].xyz[0] = cmd->x + cos(angle) * cmd->w;
++		verts[3].xyz[1] = cmd->y + sin(angle) * cmd->h;
++		verts[0].st[0] = verts[3].st[0] = cmd->s1;
++		verts[1].st[0] = verts[2].st[0] = cmd->s2;
++		verts[0].st[1] = verts[1].st[1] = cmd->t1;
++		verts[2].st[1] = verts[3].st[1] = cmd->t2;
++		RB_DrawPolyShaderES2(cmd->shader, verts, 4);
++	}
 +	return ( const void * ) (cmd + 1);
 +#endif
 +
  	if (!backEnd.projection2D)
  	{
  		RB_SetGL2D();
-@@ -1197,6 +1384,10 @@ const void *RB_StretchPicGradient(const void *data)
+@@ -1197,6 +1438,32 @@ const void *RB_StretchPicGradient(const void *data)
  	shader_t                  *shader;
  	int                       numVerts, numIndexes;
  
 +#ifdef __EMSCRIPTEN__
++	{
++		polyVert_t verts[4];
++		int        i;
++
++		for (i = 0; i < 4; i++)
++		{
++			verts[i].xyz[2] = 0.f;
++		}
++		verts[0].xyz[0] = verts[3].xyz[0] = cmd->x;
++		verts[1].xyz[0] = verts[2].xyz[0] = cmd->x + cmd->w;
++		verts[0].xyz[1] = verts[1].xyz[1] = cmd->y;
++		verts[2].xyz[1] = verts[3].xyz[1] = cmd->y + cmd->h;
++		verts[0].st[0] = verts[3].st[0] = cmd->s1;
++		verts[1].st[0] = verts[2].st[0] = cmd->s2;
++		verts[0].st[1] = verts[1].st[1] = cmd->t1;
++		verts[2].st[1] = verts[3].st[1] = cmd->t2;
++		Com_Memcpy(verts[0].modulate, backEnd.color2D, sizeof(verts[0].modulate));
++		Com_Memcpy(verts[1].modulate, backEnd.color2D, sizeof(verts[1].modulate));
++		Com_Memcpy(verts[2].modulate, cmd->gradientColor, sizeof(verts[2].modulate));
++		Com_Memcpy(verts[3].modulate, cmd->gradientColor, sizeof(verts[3].modulate));
++		RB_DrawPolyShaderES2(cmd->shader, verts, 4);
++	}
 +	return ( const void * ) (cmd + 1);
 +#endif
 +
  	if (!backEnd.projection2D)
  	{
  		RB_SetGL2D();
-@@ -1276,7 +1467,12 @@ const void *RB_DrawSurfs(const void *data)
+@@ -1276,7 +1543,12 @@ const void *RB_DrawSurfs(const void *data)
  	// finish any 2D drawing if needed
  	if (tess.numIndexes)
  	{
@@ -5022,7 +5768,7 @@ index 54efa40ab..cafdab640 100644
  	}
  
  	cmd = ( const drawSurfsCommand_t * ) data;
-@@ -1303,6 +1499,9 @@ const void *RB_DrawBuffer(const void *data)
+@@ -1303,6 +1575,9 @@ const void *RB_DrawBuffer(const void *data)
  		return ( const void * ) (cmd + 1);
  	}
  
@@ -5032,7 +5778,7 @@ index 54efa40ab..cafdab640 100644
  	glDrawBuffer(cmd->buffer);
  
  	// clear screen for debugging
-@@ -1311,6 +1510,7 @@ const void *RB_DrawBuffer(const void *data)
+@@ -1311,6 +1586,7 @@ const void *RB_DrawBuffer(const void *data)
  		glClearColor(1, 0, 0.5f, 1);
  		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
  	}
@@ -5040,7 +5786,7 @@ index 54efa40ab..cafdab640 100644
  
  	return ( const void * ) (cmd + 1);
  }
-@@ -1442,12 +1642,24 @@ void RB_DrawBounds(vec3_t mins, vec3_t maxs)
+@@ -1442,12 +1718,24 @@ void RB_DrawBounds(vec3_t mins, vec3_t maxs)
   */
  const void *RB_SwapBuffers(const void *data)
  {
@@ -5066,7 +5812,7 @@ index 54efa40ab..cafdab640 100644
  	}
  
  	// texture swapping test
-@@ -1456,7 +1668,9 @@ const void *RB_SwapBuffers(const void *data)
+@@ -1456,7 +1744,9 @@ const void *RB_SwapBuffers(const void *data)
  		RB_ShowImages();
  	}
  
@@ -5076,7 +5822,7 @@ index 54efa40ab..cafdab640 100644
  
  	// If we are using a multisample fbo then blit it to a normal fbo first.
  	if (msMainFbo)
-@@ -1465,14 +1679,18 @@ const void *RB_SwapBuffers(const void *data)
+@@ -1465,14 +1755,18 @@ const void *RB_SwapBuffers(const void *data)
  	}
  	R_BindFBO(NULL);
  
@@ -5097,7 +5843,7 @@ index 54efa40ab..cafdab640 100644
  	// we measure overdraw by reading back the stencil buffer and
  	// counting up the number of increments that have happened
  	if (r_measureOverdraw->integer)
-@@ -1493,10 +1711,12 @@ const void *RB_SwapBuffers(const void *data)
+@@ -1493,10 +1787,12 @@ const void *RB_SwapBuffers(const void *data)
  		ri.Hunk_FreeTempMemory(stencilReadback);
  	}
  
@@ -5110,7 +5856,7 @@ index 54efa40ab..cafdab640 100644
  
  	Ren_LogComment("***************** RB_SwapBuffers *****************\n\n\n");
  
-@@ -1552,12 +1772,43 @@ void RB_ExecuteRenderCommands(const void *data)
+@@ -1552,12 +1848,43 @@ void RB_ExecuteRenderCommands(const void *data)
  {
  	int t1, t2;
  
@@ -5123,7 +5869,7 @@ index 54efa40ab..cafdab640 100644
 +		static int etjsExecLog;
 +		if (etjsExecLog < 5)
 +		{
-+			ri.Printf(PRINT_ALL, "ETJS RB_ExecuteRenderCommands %d inMatch=%d present=%d\n",
++			ri.Printf(PRINT_DEVELOPER, "ETJS RB_ExecuteRenderCommands %d inMatch=%d present=%d\n",
 +			          etjsExecLog, etjsInMatch, etjsWorldPresents);
 +			etjsExecLog++;
 +		}
@@ -5144,7 +5890,7 @@ index 54efa40ab..cafdab640 100644
 +			static int etjsRcLog;
 +			if (etjsRcLog < 32)
 +			{
-+				ri.Printf(PRINT_ALL, "ETJS RC cmd=%d present=%d\n", cmd, etjsWorldPresents);
++				ri.Printf(PRINT_DEVELOPER, "ETJS RC cmd=%d present=%d\n", cmd, etjsWorldPresents);
 +				etjsRcLog++;
 +			}
 +		}
@@ -5197,10 +5943,10 @@ index 4b6e070c4..b0e3fe883 100644
  
 diff --git a/src/renderer/tr_es2.c b/src/renderer/tr_es2.c
 new file mode 100644
-index 000000000..fb9b9d2b1
+index 000000000..bdbe6218e
 --- /dev/null
 +++ b/src/renderer/tr_es2.c
-@@ -0,0 +1,647 @@
+@@ -0,0 +1,690 @@
 +/**
 + * @file renderer/tr_es2.c
 + * @brief WebGL / GLES2 tessellator submit. Applies the stock
@@ -5272,9 +6018,9 @@ index 000000000..fb9b9d2b1
 +#endif
 +
 +static GLuint    s_prog;
-+static GLint     s_uMvp, s_uTex, s_aPos, s_aUv, s_aColor;
++static GLint     s_uMvp, s_uTex, s_uAlphaTest, s_aPos, s_aUv, s_aColor;
 +static GLuint    s_lmProg;
-+static GLint     s_lmUMvp, s_lmUTex0, s_lmUTex1, s_lmUAdd;
++static GLint     s_lmUMvp, s_lmUTex0, s_lmUTex1, s_lmUAdd, s_lmUAlphaTest;
 +static GLint     s_lmAPos, s_lmAUv0, s_lmAUv1, s_lmAColor;
 +static GLuint    s_vbo, s_ibo;
 +static float     s_ortho[16];
@@ -5368,7 +6114,7 @@ index 000000000..fb9b9d2b1
 +	    "attribute vec2 a_uv;\n"
 +	    "attribute vec4 a_color;\n"
 +	    "uniform mat4 u_mvp;\n"
-+	    "varying vec2 v_uv;\n"
++	    "varying highp vec2 v_uv;\n"
 +	    "varying vec4 v_color;\n"
 +	    "void main(){\n"
 +	    "  gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
@@ -5376,12 +6122,17 @@ index 000000000..fb9b9d2b1
 +	    "  v_color = a_color;\n"
 +	    "}\n";
 +	static const char *fs =
-+	    "precision mediump float;\n"
++	    "precision highp float;\n"
 +	    "uniform sampler2D u_tex;\n"
-+	    "varying vec2 v_uv;\n"
++	    "uniform int u_alphaTest;\n"
++	    "varying highp vec2 v_uv;\n"
 +	    "varying vec4 v_color;\n"
 +	    "void main(){\n"
-+	    "  gl_FragColor = texture2D(u_tex, v_uv) * v_color;\n"
++	    "  vec4 c = texture2D(u_tex, v_uv) * v_color;\n"
++	    "  if (u_alphaTest == 1 && c.a <= 0.0) discard;\n"
++	    "  if (u_alphaTest == 2 && c.a >= 0.5) discard;\n"
++	    "  if (u_alphaTest == 3 && c.a < 0.5) discard;\n"
++	    "  gl_FragColor = c;\n"
 +	    "}\n";
 +	GLuint vsh, fsh;
 +	GLint  ok = 0;
@@ -5417,6 +6168,7 @@ index 000000000..fb9b9d2b1
 +	s_aColor = glGetAttribLocation(s_prog, "a_color");
 +	s_uMvp   = glGetUniformLocation(s_prog, "u_mvp");
 +	s_uTex   = glGetUniformLocation(s_prog, "u_tex");
++	s_uAlphaTest = glGetUniformLocation(s_prog, "u_alphaTest");
 +	s_ready  = qtrue;
 +	glGenBuffers(1, &s_vbo);
 +	glGenBuffers(1, &s_ibo);
@@ -5428,8 +6180,8 @@ index 000000000..fb9b9d2b1
 +		    "attribute vec2 a_uv1;\n"
 +		    "attribute vec4 a_color;\n"
 +		    "uniform mat4 u_mvp;\n"
-+		    "varying vec2 v_uv0;\n"
-+		    "varying vec2 v_uv1;\n"
++		    "varying highp vec2 v_uv0;\n"
++		    "varying highp vec2 v_uv1;\n"
 +		    "varying vec4 v_color;\n"
 +		    "void main(){\n"
 +		    "  gl_Position = u_mvp * vec4(a_pos, 1.0);\n"
@@ -5438,21 +6190,23 @@ index 000000000..fb9b9d2b1
 +		    "  v_color = a_color;\n"
 +		    "}\n";
 +		static const char *lmfs =
-+		    "precision mediump float;\n"
++		    "precision highp float;\n"
 +		    "uniform sampler2D u_tex0;\n"
 +		    "uniform sampler2D u_tex1;\n"
 +		    "uniform float u_add;\n"
-+		    "varying vec2 v_uv0;\n"
-+		    "varying vec2 v_uv1;\n"
++		    "uniform int u_alphaTest;\n"
++		    "varying highp vec2 v_uv0;\n"
++		    "varying highp vec2 v_uv1;\n"
 +		    "varying vec4 v_color;\n"
 +		    "void main(){\n"
 +		    "  vec4 d = texture2D(u_tex0, v_uv0);\n"
 +		    "  vec4 l = texture2D(u_tex1, v_uv1);\n"
-+		    "  if (u_add > 0.5) {\n"
-+		    "    gl_FragColor = (d + l) * v_color;\n"
-+		    "  } else {\n"
-+		    "    gl_FragColor = d * l * v_color;\n"
-+		    "  }\n"
++		    "  vec4 c = (u_add > 0.5) ? (d + l) * v_color : d * l * v_color;\n"
++		    "  if (u_alphaTest == 1 && c.a <= 0.0) discard;\n"
++		    "  if (u_alphaTest == 2 && c.a >= 0.5) discard;\n"
++		    "  if (u_alphaTest == 3 && c.a < 0.5) discard;\n"
++		    "  if (u_alphaTest == 4 && c.a <= 0.0) discard;\n"
++		    "  gl_FragColor = c;\n"
 +		    "}\n";
 +		GLuint lmvsh = Compile(GL_VERTEX_SHADER, lmvs);
 +		GLuint lmfsh = Compile(GL_FRAGMENT_SHADER, lmfs);
@@ -5475,6 +6229,7 @@ index 000000000..fb9b9d2b1
 +				s_lmUTex0  = glGetUniformLocation(s_lmProg, "u_tex0");
 +				s_lmUTex1  = glGetUniformLocation(s_lmProg, "u_tex1");
 +				s_lmUAdd   = glGetUniformLocation(s_lmProg, "u_add");
++				s_lmUAlphaTest = glGetUniformLocation(s_lmProg, "u_alphaTest");
 +				s_lmReady  = qtrue;
 +			}
 +			else
@@ -5488,7 +6243,7 @@ index 000000000..fb9b9d2b1
 +	}
 +
 +	R_ES2_Set2D();
-+	ri.Printf(PRINT_ALL, "ES2 tessellator ready lm=%i\n", s_lmReady ? 1 : 0);
++	ri.Printf(PRINT_DEVELOPER, "ES2 tessellator ready lm=%i\n", s_lmReady ? 1 : 0);
 +}
 +
 +static void ES2_ApplyDepth(void)
@@ -5509,9 +6264,13 @@ index 000000000..fb9b9d2b1
 +{
 +	/* 2D/limbo leaves DEPTHTEST_DISABLE + no depth write. Force a fresh
 +	 * 3D default so the world is not drawn into a disabled depth buffer
-+	 * and then covered by the sky-blue clear. */
++	 * and then covered by the sky-blue clear. The 2D pass also leaves
++	 * SRC_ALPHA blending enabled. Merely resetting glState's cached bits
++	 * does not change WebGL, and legacy model textures often have unused
++	 * zero alpha; with stale blending those models disappear completely. */
 +	glState.glStateBits = GLS_DEFAULT;
 +	backEnd.projection2D = qfalse;
++	glDisable(GL_BLEND);
 +	glEnable(GL_DEPTH_TEST);
 +	glDepthFunc(GL_LEQUAL);
 +	glDepthMask(1);
@@ -5540,6 +6299,21 @@ index 000000000..fb9b9d2b1
 +	MatMul(mvp, backEnd.viewParms.projectionMatrix, backEnd.orientation.modelMatrix);
 +}
 +
++static int CurrentAlphaTest(void)
++{
++	switch (glState.glStateBits & GLS_ATEST_BITS)
++	{
++	case GLS_ATEST_GT_0:
++		return 1;
++	case GLS_ATEST_LT_80:
++		return 2;
++	case GLS_ATEST_GE_80:
++		return 3;
++	default:
++		return 0;
++	}
++}
++
 +static void BindProgram(const float *mvp)
 +{
 +	R_ES2_Init();
@@ -5552,6 +6326,10 @@ index 000000000..fb9b9d2b1
 +	if (s_uTex >= 0)
 +	{
 +		glUniform1i(s_uTex, 0);
++	}
++	if (s_uAlphaTest >= 0)
++	{
++		glUniform1i(s_uAlphaTest, CurrentAlphaTest());
 +	}
 +}
 +
@@ -5589,6 +6367,13 @@ index 000000000..fb9b9d2b1
 +	if (!s_ready)
 +	{
 +		return;
++	}
++	if (s_uAlphaTest >= 0)
++	{
++		/* Direct HUD/overlay quads do not pass through the generic stage
++		 * iterator. Discard their fully transparent texels so an overlay's
++		 * transparent backing never becomes an opaque black rectangle. */
++		glUniform1i(s_uAlphaTest, 4);
 +	}
 +	for (i = 0; i < 4; i++)
 +	{
@@ -5692,7 +6477,7 @@ index 000000000..fb9b9d2b1
 +
 +	if (s_logn < 8)
 +	{
-+		ri.Printf(PRINT_ALL, "ES2 tess draw idxs=%d verts=%d shader=%s org=%.0f %.0f %.0f surfs=%d\n",
++		ri.Printf(PRINT_DEVELOPER, "ES2 tess draw idxs=%d verts=%d shader=%s org=%.0f %.0f %.0f surfs=%d\n",
 +		          numIndexes, tess.numVertexes,
 +		          tess.shader ? tess.shader->name : "?",
 +		          backEnd.viewParms.orientation.origin[0],
@@ -5737,6 +6522,10 @@ index 000000000..fb9b9d2b1
 +	if (s_lmUAdd >= 0)
 +	{
 +		glUniform1f(s_lmUAdd, addNotModulate ? 1.f : 0.f);
++	}
++	if (s_lmUAlphaTest >= 0)
++	{
++		glUniform1i(s_lmUAlphaTest, CurrentAlphaTest());
 +	}
 +
 +	ES2_ApplyDepth();
@@ -5833,7 +6622,7 @@ index 000000000..fb9b9d2b1
 +
 +	if (s_lmLogn < 8)
 +	{
-+		ri.Printf(PRINT_ALL, "ES2 lightmap draw idxs=%d verts=%d shader=%s add=%d\n",
++		ri.Printf(PRINT_DEVELOPER, "ES2 lightmap draw idxs=%d verts=%d shader=%s add=%d\n",
 +		          numIndexes, tess.numVertexes,
 +		          tess.shader ? tess.shader->name : "?",
 +		          addNotModulate);
@@ -5849,7 +6638,7 @@ index 000000000..fb9b9d2b1
 +
 +#endif /* __EMSCRIPTEN__ */
 diff --git a/src/renderer/tr_image.c b/src/renderer/tr_image.c
-index 670f2b351..9e0cd5708 100644
+index 670f2b351..1a89f29dd 100644
 --- a/src/renderer/tr_image.c
 +++ b/src/renderer/tr_image.c
 @@ -34,6 +34,70 @@
@@ -5923,28 +6712,7 @@ index 670f2b351..9e0cd5708 100644
  static byte          s_intensitytable[256];
  static unsigned char s_gammatable[256];
  
-@@ -632,6 +696,20 @@ static void Upload32(unsigned *data,
- 		scaled_height >>= 1;
- 	}
- 
-+#ifdef __EMSCRIPTEN__
-+	/* 512² command-map / levelshot uploads page-crash Chromium after the first
-+	 * swap. Keep official pixels, just downsample to a WebGL-safe size. */
-+	while (scaled_width > 128 || scaled_height > 128)
-+	{
-+		scaled_width  >>= 1;
-+		scaled_height >>= 1;
-+	}
-+	if (mipmap)
-+	{
-+		mipmap = qfalse;
-+	}
-+#endif
-+
- 	scaledBuffer = ri.Hunk_AllocateTempMemory(sizeof(unsigned) * scaled_width * scaled_height);
- 
- 	// scan the texture for each channel's max values
-@@ -934,7 +1012,11 @@ image_t *R_CreateImage(const char *name, const byte *pic, int width, int height,
+@@ -934,7 +998,11 @@ image_t *R_CreateImage(const char *name, const byte *pic, int width, int height,
  	image->height        = height;
  	image->wrapClampMode = wrapClampMode;
  
@@ -5957,7 +6725,7 @@ index 670f2b351..9e0cd5708 100644
  	if (glActiveTextureARB && isLightmap)
  	{
  		image->TMU = 1;
-@@ -943,6 +1025,7 @@ image_t *R_CreateImage(const char *name, const byte *pic, int width, int height,
+@@ -943,6 +1011,7 @@ image_t *R_CreateImage(const char *name, const byte *pic, int width, int height,
  	{
  		image->TMU = 0;
  	}
@@ -6153,7 +6921,7 @@ index 022571add..66271e6e2 100644
 +#endif
  }
 diff --git a/src/renderer/tr_scene.c b/src/renderer/tr_scene.c
-index 4e244a1fe..274a7674b 100644
+index 4e244a1fe..522789281 100644
 --- a/src/renderer/tr_scene.c
 +++ b/src/renderer/tr_scene.c
 @@ -534,6 +534,17 @@ void RE_RenderScene(const refdef_t *fd)
@@ -6165,7 +6933,7 @@ index 4e244a1fe..274a7674b 100644
 +		static int etjsSceneLog;
 +		if (etjsSceneLog < 5)
 +		{
-+			ri.Printf(PRINT_ALL, "ETJS RE_RenderScene %d %dx%d rdflags=%d\n",
++			ri.Printf(PRINT_DEVELOPER, "ETJS RE_RenderScene %d %dx%d rdflags=%d\n",
 +			          etjsSceneLog, fd->width, fd->height, fd->rdflags);
 +			etjsSceneLog++;
 +		}
@@ -7141,7 +7909,7 @@ index 5e423fc13..9ba4504c9 100644
  	IN_InitKeyLockStates();
  
 diff --git a/src/server/sv_bot.c b/src/server/sv_bot.c
-index e8051207b..228e6a2c1 100644
+index e8051207b..d5b8bf381 100644
 --- a/src/server/sv_bot.c
 +++ b/src/server/sv_bot.c
 @@ -555,6 +555,15 @@ void SV_BotInitBotLib(void)
@@ -7153,7 +7921,7 @@ index e8051207b..228e6a2c1 100644
 +	{
 +		botlib_export->BotLibSetup(qfalse);
 +	}
-+	Com_Printf("ETJS botlib_export=%p PC_LoadSource=%p\n",
++	Com_DPrintf("ETJS botlib_export=%p PC_LoadSource=%p\n",
 +	           (void *)botlib_export,
 +	           botlib_export ? (void *)botlib_export->PC_LoadSourceHandle : NULL);
 +#endif
@@ -9706,7 +10474,7 @@ index 000000000..6f8e5743c
 +#endif
 +#endif
 diff --git a/src/sys/sys_main.c b/src/sys/sys_main.c
-index 0fd44090f..ce5d18635 100644
+index 0fd44090f..cc24fee99 100644
 --- a/src/sys/sys_main.c
 +++ b/src/sys/sys_main.c
 @@ -66,6 +66,12 @@
@@ -9756,7 +10524,7 @@ index 0fd44090f..ce5d18635 100644
 +	}
 +	if (frames < 5)
 +	{
-+		Com_Printf("ETJS mainloop %d\n", frames);
++		Com_DPrintf("ETJS mainloop %d\n", frames);
 +		frames++;
 +	}
 +	inFrame = 1;
@@ -9875,7 +10643,7 @@ index 5cecb3f56..bf8511b18 100644
  int trap_FS_GetFileList(const char *path, const char *extension, char *listbuf, int bufsize);
  int trap_FS_Delete(const char *filename);
 diff --git a/src/ui/ui_main.c b/src/ui/ui_main.c
-index 31ab6710e..86bf5cd19 100644
+index 31ab6710e..b6b45770c 100644
 --- a/src/ui/ui_main.c
 +++ b/src/ui/ui_main.c
 @@ -319,6 +319,10 @@ int Text_Width_Ext(const char *text, float scale, int limit, fontHelper_t *font)
@@ -9955,7 +10723,7 @@ index 31ab6710e..86bf5cd19 100644
  	pc_token_t token;
  
 -	Com_DPrintf("Parsing menu file: %s\n", menuFile);
-+	Com_Printf("ETJS parsing menu file: %s\n", menuFile);
++	Com_DPrintf("ETJS parsing menu file: %s\n", menuFile);
  
  	handle = trap_PC_LoadSource(menuFile);
  	if (!handle)
@@ -9964,7 +10732,7 @@ index 31ab6710e..86bf5cd19 100644
  		if (Q_stricmp(token.string, "menudef") == 0)
  		{
 +#ifdef __EMSCRIPTEN__
-+			Com_Printf("ETJS menudef in %s\n", menuFile);
++			Com_DPrintf("ETJS menudef in %s\n", menuFile);
 +#endif
  			// start a new menu
  			Menu_New(handle);
@@ -9973,7 +10741,7 @@ index 31ab6710e..86bf5cd19 100644
  	int             start;
  	uiClientState_t cstate;
  
-+	Com_Printf("ETJS UI_LoadMenus %s reset=%d\n", menuFile, (int)reset);
++	Com_DPrintf("ETJS UI_LoadMenus %s reset=%d\n", menuFile, (int)reset);
  	start = trap_Milliseconds();
  	trap_GetClientState(&cstate);
  
@@ -9986,16 +10754,16 @@ index 31ab6710e..86bf5cd19 100644
 +	if (!Q_stricmp(menuFile, DEFAULT_MENU_FILE) || !Q_stricmp(menuFile, "ui/menus.txt"))
 +	{
 +		menuFile = "ui/etjs_menus.txt";
-+		Com_Printf("ETJS UI_LoadMenus slim %s\n", menuFile);
++		Com_DPrintf("ETJS UI_LoadMenus slim %s\n", menuFile);
 +	}
 +#endif
  	handle = trap_PC_LoadSource(menuFile);
-+	Com_Printf("ETJS UI_LoadMenus PC_LoadSource(%s)=%d\n", menuFile, handle);
++	Com_DPrintf("ETJS UI_LoadMenus PC_LoadSource(%s)=%d\n", menuFile, handle);
  	if (!handle)
  	{
  		Com_Printf(S_COLOR_YELLOW "menu file not found: %s, using default\n", menuFile);
  		handle = trap_PC_LoadSource(DEFAULT_MENU_FILE);
-+		Com_Printf("ETJS UI_LoadMenus PC_LoadSource(%s)=%d\n", DEFAULT_MENU_FILE, handle);
++		Com_DPrintf("ETJS UI_LoadMenus PC_LoadSource(%s)=%d\n", DEFAULT_MENU_FILE, handle);
  		if (!handle)
  		{
 +#ifdef __EMSCRIPTEN__
@@ -10064,16 +10832,16 @@ index 31ab6710e..86bf5cd19 100644
 +#endif
  
  	UI_RegisterCvars();
-+	trap_Print("ETJS UI_Init after cvars\n");
++	Com_DPrintf("ETJS UI_Init after cvars\n");
  	UI_InitMemory();
-+	trap_Print("ETJS UI_Init after memory\n");
++	Com_DPrintf("ETJS UI_Init after memory\n");
  	trap_PC_RemoveAllGlobalDefines();
-+	trap_Print("ETJS UI_Init after PC_Remove\n");
++	Com_DPrintf("ETJS UI_Init after PC_Remove\n");
  	UI_SetupExtensions();
-+	trap_Print("ETJS UI_Init after extensions\n");
++	Com_DPrintf("ETJS UI_Init after extensions\n");
  
  	I18N_Init();
-+	trap_Print("ETJS UI_Init after i18n\n");
++	Com_DPrintf("ETJS UI_Init after i18n\n");
  
  	trap_Cvar_Set("ui_menuFiles", DEFAULT_MENU_FILE);   // we need to hardwire for wolfMP
  
@@ -10087,16 +10855,16 @@ index 31ab6710e..86bf5cd19 100644
  	uiInfo.uiDC.getConfigString        = &trap_GetConfigString;
  
  	Init_Display(&uiInfo.uiDC);
-+	trap_Print("ETJS UI_Init after display\n");
++	Com_DPrintf("ETJS UI_Init after display\n");
  
  	String_Init();
-+	trap_Print("ETJS UI_Init after strings\n");
++	Com_DPrintf("ETJS UI_Init after strings\n");
  
  	uiInfo.uiDC.whiteShader = trap_R_RegisterShaderNoMip("white");
-+	trap_Print("ETJS UI_Init after white shader\n");
++	Com_DPrintf("ETJS UI_Init after white shader\n");
  
  	AssetCache();
-+	trap_Print("ETJS UI_Init after assets\n");
++	Com_DPrintf("ETJS UI_Init after assets\n");
  
  	uiInfo.passwordFilter           = trap_R_RegisterShaderNoMip("ui/assets/filter_pass.tga");
  	uiInfo.friendlyFireFilter       = trap_R_RegisterShaderNoMip("ui/assets/filter_ff.tga");
@@ -10110,18 +10878,18 @@ index 31ab6710e..86bf5cd19 100644
 +#else
  	uiInfo.campaignMap = trap_R_RegisterShaderNoMip("gfx/loading/camp_map.tga");
 +#endif
-+	Com_Printf("ETJS UI_Init after filter shaders\n");
++	Com_DPrintf("ETJS UI_Init after filter shaders\n");
  
  	uiInfo.teamCount      = 0;
  	uiInfo.characterCount = 0;
  	uiInfo.aliasCount     = 0;
  
-+	trap_Print("ETJS UI_Init before fonts\n");
++	Com_DPrintf("ETJS UI_Init before fonts\n");
  	RegisterSharedFonts();
-+	trap_Print("ETJS UI_Init after fonts\n");
++	Com_DPrintf("ETJS UI_Init after fonts\n");
  
  	UI_ParseGameInfo("gameinfo.txt");
-+	trap_Print("ETJS UI_Init after gameinfo\n");
++	Com_DPrintf("ETJS UI_Init after gameinfo\n");
  
 +#ifdef __EMSCRIPTEN__
 +	/* Official ET menu tree (slim list: no host/server browser). */
@@ -10129,7 +10897,7 @@ index 31ab6710e..86bf5cd19 100644
 +#else
  	UI_LoadMenus(DEFAULT_MENU_FILE, qfalse);
 +#endif
-+	trap_Print("ETJS UI_Init after menus\n");
++	Com_DPrintf("ETJS UI_Init after menus\n");
  	UI_RegisterCvarDescriptionsFromTooltips();
  
  	Menus_CloseAll();
@@ -10144,14 +10912,14 @@ index 31ab6710e..86bf5cd19 100644
 +		if (etjsMenuReload < 1)
 +		{
 +			etjsMenuReload++;
-+			Com_Printf("ETJS SetActiveMenu count=0, reload official menus\n");
++			Com_DPrintf("ETJS SetActiveMenu count=0, reload official menus\n");
 +			UI_LoadMenus("ui/etjs_menus.txt", qtrue);
 +		}
 +	}
 +	trap_Cvar_Set("etjs_menucount", va("%d", Menu_Count()));
 +	if (menu != UIMENU_NONE)
 +	{
-+		Com_Printf("ETJS SetActiveMenu menu=%d count=%d\n", (int)menu, Menu_Count());
++		Com_DPrintf("ETJS SetActiveMenu menu=%d count=%d\n", (int)menu, Menu_Count());
 +	}
 +#endif
 +
@@ -10173,7 +10941,7 @@ index 31ab6710e..86bf5cd19 100644
 +			Menus_ActivateByName("background_1", qtrue);
 +			if (!Menus_ActivateByName("main", qtrue))
 +			{
-+				Com_Printf("ETJS UIMENU_MAIN missing main, opener fallback\n");
++				Com_DPrintf("ETJS UIMENU_MAIN missing main, opener fallback\n");
 +				Menus_ActivateByName("main_opener", qtrue);
 +			}
 +#else
@@ -10184,7 +10952,7 @@ index 31ab6710e..86bf5cd19 100644
  			trap_Cvar_VariableStringBuffer("com_errorMessage", buf, sizeof(buf));
  
 diff --git a/src/ui/ui_menu.c b/src/ui/ui_menu.c
-index 60e2bf09f..45c30518e 100644
+index 60e2bf09f..f2397ed38 100644
 --- a/src/ui/ui_menu.c
 +++ b/src/ui/ui_menu.c
 @@ -1637,7 +1637,17 @@ void Menu_New(int handle)
@@ -10192,21 +10960,21 @@ index 60e2bf09f..45c30518e 100644
  			Menu_PostParse(menu);
  			menuCount++;
 +#ifdef __EMSCRIPTEN__
-+			Com_Printf("ETJS Menu_New '%s' count=%d\n",
++			Com_DPrintf("ETJS Menu_New '%s' count=%d\n",
 +			           menu->window.name[0] ? menu->window.name : "?", menuCount);
 +#endif
  		}
 +#ifdef __EMSCRIPTEN__
 +		else
 +		{
-+			Com_Printf("ETJS Menu_Parse failed count=%d\n", menuCount);
++			Com_DPrintf("ETJS Menu_Parse failed count=%d\n", menuCount);
 +		}
 +#endif
  	}
  }
  
 diff --git a/src/ui/ui_parse.c b/src/ui/ui_parse.c
-index 139a2f4b2..7eba3c75d 100644
+index 139a2f4b2..a33296c25 100644
 --- a/src/ui/ui_parse.c
 +++ b/src/ui/ui_parse.c
 @@ -2393,6 +2393,11 @@ qboolean Item_Parse(int handle, itemDef_t *item)
@@ -10226,7 +10994,7 @@ index 139a2f4b2..7eba3c75d 100644
  	if (!trap_PC_ReadToken(handle, &token))
  	{
 +#ifdef __EMSCRIPTEN__
-+		Com_Printf("ETJS Menu_Parse no token handle=%d str='%s' type=%d\n",
++		Com_DPrintf("ETJS Menu_Parse no token handle=%d str='%s' type=%d\n",
 +		           handle, token.string, token.type);
 +#endif
  		return qfalse;
@@ -10235,7 +11003,7 @@ index 139a2f4b2..7eba3c75d 100644
  	if (*token.string != '{')
  	{
 +#ifdef __EMSCRIPTEN__
-+		Com_Printf("ETJS Menu_Parse expected { got '%s' type=%d\n", token.string, token.type);
++		Com_DPrintf("ETJS Menu_Parse expected { got '%s' type=%d\n", token.string, token.type);
 +#endif
  		return qfalse;
  	}
@@ -10253,7 +11021,7 @@ index 139a2f4b2..7eba3c75d 100644
  		{
  			PC_SourceError(handle, "couldn't parse menu keyword %s", token.string);
 diff --git a/src/ui/ui_shared.c b/src/ui/ui_shared.c
-index 6b4d464f7..c4fa54236 100644
+index 6b4d464f7..1fa0512d1 100644
 --- a/src/ui/ui_shared.c
 +++ b/src/ui/ui_shared.c
 @@ -35,6 +35,7 @@
@@ -10264,7 +11032,61 @@ index 6b4d464f7..c4fa54236 100644
  
  scrollInfo_t scrollInfo;
  
-@@ -1963,6 +1964,34 @@ void C_PanelButtonsSetup(panel_button_t **buttons, float xoffset)
+@@ -61,7 +62,14 @@ int       modalMenuCount = 0;
+ qboolean debugMode            = qfalse;
+ int      lastListBoxClickTime = 0;
+ 
+-#ifdef CGAMEDLL
++#if defined(__EMSCRIPTEN__) && !defined(CGAMEDLL)
++/* ETJS exposes the useful stock main, options, chat, voice, class, team and
++ * in-game menus together. Their macro-expanded item definitions exceed the
++ * desktop UI's historical 8 MiB fixed pool. Keep cgame's small HUD pool and
++ * native builds unchanged, but give the statically linked browser UI enough
++ * bounded storage to parse that supported menu set without returning NULL. */
++#define MEM_POOL_SIZE (16 * 1024 * 1024)
++#elif defined(CGAMEDLL)
+ #if ARCH_X86
+ #define MEM_POOL_SIZE (128 * 1024)
+ #else
+@@ -124,21 +132,32 @@ float Cui_WideXoffset(void)
+ void *UI_Alloc(int size)
+ {
+ 	char *p;
++	int  alignedSize;
+ 
+-	if (allocPoint + size > MEM_POOL_SIZE)
++	if (size <= 0 || size > MEM_POOL_SIZE - 15)
+ 	{
++		if (!outOfMemory && DC->Print)
++		{
++			DC->Print(S_COLOR_RED "UI_Alloc: invalid allocation request.\n");
++		}
+ 		outOfMemory = qtrue;
+-		if (DC->Print)
++		return NULL;
++	}
++	alignedSize = (size + 15) & ~15;
++	if (alignedSize > MEM_POOL_SIZE - allocPoint)
++	{
++		if (!outOfMemory && DC->Print)
+ 		{
+-			DC->Print(S_COLOR_RED "UI_Alloc: Failure. UI out of memory!\n");
++			DC->Print("%s", va(S_COLOR_RED "UI_Alloc: out of memory (used %d, requested %d, capacity %d).\n",
++			                   allocPoint, alignedSize, MEM_POOL_SIZE));
+ 		}
+-
++		outOfMemory = qtrue;
+ 		return NULL;
+ 	}
+ 
+ 	p = &memoryPool[allocPoint];
+ 
+-	allocPoint += (size + 15) & ~15;
++	allocPoint += alignedSize;
+ 
+ 	return p;
+ }
+@@ -1963,6 +1982,34 @@ void C_PanelButtonsSetup(panel_button_t **buttons, float xoffset)
  /**
   * @brief Registers fonts shared between cgame and ui to either defaults or user-defined custom fonts
   */
@@ -10299,7 +11121,7 @@ index 6b4d464f7..c4fa54236 100644
  void RegisterSharedFonts(void)
  {
  	fontTableEntry_t fontTable[FONT_TABLE_NUMFONTS] =
-@@ -1981,11 +2010,20 @@ void RegisterSharedFonts(void)
+@@ -1981,11 +2028,20 @@ void RegisterSharedFonts(void)
  	{
  		fontTableEntry_t *entry = &fontTable[i];
  		trap_Cvar_VariableStringBuffer(entry->cvarName, buf, sizeof(buf));

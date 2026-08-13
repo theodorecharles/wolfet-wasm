@@ -8,7 +8,6 @@ assetGlobalDef {
 	font 3 "courbd" 30
 	cursor "ui/assets/3_cursor3"
 	gradientBar "ui/assets/gradientbar1.tga"
-	itemFocusSound "sound/misc/menu2.wav"
 	fadeClamp 1.0
 	fadeCycle 1
 	fadeAmount 0.1
@@ -210,7 +209,9 @@ menuDef {
 		bordercolor .1 .1 .1 .5
 		visible 1
 		action {
-			play "sound/menu/select.wav"
+			play "sound/menu/select.wav" ;
+			close main ;
+			open options
 		}
 	}
 
@@ -232,7 +233,9 @@ menuDef {
 		bordercolor .1 .1 .1 .5
 		visible 1
 		action {
-			play "sound/menu/select.wav"
+			play "sound/menu/select.wav" ;
+			close main ;
+			open credits_quit
 		}
 	}
 
@@ -254,7 +257,9 @@ menuDef {
 		bordercolor .1 .1 .1 .5
 		visible 1
 		action {
-			play "sound/menu/select.wav"
+			play "sound/menu/select.wav" ;
+			close main ;
+			open quit
 		}
 	}
 }

@@ -35,6 +35,7 @@
 /runtime/legacy/screenshots/
 /runtime/legacy/*.db
 /runtime/legacy/*.db-*
+/runtime/legacy/qagame*.so
 
 # Native helper binaries
 /tools/huffpack

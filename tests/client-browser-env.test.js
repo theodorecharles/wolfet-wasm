@@ -36,6 +36,11 @@ describe('browser client scripts', () => {
     assert.match(html, /client\.js/);
     assert.match(html, /id="et-canvas"/);
     assert.match(html, /id="load-panel"/);
+    assert.match(html, /id="startup-console"/);
+    assert.match(html, /role="log"/);
+    assert.match(html, /id="graphics-profile"/);
+    assert.match(html, /id="dynamic-quality"/);
+    assert.match(html, /id="dynamic-fps"/);
   });
 
   it('evaluates player-name.js in a browser-like environment', () => {

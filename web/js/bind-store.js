@@ -41,17 +41,22 @@
   }
 
   /**
-   * If a saved bind dump exists, it replaces the default unbindall+bind block.
+   * Start with the complete shipped controls, then apply the player's saved
+   * binds.  Old ETJS builds persisted partial configs; replacing the whole
+   * default block with one of those silently removed stock keys such as T
+   * (chat) and V (quick messages). Only bindings are persisted here: ETJS
+   * owns the browser renderer profile, so an old native etconfig cannot
+   * silently restore low-resolution graphics.
    */
   function mergeAutoexec(defaultLines, stored) {
     var lines = Array.isArray(defaultLines) ? defaultLines.slice() : [];
     if (!stored || !String(stored).trim()) {
       return lines;
     }
-    var filtered = lines.filter(function (line) {
-      return !/^\s*unbindall\b/.test(line) && !/^\s*bind\s+/.test(line);
+    var savedLines = String(stored).split(/\r?\n/).filter(function (line) {
+      return /^\s*bind\s+/i.test(line);
     });
-    return filtered.concat(String(stored).split(/\r?\n/).filter(Boolean));
+    return lines.concat(savedLines);
   }
 
   return {

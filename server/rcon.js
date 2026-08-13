@@ -21,6 +21,7 @@ function sendRcon(command, opts) {
     const sock = dgram.createSocket('udp4');
     const chunks = [];
     let done = false;
+    let settleTimer = null;
 
     const finish = (err) => {
       if (done) {
@@ -28,6 +29,9 @@ function sendRcon(command, opts) {
       }
       done = true;
       clearTimeout(timer);
+      if (settleTimer) {
+        clearTimeout(settleTimer);
+      }
       try {
         sock.close();
       } catch (e) {
@@ -44,6 +48,12 @@ function sendRcon(command, opts) {
     sock.on('error', (err) => finish(err));
     sock.on('message', (msg) => {
       chunks.push(msg);
+      /* A local ET RCON reply may span packets. Complete after a short quiet
+       * window instead of holding every successful command until timeout. */
+      if (settleTimer) {
+        clearTimeout(settleTimer);
+      }
+      settleTimer = setTimeout(() => finish(), 75);
     });
     sock.send(payload, port, host, (err) => {
       if (err) {

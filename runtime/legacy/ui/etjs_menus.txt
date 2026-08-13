@@ -1,4 +1,40 @@
-// Official ET frontend (pre-expanded official menu file).
+// ETJS frontend plus the stock in-game menus needed by normal ET controls.
+// Keep the custom pre-expanded main menu first so its duplicate global names
+// win lookup; stock global definitions then provide the shared fade/popup UI.
 {
 	loadMenu { "ui/etjs_official.menu" }
+	loadMenu { "ui/global.menu" }
+
+	// quick voice and fireteam messages
+	loadMenu { "ui/wm_quickmessage.menu" }
+	loadMenu { "ui/wm_quickmessageAlt.menu" }
+	loadMenu { "ui/wm_ftquickmessage.menu" }
+	loadMenu { "ui/wm_ftquickmessageAlt.menu" }
+
+	// chat, class/team selection, tapout, and Escape menu
+	loadMenu { "ui/ingame_messagemode.menu" }
+	loadMenu { "ui/wm_class.menu" }
+	loadMenu { "ui/wm_classAlt.menu" }
+	loadMenu { "ui/wm_team.menu" }
+	loadMenu { "ui/wm_teamAlt.menu" }
+	loadMenu { "ui/ingame_main.menu" }
+	loadMenu { "ui/ingame_disconnect.menu" }
+	loadMenu { "ui/ingame_tapout.menu" }
+	loadMenu { "ui/ingame_tapoutlms.menu" }
+
+	// complete options tree used from both MAIN and the in-game menu
+	loadMenu { "ui/options.menu" }
+	loadMenu { "ui/options_customise_game.menu" }
+	loadMenu { "ui/options_customise_hud.menu" }
+	loadMenu { "ui/options_customise_hud_extended.menu" }
+	loadMenu { "ui/options_customise_hudeditor_fui.menu" }
+	loadMenu { "ui/options_controls.menu" }
+	loadMenu { "ui/options_controls_advanced.menu" }
+	loadMenu { "ui/options_controls_default.menu" }
+	loadMenu { "ui/options_system.menu" }
+	loadMenu { "ui/options_system_extended.menu" }
+	loadMenu { "ui/options_system_gamma.menu" }
+
+	loadMenu { "ui/quit.menu" }
+	loadMenu { "ui/credits_quit.menu" }
 }

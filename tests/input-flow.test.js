@@ -16,6 +16,18 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.ok(Math.abs(mid.y - 240) < 1, 'y=' + mid.y);
   });
 
+  it('maps cgame screens through ETLegacy widescreen virtual coordinates', () => {
+    const rect = { left: 0, top: 0, width: 1280, height: 800 };
+    const mid = input.letterboxTo640(640, 400, rect, true);
+    assert.ok(Math.abs(mid.x - 384) < 1, 'x=' + mid.x);
+    assert.ok(Math.abs(mid.y - 240) < 1, 'y=' + mid.y);
+    assert.ok(Math.abs(mid.xoff - 64) < 1, 'xoff=' + mid.xoff);
+    const pagePoint = input.from640(495, 463, 1280, 800, true);
+    const roundTrip = input.letterboxTo640(pagePoint.x, pagePoint.y, rect, true);
+    assert.ok(Math.abs(roundTrip.x - (495 + 64)) < 1, 'roundTrip.x=' + roundTrip.x);
+    assert.ok(Math.abs(roundTrip.y - 463) < 1, 'roundTrip.y=' + roundTrip.y);
+  });
+
   it('exposes the JOIN GAME control in 640 space so a page click can hit it', () => {
     assert.ok(input.JOIN_GAME_640);
     assert.equal(input.clickHitsRect(
@@ -60,6 +72,7 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.match(src, /cmd->forwardmove/);
     assert.match(src, /BUTTON_TALK/);
     assert.match(src, /etjs_limbo/);
+    assert.match(src, /etjs_intermission/);
     assert.match(src, /do not set BUTTON_TALK from leftover catchers/);
     assert.match(src, /kb\[KB_FORWARD\]\.active/);
   });
@@ -87,5 +100,20 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     const mouseDown = client.split('function onMouseDown')[1].split('function onMouseUp')[0];
     assert.match(mouseDown, /held\['mouse'/);
     assert.match(mouseDown, /uiOpen\(\)/);
+    assert.match(client, /cvarInt\('etjs_uiopen'\)/);
+  });
+
+  it('starts at maximum graphics and adapts toward the chosen FPS target', () => {
+    const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    assert.match(client, /set r_picmip 0/);
+    assert.match(client, /set r_textureMode GL_LINEAR_MIPMAP_LINEAR/);
+    assert.match(client, /set r_ext_texture_filter_anisotropic 16/);
+    assert.match(client, /name: 'maximum'/);
+    assert.match(client, /selectedFpsTarget \* 0\.92/);
+    assert.match(client, /selectedFpsTarget \* 0\.985/);
+    assert.match(client, /lowFpsWindows >= 2/);
+    assert.match(client, /highFpsWindows >= 5/);
+    assert.match(client, /qualityLevel < qualityCeiling/);
+    assert.match(client, /etjs_autoQuality/);
   });
 });
