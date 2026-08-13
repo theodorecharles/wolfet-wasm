@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 
 const botfill = require(path.join(__dirname, '..', 'server', 'botfill'));
+const supervisor = require(path.join(__dirname, '..', 'server', 'supervisor'));
 const { desiredBots, fillPlan, applyFill, MATCH_SLOTS } = botfill;
 
 describe('shipped bot fill policy', () => {
@@ -77,5 +78,10 @@ describe('shipped bot fill policy', () => {
     assert.equal(plan.target, 0);
     assert.equal(plan.remove, 3);
     assert.equal(plan.add, 0);
+  });
+
+  it('kicks an Omni-Bot by its exact colored name', () => {
+    assert.equal(supervisor.botKickCommand('^o[BOT]^7Cledus'),
+      'bot kickbot ^o[BOT]^7Cledus');
   });
 });

@@ -85,9 +85,9 @@
      * Return cached bytes if present. Otherwise call fetchFn() once, store, return.
      * fetchFn must resolve to an ArrayBuffer or Uint8Array.
      */
-    function getOrFetch(name, fetchFn) {
+    function getOrFetch(name, fetchFn, validateFn) {
       return get(name).then(function (hit) {
-        if (hit) {
+        if (hit && (!validateFn || validateFn(hit))) {
           return { bytes: hit, cached: true };
         }
         downloads += 1;

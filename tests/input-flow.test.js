@@ -86,8 +86,13 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.match(onKeyDown, /K_CONSOLE/);
     assert.match(onKeyDown, /isConsoleEvent/);
     assert.match(client, /K_CONSOLE = 297/);
-    const menuBranch = onKeyDown.split('if (uiOpen())')[1] || '';
-    assert.doesNotMatch(menuBranch, /stopImmediatePropagation/);
+    const menuBranch = (onKeyDown.split('if (uiOpen())')[1] || '').split('if (typingMode)')[0];
+    assert.match(menuBranch, /if \(bareControl\(code\)\)[\s\S]*stopImmediatePropagation[\s\S]*else[\s\S]*preventDefault/);
+    const worldBranch = onKeyDown.split('var key = CODE_TO_KEY[code]')[1] || '';
+    assert.match(worldBranch, /if \(bareControl\(code\)\)[\s\S]*else[\s\S]*ev\.preventDefault/);
+    const typingBranch = onKeyDown.split('if (typingMode)')[1].split('var key = CODE_TO_KEY[code]')[0];
+    assert.match(typingBranch, /ev\.key\.length === 1[\s\S]*sendChar\(ev\.key\.codePointAt\(0\)\)/);
+    assert.match(client, /function sendChar[\s\S]*_ETJS_CharEvent/);
   });
 
   it('does not pointer-lock the official MAIN menu and maps resize like QuakeJS', () => {

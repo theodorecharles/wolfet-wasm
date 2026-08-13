@@ -53,6 +53,9 @@ Four classes, in this order. Later classes are meaningless if you cannot get int
 | 4 | **Input** | WASD changes origin, mouse1 fires, L toggles limbo, Escape opens settings, look does not wreck the picture |
 
 Hard-refresh after every client rebuild. Stale `etjs.js` + new wasm is `ASM_CONSTS[emAsmAddr] is not a function`.
+A hard refresh reloads code but does not erase IndexedDB. The asset panel must
+say whether files came from the local cache or ETJS; a changed content hash
+downloads exactly that changed asset once.
 
 Local: `http://127.0.0.1:8088/`
 Public: `https://wolfet.tedcharles.net/` (this laptop is only `:8088`; nginx is the other box)
@@ -70,7 +73,9 @@ Public: `https://wolfet.tedcharles.net/` (this laptop is only `:8088`; nginx is 
 2. Click Play. Screenshot the desaturated-blue startup console: light-gray
    Modern DOS text must be real initialization output, not a canned animation.
 3. Screenshot the download bar (still silence). Network requests must be
-   same-origin `/etmain/` or `/legacy/`, never `splashdamage.com`.
+   same-origin `/etmain/` or `/legacy/`, never `splashdamage.com`. `pak0.pk3`
+   should arrive as sequential `206` responses no larger than 16 MiB; reload
+   after changing `etjs.pk3` and confirm its SHA-keyed cache entry changes.
 4. Screenshot each logo, then MAIN (animated clouds, eagle, JOIN GAME). Confirm music.
 5. Click JOIN GAME. Screenshot loading + music, then limbo.
 6. If any step is black, ETL-on-black, highlight-without-click, or a hang, fix **that** step. Do not jump to connect.
@@ -187,7 +192,8 @@ source /path/to/emsdk/emsdk_env.sh
 npm run build:web
 ```
 
-Then hard-refresh the browser.
+Then hard-refresh the browser. This does not clear the persistent game-data
+cache; do not interpret “checking” or “loading cached” as a network transfer.
 
 Host acceptance must also check the authoritative process, not only config
 files: `/health` returns 200, `/status` reports Oasis with 12 total players,
@@ -195,6 +201,9 @@ the container log shows the mounted `qagame.mp.x86_64.so` loaded successfully,
 and RCON reports `g_speed 400`, `g_friendlyFire 0`, `g_forcerespawn 1`, and both
 team reinforcement timers at `1000`. Leave the supervisor running for several
 intervals; an unchanged roster should not print a line every 1.5 seconds.
+`/config.json` must list six same-origin assets with exact byte counts and
+64-character SHA-256 values. A request for `Range: bytes=8-39` on `pak0.pk3`
+must return `206`, 32 bytes, and `Content-Range: bytes 8-39/228138631`.
 
 Playwright (real path only): `npm run test:e2e`
 In-repo tests: `npm test`

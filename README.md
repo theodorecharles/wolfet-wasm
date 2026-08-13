@@ -48,7 +48,11 @@ The original game data remains ignored and local. Downloading and using it is su
 `npm start` also runs the checksum-based data provisioner before opening the
 HTTP service. Missing or invalid official data is fetched on the server; valid
 cached files are reused. The web client only sees same-origin paths such as
-`/etmain/pak0.pk3` and `/legacy/legacy_v2.84.0.pk3`.
+`/etmain/pak0.pk3` and `/legacy/legacy_v2.84.0.pk3`. The host publishes exact
+content hashes and byte counts in `/config.json`; large PK3s transfer in 16 MiB
+HTTP ranges and changed content receives a new persistent browser-cache key.
+Hard refreshes do not clear that IndexedDB cache. The loading panel reports
+cache checks and cached reads separately from real ETJS network downloads.
 
 Activate Emscripten, then build the browser client:
 

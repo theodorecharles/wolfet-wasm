@@ -270,6 +270,8 @@ describe('no overlay theater in the shipped draw path', () => {
     const scene = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_scene.c'), 'utf8');
     const fn = extractFn(scene, 'RE_RenderScene');
     assert.match(fn, /R_RenderView\s*\(/);
+    assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_main.c'), 'utf8'),
+      /R_RenderView surfs=/);
     assert.doesNotMatch(fn, /levelshots\/oasis/);
     assert.doesNotMatch(fn, /RE_StretchPic\s*\(\s*-shift/);
   });
@@ -316,6 +318,14 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(pmove, /doubleJumped\s*=\s*qfalse/);
     assert.match(pmove, /sprintTime\s*=\s*SPRINTTIME;[\s\S]*?return;/);
     assert.match(dedicated, /'g_speed', '400'/);
+    const serverBuild = fs.readFileSync(path.join(ROOT, 'scripts', 'build-server-mod.sh'), 'utf8');
+    const gameCvars = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_cvars.c'), 'utf8');
+    const scripts = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_script_actions.c'), 'utf8');
+    assert.match(serverBuild, /ETJS_SERVER=ON/);
+    assert.match(gameCvars, /ETJS_SERVER[\s\S]*g_redlimbotime[\s\S]*"1000"[\s\S]*CVAR_SERVERINFO/);
+    assert.match(gameCvars, /ETJS_SERVER[\s\S]*g_bluelimbotime[\s\S]*"1000"[\s\S]*CVAR_SERVERINFO/);
+    assert.match(scripts, /ETJS_SERVER[\s\S]*g_redlimbotime", "1000"/);
+    assert.match(scripts, /ETJS_SERVER[\s\S]*g_bluelimbotime", "1000"/);
   });
 
   it('ships original ETJS multikill announcements', () => {
@@ -361,15 +371,36 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(html, /rel="preload"[^>]*ModernDOS8x16\.ttf/);
     assert.match(fs.readFileSync(path.join(ROOT, 'web', 'css', 'etjs.css'), 'utf8'),
       /font:\s*400 16px\/16px "Modern DOS 8x16"/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'web', 'css', 'etjs.css'), 'utf8'),
+      /user-select:\s*text/);
   });
 
   it('gives the browser UI enough bounded menu memory and preserves refresh shortcuts', () => {
     const shared = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_shared.c'), 'utf8');
+    const glimp = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'sdl', 'sdl_glimp.c'), 'utf8');
     const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
-    assert.match(shared, /defined\(__EMSCRIPTEN__\).*MEM_POOL_SIZE \(16 \* 1024 \* 1024\)/s);
+    const html = fs.readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8');
+    assert.match(shared, /defined\(__EMSCRIPTEN__\)[\s\S]*MEM_POOL_SIZE \(16 \* 1024 \* 1024\)/);
     assert.match(shared, /MEM_POOL_SIZE - allocPoint/);
-    assert.match(page, /ev\.metaKey \|\| \(ev\.ctrlKey/);
+    assert.match(glimp, /SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas"/);
+    assert.match(html, /id="et-canvas"[^>]*tabindex="0"/);
+    assert.match(page, /function inputCaptured/);
+    assert.match(page, /function bareControl/);
+    assert.match(page, /document\.activeElement === canvas/);
+    assert.match(page, /ev\.stopImmediatePropagation\(\)/);
     assert.match(page, /Ctrl\+Shift\+R/);
+    assert.match(page, /function sendChar[\s\S]*_ETJS_CharEvent/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_input.c'), 'utf8'),
+      /void ETJS_CharEvent[\s\S]*CL_CharEvent\(ch\)/);
+  });
+
+  it('distinguishes local cached assets from real network downloads', () => {
+    const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    assert.match(page, /Checking the local game cache/);
+    assert.match(page, /Loading cached game data/);
+    assert.match(page, /Downloading game data from ETJS/);
+    assert.match(page, /window\.__etjsAssets/);
+    assert.match(page, /bytes\.byteLength === file\.bytes/);
   });
 
   it('keeps browser diagnostics out of the normal in-game console', () => {

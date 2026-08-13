@@ -14,10 +14,6 @@ can fail as `ASM_CONSTS[emAsmAddr] is not a function`.
   its complete name → console → logos → menu → join → spawn visit captured.
   Source tests and builds pass, and earlier gameplay was checked by the project
   owner, but the changes marked “retest” below still need one hard-refresh run.
-- **Public Cloudflare delivery needs configuration.** The official `pak0.pk3`
-  is about 228 MB, larger than the normal free orange-cloud response limit.
-  `wolfet.tedcharles.net` must be DNS-only or route the large PK3s around that
-  proxy. Local `:8088` delivery is unaffected.
 - **The original intro movie is not distributed.** The official paks available
   from Splash Damage do not contain `etintro.roq`. ETJS uses skippable official
   pak stills (`logo_id` → `logo_sd` → `et_logo`) instead.
@@ -42,9 +38,14 @@ can fail as `ASM_CONSTS[emAsmAddr] is not a function`.
 - The WebAssembly UI has a bounded 16 MiB menu-definition pool for ETJS's stock
   options/chat/voice/class/team tree; the former 8 MiB pool aborted while
   parsing `wm_class.menu`.
-- Ctrl/Cmd browser shortcuts bypass the game input bridge. Ctrl+Shift+R,
+- SDL and the ET input bridge listen on the focusable game canvas rather than
+  the browser window, so ordinary keys are consumed only after canvas capture.
+  The normal in-game cursor remains active in menus without pointer lock.
+  Ctrl/Cmd browser shortcuts bypass the game input bridge. Ctrl+Shift+R,
   Ctrl+R, Cmd+R, address-bar shortcuts, and developer tools can be used without
   ETJS cancelling their browser defaults; bare Ctrl remains a bindable ET key.
+  Printable console/chat input cancels Firefox page actions, so `/` types into
+  ET instead of opening Firefox Quick Find.
 - The name form has remembered Maximum/Balanced/Performance/Minimum profiles,
   a dynamic-quality toggle, and 30/60/120 FPS targets.
 - Company-logo stills remain visible until the engine reports MAIN ready.
@@ -53,6 +54,16 @@ can fail as `ASM_CONSTS[emAsmAddr] is not a function`.
   options tree are loaded.
 - Routine ETJS renderer/parser diagnostics are developer-only. Missing favorites
   cache and missing `menu2.wav` no longer spam the in-game console.
+- `/config.json` publishes exact PK3 sizes, SHA-256 identities, and versioned
+  same-origin URLs. IndexedDB keys include the content hash, so a deployment of
+  a changed `etjs.pk3` cannot silently reuse an older announcer/data pak.
+- The loading panel distinguishes cache checks, local cache reads, and actual
+  ETJS network downloads. A hard refresh does not erase IndexedDB, and cached
+  entries with the wrong byte length are repaired instead of trusted.
+- Large PK3s download as sequential 16 MiB HTTP byte ranges into one destination
+  buffer. The Node host serves validated `206`/`416` responses with exact
+  `Content-Range` and `Content-Length`, avoiding a single 228 MB proxy response
+  while retaining the browser's persistent cache.
 
 ### Rendering and HUD
 
@@ -122,6 +133,17 @@ can fail as `ASM_CONSTS[emAsmAddr] is not a function`.
 - The mostly sky-blue rendering failure is fixed.
 - WASD/player movement works and the match is playable and fun.
 - Wall visibility for rshook worked in an earlier pass.
+
+## Confirmed by automated/runtime acceptance
+
+- The local and public Cloudflare routes expose the same six-asset hashed
+  manifest. A production-sized 16,777,216-byte public `pak0.pk3` range returned
+  HTTP 206 with the correct total size, and its SHA-256 matched the identical
+  byte range read from the pinned local official pak.
+- Local `/health` and `/status` report a healthy Oasis Objective match with 12
+  bots. The mounted native qagame and ETJS pak hashes match the host artifacts,
+  and live RCON reports speed 400, friendly fire off, forced respawn, and
+  one-second reinforcement times.
 
 ## Intentional product boundaries
 

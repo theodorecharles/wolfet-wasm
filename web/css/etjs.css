@@ -254,6 +254,8 @@ html, body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   scrollbar-color: #a8b0b6 #2b3e51;
+  cursor: text;
+  user-select: text;
 }
 
 .startup-console-line::before {
@@ -280,7 +282,8 @@ html, body {
   display: none;
 }
 
-#viewport-frame:focus {
+#viewport-frame:focus,
+#et-canvas:focus {
   outline: none;
 }
 

@@ -235,6 +235,8 @@ module.exports = {
   RCON_FILE: RCON_FILE,
   DATA_FETCHER: DATA_FETCHER,
   CONFIG_LABEL: CONFIG_LABEL,
+  SERVER_MOD_HASH: SERVER_MOD_HASH,
+  ETJS_PAK_HASH: ETJS_PAK_HASH,
   DEFAULT_ARGS: DEFAULT_ARGS,
   assertOfficialPaks: assertOfficialPaks,
   ensureGameData: ensureGameData,

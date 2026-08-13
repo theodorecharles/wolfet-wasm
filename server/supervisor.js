@@ -39,8 +39,12 @@ function rosterFromStatus(status, humanNames) {
   return { humans: humans, bots: bots, slots: MATCH_SLOTS };
 }
 
-function stripColors(name) {
-  return String(name || '').replace(/\^[0-9a-zA-Z]/g, '').replace(/\[BOT\]/gi, '').trim();
+function botKickCommand(name) {
+  /* Omni-Bot matches its exact BotTable name, including ^o[BOT]^7. Its command
+   * dispatcher treats quote marks literally, so send the colorized name raw;
+   * stripping colors or adding quotes produces a non-match and repeated RCON. */
+  const exactName = String(name || '').replace(/[\r\n"]/g, '').trim();
+  return exactName ? 'bot kickbot ' + exactName : 'bot kickbot';
 }
 
 function makeRconHooks(rconOpts, log, botNames) {
@@ -65,8 +69,7 @@ function makeRconHooks(rconOpts, log, botNames) {
     },
     removeBot: async function () {
       const raw = names.pop();
-      const shortName = stripColors(raw);
-      const cmd = shortName ? 'bot kickbot ' + shortName : 'bot kickbot';
+      const cmd = botKickCommand(raw);
       if (log) {
         log('botfill remove: ' + cmd);
       }
@@ -168,5 +171,6 @@ module.exports = {
   applyFill: applyFill,
   TEAMS: TEAMS,
   CLASSES: CLASSES,
-  GAMEPLAY_CVARS: GAMEPLAY_CVARS
+  GAMEPLAY_CVARS: GAMEPLAY_CVARS,
+  botKickCommand: botKickCommand
 };

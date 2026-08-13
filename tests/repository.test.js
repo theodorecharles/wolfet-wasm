@@ -33,11 +33,15 @@ describe('reproducible source repository', () => {
     const dedicated = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
     const host = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
     const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    const downloader = fs.readFileSync(path.join(ROOT, 'web', 'js', 'pk3-download.js'), 'utf8');
     assert.match(dedicated, /function ensureGameData\(\)/);
     assert.match(dedicated, /fetch-game-data\.sh/);
     assert.match(host, /dedicated\.ensureGameData\(\)/);
     assert.match(client, /url: '\/etmain\/pak0\.pk3'/);
     assert.match(client, /url: '\/legacy\/legacy_v2\.84\.0\.pk3'/);
+    assert.match(host, /cacheKey: def\.name \+ '@sha256:' \+ def\.hash/);
+    assert.match(client, /file\.cacheKey \|\| file\.name/);
+    assert.match(downloader, /Range: 'bytes='/);
     assert.doesNotMatch(client, /splashdamage\.com/i);
   });
 

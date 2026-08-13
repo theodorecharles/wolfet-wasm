@@ -19,6 +19,7 @@
   var loadFill = document.getElementById('load-bar-fill');
   var loadBar = loadFill && loadFill.parentElement;
   var startupConsole = document.getElementById('startup-console');
+  var pk3Downloader = window.ETJSPk3Download;
   var pk3Cache = window.ETJSPk3
     ? window.ETJSPk3.createPk3Cache({
       backend: (typeof indexedDB !== 'undefined')
@@ -475,9 +476,6 @@
       return;
     }
     canvas.focus();
-    if (frame && frame.focus) {
-      frame.focus();
-    }
     if (canvas.requestPointerLock) {
       canvas.requestPointerLock();
     } else if (canvas.webkitRequestPointerLock) {
@@ -550,7 +548,6 @@
     }
     if (frame) {
       frame.classList.remove('hidden');
-      frame.focus();
     }
     sizeCanvas();
     playReady = true;
@@ -595,26 +592,26 @@
   }
 
   function fetchPakBytes(file, onProgress) {
-    return fetch(file.url).then(function (res) {
-      if (!res.ok) {
-        throw new Error('failed to fetch ' + file.url + ' (' + res.status + ')');
-      }
-      /* One ArrayBuffer — do not concatenate chunks (that doubles pak0 in JS). */
-      return res.arrayBuffer().then(function (buf) {
-        if (onProgress) {
-          onProgress(buf.byteLength, buf.byteLength);
-        }
-        return buf;
-      });
-    });
+    if (!pk3Downloader) {
+      return Promise.reject(new Error('PK3 downloader is not loaded'));
+    }
+    return pk3Downloader.fetchPakBytes(file, onProgress);
   }
 
   function preloadIntoFS(Module, file, onProgress) {
-    var fetchFn = function () { return fetchPakBytes(file, onProgress); };
+    var fetchFn = function () {
+      return fetchPakBytes(file, function (got, total) {
+        if (onProgress) {
+          onProgress(got, total, false);
+        }
+      });
+    };
     var done = pk3Cache
-      ? pk3Cache.getOrFetch(file.name, fetchFn).then(function (got) {
+      ? pk3Cache.getOrFetch(file.cacheKey || file.name, fetchFn, function (bytes) {
+        return bytes && bytes.byteLength === file.bytes;
+      }).then(function (got) {
         if (got.cached && onProgress) {
-          onProgress(file.bytes || 1, file.bytes || 1);
+          onProgress(file.bytes || 1, file.bytes || 1, true);
         }
         return got.bytes;
       })
@@ -690,6 +687,31 @@
     }).catch(function () { /* menus still served from pak overlay on next run */ });
   }
 
+  function defaultGameFiles() {
+    return [
+      { parent: '/etmain', name: 'pak0.pk3', url: '/etmain/pak0.pk3', bytes: 228138631 },
+      { parent: '/etmain', name: 'pak1.pk3', url: '/etmain/pak1.pk3', bytes: 51616 },
+      { parent: '/etmain', name: 'pak2.pk3', url: '/etmain/pak2.pk3', bytes: 89910 },
+      { parent: '/etmain', name: 'mp_bin.pk3', url: '/etmain/mp_bin.pk3', bytes: 1638102 },
+      { parent: '/legacy', name: 'legacy_v2.84.0.pk3', url: '/legacy/legacy_v2.84.0.pk3', bytes: 34306898 },
+      { parent: '/legacy', name: 'etjs.pk3', url: '/legacy/etjs.pk3', bytes: 200364 }
+    ];
+  }
+
+  function gameFilesFromConfig(cfg) {
+    var files = cfg && Array.isArray(cfg.assets) ? cfg.assets : null;
+    if (!files || files.length !== 6 || files.some(function (file) {
+      return !file || (file.parent !== '/etmain' && file.parent !== '/legacy') ||
+        !/^[A-Za-z0-9_.-]+\.pk3$/.test(file.name || '') ||
+        !/^\/(?:etmain|legacy)\/[A-Za-z0-9_.-]+\.pk3(?:\?v=[a-f0-9]+)?$/.test(file.url || '') ||
+        !Number.isSafeInteger(file.bytes) || file.bytes <= 0 ||
+        !/^sha256:[a-f0-9]{64}$/.test(String(file.cacheKey || '').split('@')[1] || '');
+    })) {
+      return defaultGameFiles();
+    }
+    return files;
+  }
+
   function bindQuakejsInput() {
     /* Matches etlegacy/src/qcommon/keycodes.h (letters are lowercase ASCII). */
     var K_MOUSE1 = 178;
@@ -733,6 +755,24 @@
       try {
         if (typeof M._ETJS_KeyEvent === 'function') {
           M._ETJS_KeyEvent(key, down ? 1 : 0);
+          return true;
+        }
+      } catch (e) { /* not ready */ }
+      return false;
+    }
+
+    function sendChar(ch) {
+      var M = window.Module;
+      if (!M || !ch) {
+        return false;
+      }
+      try {
+        if (typeof M._ETJS_CharEvent === 'function') {
+          M._ETJS_CharEvent(ch);
+          return true;
+        }
+        if (typeof M.ccall === 'function') {
+          M.ccall('ETJS_CharEvent', null, ['number'], [ch]);
           return true;
         }
       } catch (e) { /* not ready */ }
@@ -903,6 +943,20 @@
         ev.key === '`' || ev.key === '~';
     }
 
+    function inputCaptured() {
+      var captured = pointerLocked() || document.activeElement === canvas;
+      window.__etjsInputCaptured = captured;
+      return captured;
+    }
+
+    function browserChord(ev, code) {
+      return ev.metaKey || (ev.ctrlKey && code !== 'ControlLeft' && code !== 'ControlRight');
+    }
+
+    function bareControl(code) {
+      return code === 'ControlLeft' || code === 'ControlRight';
+    }
+
     function syncCursor() {
       if (uiOpen()) {
         if (document.exitPointerLock) {
@@ -936,13 +990,17 @@
       /* Browser/system chords always win. Bare Ctrl remains available as an
        * ET key, while Ctrl+Shift+R, Ctrl+R, Cmd+R, Ctrl+L, and devtools never
        * become game input or have their browser defaults cancelled. */
-      if (ev.metaKey || (ev.ctrlKey && initialCode !== 'ControlLeft' && initialCode !== 'ControlRight')) {
+      if (browserChord(ev, initialCode)) {
+        /* SDL's Emscripten handler otherwise cancels every Ctrl chord. Stop
+         * dispatch without cancelling the browser default, so refresh, copy,
+         * location focus and developer tools continue to work. */
+        ev.stopImmediatePropagation();
         return;
       }
       if (ev.target && ev.target.closest && ev.target.closest('#name-gate')) {
         return;
       }
-      if (!playReady) {
+      if (!playReady || !inputCaptured()) {
         return;
       }
       var code = initialCode;
@@ -965,7 +1023,13 @@
         if (!menuKey) {
           return;
         }
-        ev.preventDefault();
+        if (bareControl(code)) {
+          /* Deliver bindable Ctrl ourselves but keep SDL from cancelling the
+           * modifier's DOM event before it can become a browser shortcut. */
+          ev.stopImmediatePropagation();
+        } else {
+          ev.preventDefault();
+        }
         if (ev.repeat) {
           return;
         }
@@ -974,6 +1038,19 @@
         return;
       }
       if (typingMode) {
+        /* Firefox uses `/` to open Quick Find. Cancelling keydown also
+         * suppresses SDL's later textinput event, so inject printable Unicode
+         * directly into ET before consuming the browser event. */
+        if (ev.key && ev.key.length === 1 && !ev.isComposing) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          sendChar(ev.key.codePointAt(0));
+          return;
+        }
+        if (code === 'Backspace' || code === 'Enter' ||
+            code === 'NumpadEnter' || code === 'Tab') {
+          ev.preventDefault();
+        }
         if (code === 'Escape') {
           typingMode = null;
           releaseInputHolds();
@@ -989,7 +1066,11 @@
       if (!key) {
         return;
       }
-      ev.preventDefault();
+      if (bareControl(code)) {
+        ev.stopImmediatePropagation();
+      } else {
+        ev.preventDefault();
+      }
       if (ev.repeat) {
         return;
       }
@@ -1014,16 +1095,21 @@
 
     function onKeyUp(ev) {
       var initialCode = resolveCode(ev) || ev.code;
-      if (ev.metaKey || (ev.ctrlKey && initialCode !== 'ControlLeft' && initialCode !== 'ControlRight')) {
+      if (browserChord(ev, initialCode)) {
+        ev.stopImmediatePropagation();
         return;
       }
-      if (!playReady) {
+      if (!playReady || !inputCaptured()) {
         return;
       }
       var code = initialCode;
       var key = held[code] || CODE_TO_KEY[code];
       if (key) {
-        ev.preventDefault();
+        if (bareControl(code)) {
+          ev.stopImmediatePropagation();
+        } else {
+          ev.preventDefault();
+        }
         var sent = sendKey(key, 0);
         if (code === 'KeyW' && moveF > 0) { moveF = 0; }
         else if (code === 'KeyS' && moveF < 0) { moveF = 0; }
@@ -1053,9 +1139,11 @@
     }
 
     function onMouseDown(ev) {
-      if (!playReady || typingMode) {
+      if (!playReady || typingMode || (ev.target !== canvas && !pointerLocked())) {
         return;
       }
+      canvas.focus();
+      window.__etjsInputCaptured = true;
       syncCursor();
       pushCursor(ev);
       var mkey = MOUSE_TO_KEY[ev.button] || (K_MOUSE1 + ev.button);
@@ -1101,7 +1189,7 @@
     }
 
     function onMouseMove(ev) {
-      if (!playReady || typingMode) {
+      if (!playReady || typingMode || !inputCaptured()) {
         return;
       }
       var limbo = limboOpen();
@@ -1130,7 +1218,7 @@
     }
 
     function onWheel(ev) {
-      if (!playReady || typingMode || limboOpen()) {
+      if (!playReady || typingMode || limboOpen() || !inputCaptured()) {
         return;
       }
       ev.preventDefault();
@@ -1178,10 +1266,18 @@
     window.addEventListener('contextmenu', onContextMenu, true);
     window.addEventListener('blur', function () {
       releaseInputHolds();
+      window.__etjsInputCaptured = false;
+    });
+    canvas.addEventListener('blur', function () {
+      if (!pointerLocked()) {
+        releaseInputHolds();
+        window.__etjsInputCaptured = false;
+      }
     });
     document.addEventListener('pointerlockchange', function () {
       if (pointerLocked()) {
         ignoreLookUntil = Date.now() + 350;
+        window.__etjsInputCaptured = true;
       }
     });
     canvas.addEventListener('click', onCanvasClick, true);
@@ -1271,16 +1367,10 @@
           var FS = window.Module.FS;
           writeAutoexec(FS);
           window.Module.etjsMenus = writeMenuFiles(FS);
-          var files = [
-            { parent: '/etmain', name: 'pak0.pk3', url: '/etmain/pak0.pk3', bytes: 228138631 },
-            { parent: '/etmain', name: 'pak1.pk3', url: '/etmain/pak1.pk3', bytes: 51616 },
-            { parent: '/etmain', name: 'pak2.pk3', url: '/etmain/pak2.pk3', bytes: 89910 },
-            { parent: '/etmain', name: 'mp_bin.pk3', url: '/etmain/mp_bin.pk3', bytes: 400000 },
-            { parent: '/legacy', name: 'legacy_v2.84.0.pk3', url: '/legacy/legacy_v2.84.0.pk3', bytes: 34306898 },
-            { parent: '/legacy', name: 'etjs.pk3', url: '/legacy/etjs.pk3', bytes: 400000 }
-          ];
+          var files = gameFilesFromConfig(cfg);
           var loaded = files.map(function () { return 0; });
           var totals = files.map(function (f) { return f.bytes || 1; });
+          var sources = files.map(function () { return 'pending'; });
           function report() {
             var got = 0;
             var all = 0;
@@ -1289,16 +1379,31 @@
               got += loaded[i];
               all += totals[i];
             }
+            var cached = sources.filter(function (source) { return source === 'cache'; }).length;
+            var network = sources.filter(function (source) { return source === 'network'; }).length;
+            var pending = sources.length - cached - network;
+            var status = network > 0
+              ? 'Downloading game data from ETJS…'
+              : (pending > 0 ? 'Checking the local game cache…' : 'Loading cached game data…');
+            window.__etjsAssets = {
+              cached: cached,
+              network: network,
+              pending: pending,
+              total: files.length
+            };
             setLoadProgress(0.05 + 0.85 * (all ? got / all : 0),
-              'Downloading official game data…',
-              Math.round(got / 1048576) + ' / ' + Math.round(all / 1048576) + ' MB');
+              status,
+              Math.round(got / 1048576) + ' / ' + Math.round(all / 1048576) +
+                ' MB · ' + cached + ' of ' + files.length + ' files cached');
           }
+          report();
           window.Module.etjsReady = Promise.all(files.map(function (file, idx) {
-            return preloadIntoFS(window.Module, file, function (got, total) {
+            return preloadIntoFS(window.Module, file, function (got, total, fromCache) {
               loaded[idx] = got;
               if (total) {
                 totals[idx] = total;
               }
+              sources[idx] = fromCache ? 'cache' : 'network';
               report();
             });
           }).concat([window.Module.etjsMenus || Promise.resolve()]));

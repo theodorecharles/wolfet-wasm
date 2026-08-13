@@ -18,18 +18,17 @@ if ! command -v cmake >/dev/null 2>&1 || ! command -v ninja >/dev/null 2>&1; the
 fi
 
 mkdir -p "$BUILD" "$ROOT/runtime/legacy"
-if [ ! -f "$BUILD/CMakeCache.txt" ]; then
-  cmake -S "$SOURCE" -B "$BUILD" -GNinja \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_CLIENT=OFF \
-    -DBUILD_SERVER=OFF \
-    -DBUILD_CLIENT_MOD=OFF \
-    -DBUILD_SERVER_MOD=ON \
-    -DFEATURE_DBMS=OFF \
-    -DFEATURE_LUA=OFF \
-    -DFEATURE_LUAJIT=OFF \
-    -DFEATURE_OMNIBOT=ON
-fi
+cmake -S "$SOURCE" -B "$BUILD" -GNinja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_CLIENT=OFF \
+  -DBUILD_SERVER=OFF \
+  -DBUILD_CLIENT_MOD=OFF \
+  -DBUILD_SERVER_MOD=ON \
+  -DETJS_SERVER=ON \
+  -DFEATURE_DBMS=OFF \
+  -DFEATURE_LUA=OFF \
+  -DFEATURE_LUAJIT=OFF \
+  -DFEATURE_OMNIBOT=ON
 
 cmake --build "$BUILD" --target qagame -j"$(nproc)"
 install -m 0755 "$OUTPUT" "$DEST"

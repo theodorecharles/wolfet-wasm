@@ -33,6 +33,7 @@ describe('browser client scripts', () => {
     assert.match(html, /etjs-input\.js/);
     assert.match(html, /bind-store\.js/);
     assert.match(html, /pk3-cache\.js/);
+    assert.match(html, /pk3-download\.js/);
     assert.match(html, /client\.js/);
     assert.match(html, /id="et-canvas"/);
     assert.match(html, /id="load-panel"/);
@@ -67,6 +68,7 @@ describe('browser client scripts', () => {
   it('evaluates client.js in a browser-like environment without throwing', () => {
     const nameSrc = fs.readFileSync(path.join(WEB, 'js', 'player-name.js'), 'utf8');
     const src = fs.readFileSync(path.join(WEB, 'js', 'client.js'), 'utf8');
+    const downloadSrc = fs.readFileSync(path.join(WEB, 'js', 'pk3-download.js'), 'utf8');
     assertNoUnguardedNode(src, 'client.js');
     assert.doesNotMatch(src, /\bmodule\.exports\b/);
     const store = {};
@@ -106,6 +108,7 @@ describe('browser client scripts', () => {
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(nameSrc, sandbox);
+    vm.runInContext(downloadSrc, sandbox);
     assert.doesNotThrow(() => vm.runInContext(src, sandbox));
     assert.equal(typeof sandbox.window.ETJSName.loadPlayerName, 'function');
   });

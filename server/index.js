@@ -14,6 +14,14 @@ const WEB_ROOT = path.join(ROOT, 'web');
 const HTTP_PORT = Number(process.env.ETJS_HTTP_PORT || 8088);
 const DED_PORT = dedicated.HOST_UDP_PORT;
 const RCON = dedicated.RCON_PASSWORD;
+const GAME_ASSET_DEFS = [
+  { parent: '/etmain', name: 'pak0.pk3', hash: '712966b20e06523fe81419516500e499c86b2b4fec823856ddbd333fcb3d26e5' },
+  { parent: '/etmain', name: 'pak1.pk3', hash: '5610fd749024405b4425a7ce6397e58187b941d22092ef11d4844b427df53e5d' },
+  { parent: '/etmain', name: 'pak2.pk3', hash: 'a48ab749a1a12ab4d9137286b1f23d642c29da59845b2bafc8f64e052cf06f3e' },
+  { parent: '/etmain', name: 'mp_bin.pk3', hash: 'cf0a7ce662421c766f93cc196841849eb66905b047d209dd5f3ed0b1396cd42e' },
+  { parent: '/legacy', name: 'legacy_v2.84.0.pk3', hash: 'd1abab70f6e3e3af8f34dfb4d94542c8bd592b0a1a582f0107d2162ee23c679b' },
+  { parent: '/legacy', name: 'etjs.pk3', hash: dedicated.ETJS_PAK_HASH }
+];
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -48,16 +56,64 @@ function safeJoin(root, reqPath) {
   return full;
 }
 
-function sendFile(res, filePath) {
+function gameAssets() {
+  return GAME_ASSET_DEFS.map((def) => {
+    const base = def.parent === '/etmain'
+      ? path.join(ROOT, 'runtime', 'etmain')
+      : path.join(ROOT, 'runtime', 'legacy');
+    const filePath = path.join(base, def.name);
+    const bytes = fs.statSync(filePath).size;
+    return {
+      parent: def.parent,
+      name: def.name,
+      url: def.parent + '/' + def.name + '?v=' + def.hash.slice(0, 16),
+      bytes: bytes,
+      sha256: def.hash,
+      cacheKey: def.name + '@sha256:' + def.hash
+    };
+  });
+}
+
+function sendFile(req, res, filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
-  res.writeHead(200, {
+  const stat = fs.statSync(filePath);
+  const headers = {
     'content-type': type,
+    'accept-ranges': 'bytes',
     'cache-control': ext === '.pk3' || ext === '.data'
       ? 'public, max-age=3600'
       : (ext === '.js' || ext === '.wasm' ? 'no-store' : 'no-cache')
-  });
-  fs.createReadStream(filePath).pipe(res);
+  };
+  const range = req.headers && req.headers.range;
+  if (range) {
+    const match = /^bytes=(\d+)-(\d*)$/.exec(range);
+    const start = match ? Number(match[1]) : -1;
+    const requestedEnd = match && match[2] ? Number(match[2]) : stat.size - 1;
+    if (!match || !Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) ||
+        start < 0 || start >= stat.size || requestedEnd < start) {
+      res.writeHead(416, Object.assign(headers, { 'content-range': 'bytes */' + stat.size }));
+      res.end();
+      return;
+    }
+    const end = Math.min(requestedEnd, stat.size - 1);
+    headers['content-range'] = 'bytes ' + start + '-' + end + '/' + stat.size;
+    headers['content-length'] = String(end - start + 1);
+    res.writeHead(206, headers);
+    if (req.method === 'HEAD') {
+      res.end();
+    } else {
+      fs.createReadStream(filePath, { start: start, end: end }).pipe(res);
+    }
+    return;
+  }
+  headers['content-length'] = String(stat.size);
+  res.writeHead(200, headers);
+  if (req.method === 'HEAD') {
+    res.end();
+  } else {
+    fs.createReadStream(filePath).pipe(res);
+  }
 }
 
 function serveStatic(req, res) {
@@ -89,7 +145,8 @@ function serveStatic(req, res) {
       wsPath: '/ws',
       httpPort: HTTP_PORT,
       map: 'oasis',
-      gametype: 2
+      gametype: 2,
+      assets: gameAssets()
     }));
     return;
   }
@@ -112,7 +169,7 @@ function serveStatic(req, res) {
     }
     const filePath = safeJoin(entry.root, rel);
     if (filePath && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      sendFile(res, filePath);
+      sendFile(req, res, filePath);
       return;
     }
   }
@@ -120,20 +177,21 @@ function serveStatic(req, res) {
   // SPA fallback: name gate lives on index.html
   const index = path.join(WEB_ROOT, 'index.html');
   if (fs.existsSync(index)) {
-    sendFile(res, index);
+    sendFile(req, res, index);
     return;
   }
   res.writeHead(404, { 'content-type': 'text/plain' });
   res.end('not found');
 }
 
-function startHttp() {
+function startHttp(port) {
   const server = http.createServer(serveStatic);
   attachWsProxy(server, { destHost: '127.0.0.1', destPort: DED_PORT, path: '/ws' });
   return new Promise((resolve) => {
-    server.listen(HTTP_PORT, '0.0.0.0', () => {
-      log('website listening on http://0.0.0.0:' + HTTP_PORT);
-      log('websocket game proxy on ws://0.0.0.0:' + HTTP_PORT + '/ws -> udp 127.0.0.1:' + DED_PORT);
+    server.listen(typeof port === 'number' ? port : HTTP_PORT, '0.0.0.0', () => {
+      const boundPort = server.address().port;
+      log('website listening on http://0.0.0.0:' + boundPort);
+      log('websocket game proxy on ws://0.0.0.0:' + boundPort + '/ws -> udp 127.0.0.1:' + DED_PORT);
       resolve(server);
     });
   });
@@ -213,6 +271,9 @@ if (require.main === module) {
 
 module.exports = {
   main: main,
+  gameAssets: gameAssets,
+  sendFile: sendFile,
+  serveStatic: serveStatic,
   startHttp: startHttp,
   waitForDedicated: waitForDedicated
 };

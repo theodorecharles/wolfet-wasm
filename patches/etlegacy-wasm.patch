@@ -77,7 +77,7 @@ index ba1db291c..c38744e89 100644
  endif()
  
 diff --git a/cmake/ETLBuildMod.cmake b/cmake/ETLBuildMod.cmake
-index 075dae759..3831b376a 100644
+index 075dae759..1e600a512 100644
 --- a/cmake/ETLBuildMod.cmake
 +++ b/cmake/ETLBuildMod.cmake
 @@ -24,7 +24,15 @@ endfunction()
@@ -112,9 +112,19 @@ index 075dae759..3831b376a 100644
  	target_link_libraries(ui ui_libraries mod_libraries)
  	etl_enforce_linux_mod_no_undefined(ui)
  
+@@ -107,6 +123,9 @@ if(BUILD_SERVER_MOD)
+ 		RUNTIME_OUTPUT_DIRECTORY_RELEASE "${MODNAME}"
+ 	)
+ 	target_compile_definitions(qagame PRIVATE GAMEDLL=1 MODLIB=1)
++	if(ETJS_SERVER)
++		target_compile_definitions(qagame PRIVATE ETJS_SERVER=1)
++	endif()
+ endif()
+ 
+ #
 diff --git a/cmake/ETLEmscripten.cmake b/cmake/ETLEmscripten.cmake
 new file mode 100644
-index 000000000..a68e538fc
+index 000000000..d8bae4f16
 --- /dev/null
 +++ b/cmake/ETLEmscripten.cmake
 @@ -0,0 +1,155 @@
@@ -217,7 +227,7 @@ index 000000000..a68e538fc
 +	"-sGL_MAX_TEMP_BUFFER_SIZE=16777216"
 +	"-sFORCE_FILESYSTEM=1"
 +	"-sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap','FS','setCanvasSize']"
-+	"-sEXPORTED_FUNCTIONS=['_main','_Cbuf_AddText','_ETJS_AddLook','_ETJS_KeyEvent','_Cvar_VariableIntegerValue']"
++	"-sEXPORTED_FUNCTIONS=['_main','_Cbuf_AddText','_ETJS_AddLook','_ETJS_KeyEvent','_ETJS_CharEvent','_Cvar_VariableIntegerValue']"
 +	"-sEXIT_RUNTIME=0"
 +	"-sINVOKE_RUN=0"
 +	"-Wl,--allow-multiple-definition"
@@ -1906,7 +1916,7 @@ index ddb8e87d2..240b246a8 100644
  }
  
 diff --git a/src/client/cl_input.c b/src/client/cl_input.c
-index 6651a0127..63ee14dc8 100644
+index 6651a0127..c8751a9f6 100644
 --- a/src/client/cl_input.c
 +++ b/src/client/cl_input.c
 @@ -34,6 +34,9 @@
@@ -2214,7 +2224,7 @@ index 6651a0127..63ee14dc8 100644
  	Cmd_AddCommand("+right", IN_RightDown);
  	Cmd_AddCommand("-right", IN_RightUp);
  	Cmd_AddCommand("+forward", IN_ForwardDown);
-@@ -1532,3 +1706,184 @@ void CL_ClearKeys(void)
+@@ -1532,3 +1706,193 @@ void CL_ClearKeys(void)
  {
  	Com_Memset(kb, 0, sizeof(kb));
  }
@@ -2294,6 +2304,15 @@ index 6651a0127..63ee14dc8 100644
 +		}
 +	}
 +	CL_KeyEvent(key, down ? qtrue : qfalse, Sys_Milliseconds());
++}
++
++EMSCRIPTEN_KEEPALIVE
++void ETJS_CharEvent(int ch)
++{
++	if (ch > 0)
++	{
++		CL_CharEvent(ch);
++	}
 +}
 +
 +EMSCRIPTEN_KEEPALIVE
@@ -3635,6 +3654,67 @@ index ebdba6d25..330c4cc7c 100644
  
  	int silencedSideArm;           ///< Keep track of whether the luger/colt is silenced "in holster", prolly want to do this for the kar98 etc too
  	float sprintTime;
+diff --git a/src/game/g_cvars.c b/src/game/g_cvars.c
+index fc1fc773c..d527e72b9 100644
+--- a/src/game/g_cvars.c
++++ b/src/game/g_cvars.c
+@@ -370,8 +370,16 @@ cvarTable_t gameCvarTable[] =
+ 	{ &g_gametype,                        "g_gametype",                        "4",                          CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qfalse },     // default to GT_WOLF_CAMPAIGN
+ 
+ 	// multiplayer stuffs
++#ifdef ETJS_SERVER
++	/* ETJS uses rapid reinforcement on every map. These must not be latched:
++	 * stock map scripts set their own values after level initialization, and a
++	 * latched supervisor correction would not affect the current match. */
++	{ &g_redlimbotime,                    "g_redlimbotime",                    "1000",                       CVAR_SERVERINFO,                                 0, qfalse, qfalse },
++	{ &g_bluelimbotime,                   "g_bluelimbotime",                   "1000",                       CVAR_SERVERINFO,                                 0, qfalse, qfalse },
++#else
+ 	{ &g_redlimbotime,                    "g_redlimbotime",                    "30000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qfalse },
+ 	{ &g_bluelimbotime,                   "g_bluelimbotime",                   "30000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qfalse },
++#endif
+ 	{ &g_medicChargeTime,                 "g_medicChargeTime",                 "45000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qtrue  },
+ 	{ &g_engineerChargeTime,              "g_engineerChargeTime",              "30000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qtrue  },
+ 	{ &g_fieldopsChargeTime,              "g_fieldopsChargeTime",              "40000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qtrue  },
+diff --git a/src/game/g_script_actions.c b/src/game/g_script_actions.c
+index 23e11e7fb..13717e221 100644
+--- a/src/game/g_script_actions.c
++++ b/src/game/g_script_actions.c
+@@ -3273,6 +3273,9 @@ qboolean G_ScriptAction_AxisRespawntime(gentity_t *ent, char *params)
+ 		G_Error("G_ScriptAction_AxisRespawntime: time parameter required\n");
+ 	}
+ 
++#ifdef ETJS_SERVER
++	trap_Cvar_Set("g_redlimbotime", "1000");
++#else
+ 	if (g_userAxisRespawnTime.integer)
+ 	{
+ 		trap_Cvar_Set("g_redlimbotime", va("%i", g_userAxisRespawnTime.integer * 1000));
+@@ -3281,6 +3284,7 @@ qboolean G_ScriptAction_AxisRespawntime(gentity_t *ent, char *params)
+ 	{
+ 		trap_Cvar_Set("g_redlimbotime", va("%s000", token));
+ 	}
++#endif
+ 
+ 	return qtrue;
+ }
+@@ -3302,6 +3306,9 @@ qboolean G_ScriptAction_AlliedRespawntime(gentity_t *ent, char *params)
+ 		G_Error("G_ScriptAction_AlliedRespawntime: time parameter required\n");
+ 	}
+ 
++#ifdef ETJS_SERVER
++	trap_Cvar_Set("g_bluelimbotime", "1000");
++#else
+ 	if (g_userAlliedRespawnTime.integer)
+ 	{
+ 		trap_Cvar_Set("g_bluelimbotime", va("%i", g_userAlliedRespawnTime.integer * 1000));
+@@ -3310,6 +3317,7 @@ qboolean G_ScriptAction_AlliedRespawntime(gentity_t *ent, char *params)
+ 	{
+ 		trap_Cvar_Set("g_bluelimbotime", va("%s000", token));
+ 	}
++#endif
+ 
+ 	return qtrue;
+ }
 diff --git a/src/game/g_xp_saver.c b/src/game/g_xp_saver.c
 index e01df66a6..0889cb901 100644
 --- a/src/game/g_xp_saver.c
@@ -6806,7 +6886,7 @@ index 5b76938d5..68e2542ea 100644
  /*
  ============================================================
 diff --git a/src/renderer/tr_main.c b/src/renderer/tr_main.c
-index 022571add..66271e6e2 100644
+index 022571add..e418d325d 100644
 --- a/src/renderer/tr_main.c
 +++ b/src/renderer/tr_main.c
 @@ -157,8 +157,12 @@ void R_FogOn(void)
@@ -6891,24 +6971,11 @@ index 022571add..66271e6e2 100644
  
  	tr.viewCount++;
  
-@@ -1899,10 +1930,28 @@ void R_RenderView(viewParms_t *parms)
+@@ -1898,11 +1929,14 @@ void R_RenderView(viewParms_t *parms)
+ 	R_RotateForViewer();
  
  	R_GenerateDrawSurfs();
- 
-+#ifdef __EMSCRIPTEN__
-+	{
-+		static int viewLog;
-+		if (viewLog < 48 || (tr.frameCount & 31) == 0)
-+		{
-+			ri.Printf(PRINT_ALL, "R_RenderView surfs=%d org=%.0f %.0f %.0f vp=%dx%d\n",
-+			          tr.refdef.numDrawSurfs - firstDrawSurf,
-+			          tr.refdef.vieworg[0], tr.refdef.vieworg[1], tr.refdef.vieworg[2],
-+			          parms->viewportWidth, parms->viewportHeight);
-+			viewLog++;
-+		}
-+	}
-+#endif
-+
+-
  	R_SortDrawSurfs(tr.refdef.drawSurfs + firstDrawSurf, tr.refdef.numDrawSurfs - firstDrawSurf);
  
 +#ifdef __EMSCRIPTEN__
@@ -7737,7 +7804,7 @@ index 9dfc28db8..09d55a0d7 100644
  	{
  		return;
 diff --git a/src/sdl/sdl_glimp.c b/src/sdl/sdl_glimp.c
-index 177bad8b2..ec9507986 100644
+index 177bad8b2..ad9d4e8f9 100644
 --- a/src/sdl/sdl_glimp.c
 +++ b/src/sdl/sdl_glimp.c
 @@ -392,7 +392,11 @@ static void GLimp_InitCvars(void)
@@ -7780,6 +7847,20 @@ index 177bad8b2..ec9507986 100644
  
  		main_window = SDL_CreateWindow(GlobalGameTitle, x, y, glConfig->vidWidth, glConfig->vidHeight, flags | SDL_WINDOW_SHOWN);
  
+@@ -1108,6 +1121,13 @@ static qboolean GLimp_StartDriverAndSetMode(glconfig_t *glConfig, int mode, qboo
+ 			SDL_setenv("SDL_VIDEODRIVER", r_sdlDriver->string, 0);
+ 		}
+ 
++#ifdef __EMSCRIPTEN__
++		/* Keep SDL's keyboard handlers on the focusable game canvas. Attaching
++		 * them to window (the SDL Emscripten default) makes ET consume keys while
++		 * users select/copy startup logs or use the rest of the browser page. */
++		SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
++#endif
++
+ #ifdef WIN32
+ 		// This hint must be set before initializing the video subsystem.
+ 		// The main purpose of declaring DPI awareness is to disable OS bitmap
 diff --git a/src/sdl/sdl_input.c b/src/sdl/sdl_input.c
 index 5e423fc13..9ba4504c9 100644
 --- a/src/sdl/sdl_input.c
@@ -11021,7 +11102,7 @@ index 139a2f4b2..a33296c25 100644
  		{
  			PC_SourceError(handle, "couldn't parse menu keyword %s", token.string);
 diff --git a/src/ui/ui_shared.c b/src/ui/ui_shared.c
-index 6b4d464f7..1fa0512d1 100644
+index 6b4d464f7..f282d2a07 100644
 --- a/src/ui/ui_shared.c
 +++ b/src/ui/ui_shared.c
 @@ -35,6 +35,7 @@
@@ -11032,23 +11113,24 @@ index 6b4d464f7..1fa0512d1 100644
  
  scrollInfo_t scrollInfo;
  
-@@ -61,7 +62,14 @@ int       modalMenuCount = 0;
+@@ -61,7 +62,15 @@ int       modalMenuCount = 0;
  qboolean debugMode            = qfalse;
  int      lastListBoxClickTime = 0;
  
 -#ifdef CGAMEDLL
-+#if defined(__EMSCRIPTEN__) && !defined(CGAMEDLL)
++#if defined(__EMSCRIPTEN__)
 +/* ETJS exposes the useful stock main, options, chat, voice, class, team and
 + * in-game menus together. Their macro-expanded item definitions exceed the
-+ * desktop UI's historical 8 MiB fixed pool. Keep cgame's small HUD pool and
-+ * native builds unchanged, but give the statically linked browser UI enough
-+ * bounded storage to parse that supported menu set without returning NULL. */
++ * historical fixed pools. The statically linked cgame and UI both compile
++ * ui_shared.c and export the same symbols, so the browser linker may select
++ * either copy. Give both copies the same bounded size to make the result
++ * independent of static-library link order. Native builds stay unchanged. */
 +#define MEM_POOL_SIZE (16 * 1024 * 1024)
 +#elif defined(CGAMEDLL)
  #if ARCH_X86
  #define MEM_POOL_SIZE (128 * 1024)
  #else
-@@ -124,21 +132,32 @@ float Cui_WideXoffset(void)
+@@ -124,21 +133,32 @@ float Cui_WideXoffset(void)
  void *UI_Alloc(int size)
  {
  	char *p;
@@ -11086,7 +11168,7 @@ index 6b4d464f7..1fa0512d1 100644
  
  	return p;
  }
-@@ -1963,6 +1982,34 @@ void C_PanelButtonsSetup(panel_button_t **buttons, float xoffset)
+@@ -1963,6 +1983,34 @@ void C_PanelButtonsSetup(panel_button_t **buttons, float xoffset)
  /**
   * @brief Registers fonts shared between cgame and ui to either defaults or user-defined custom fonts
   */
@@ -11121,7 +11203,7 @@ index 6b4d464f7..1fa0512d1 100644
  void RegisterSharedFonts(void)
  {
  	fontTableEntry_t fontTable[FONT_TABLE_NUMFONTS] =
-@@ -1981,11 +2028,20 @@ void RegisterSharedFonts(void)
+@@ -1981,11 +2029,20 @@ void RegisterSharedFonts(void)
  	{
  		fontTableEntry_t *entry = &fontTable[i];
  		trap_Cvar_VariableStringBuffer(entry->cvarName, buf, sizeof(buf));
