@@ -3,11 +3,13 @@
 const { fillPlan, applyFill, MATCH_SLOTS } = require('./botfill');
 const { queryStatus } = require('./status');
 const { sendRcon } = require('./rcon');
+const gameMode = require('./mode');
 
 const TEAMS = ['axis', 'allies'];
 const CLASSES = ['soldier', 'medic', 'engineer', 'fieldops', 'covertops'];
 const GAMEPLAY_CVARS = [
-  'set g_speed 400',
+  'set g_etjsArcade ' + (gameMode.ARCADE ? '1' : '0'),
+  'set g_speed ' + gameMode.GAME_SPEED,
   'set g_friendlyFire 0',
   'set g_forcerespawn 1',
   'set g_bluelimbotime 1000',
@@ -91,7 +93,10 @@ async function reconcile(opts) {
     timeoutMs: opts.timeoutMs
   });
   const state = rosterFromStatus(status, opts.humanNames);
-  const plan = fillPlan(state);
+  const plan = opts.manageBots === false
+    ? { humans: state.humans, bots: state.bots, target: state.bots,
+        slots: state.slots, add: 0, remove: 0 }
+    : fillPlan(state);
   const botNames = (status.players || [])
     .filter((p) => p.kind === 'bot' && /\[BOT\]/i.test(String(p.name || '')))
     .map((p) => p.name);

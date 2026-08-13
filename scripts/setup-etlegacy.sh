@@ -7,13 +7,14 @@ ETLEGACY_DIR="${ETJS_ETLEGACY_DIR:-$ROOT/etlegacy}"
 UPSTREAM_URL="https://github.com/etlegacy/etlegacy.git"
 UPSTREAM_REF="a44ab4f396370a694109da33df901d85f6fe9626"
 ETJS_PATCH="$ROOT/patches/etlegacy-wasm.patch"
+ETJS_MODES_PATCH="$ROOT/patches/etlegacy-modes.patch"
 
 if ! command -v git >/dev/null 2>&1; then
   echo "git is required" >&2
   exit 1
 fi
-if [ ! -f "$ETJS_PATCH" ]; then
-  echo "missing ETJS engine patch: $ETJS_PATCH" >&2
+if [ ! -f "$ETJS_PATCH" ] || [ ! -f "$ETJS_MODES_PATCH" ]; then
+  echo "missing ETJS engine patch" >&2
   exit 1
 fi
 
@@ -32,8 +33,17 @@ if [ "$ACTUAL_REF" != "$UPSTREAM_REF" ]; then
   exit 1
 fi
 
+if git -C "$ETLEGACY_DIR" apply --reverse --check "$ETJS_MODES_PATCH" >/dev/null 2>&1; then
+  echo "ETJS engine patches are already applied at $ETLEGACY_DIR"
+  exit 0
+fi
+
+# Upgrade a checkout prepared by an earlier revision that has the main browser
+# patch but not the deployment-mode patch yet.
 if git -C "$ETLEGACY_DIR" apply --reverse --check "$ETJS_PATCH" >/dev/null 2>&1; then
-  echo "ETJS engine patch is already applied at $ETLEGACY_DIR"
+  git -C "$ETLEGACY_DIR" apply --check "$ETJS_MODES_PATCH"
+  git -C "$ETLEGACY_DIR" apply "$ETJS_MODES_PATCH"
+  echo "applied ETJS deployment modes to ET: Legacy $UPSTREAM_REF"
   exit 0
 fi
 
@@ -44,4 +54,6 @@ fi
 
 git -C "$ETLEGACY_DIR" apply --check "$ETJS_PATCH"
 git -C "$ETLEGACY_DIR" apply "$ETJS_PATCH"
+git -C "$ETLEGACY_DIR" apply --check "$ETJS_MODES_PATCH"
+git -C "$ETLEGACY_DIR" apply "$ETJS_MODES_PATCH"
 echo "applied ETJS engine patch to ET: Legacy $UPSTREAM_REF"

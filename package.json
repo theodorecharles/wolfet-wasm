@@ -2,7 +2,7 @@
   "name": "wolfet-wasm",
   "version": "0.1.0",
   "private": true,
-  "description": "Wolfenstein: Enemy Territory in the browser — one shared 12-slot match",
+  "description": "Wolfenstein: Enemy Territory in the browser with shared Vanilla and Arcade matches",
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",

@@ -40,7 +40,7 @@ function sendRcon(command, opts) {
       if (err && chunks.length === 0) {
         reject(err);
       } else {
-        resolve(Buffer.concat(chunks).toString('binary').replace(/^\xff\xff\xff\xffprint\n?/g, ''));
+        resolve(Buffer.concat(chunks).toString('binary').replace(/\xff\xff\xff\xffprint\n?/g, ''));
       }
     };
 

@@ -9,9 +9,12 @@ const { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 
 describe('reproducible source repository', () => {
-  it('keeps private gameplay assists out of the public README', () => {
+  it('documents both deployment modes and their operator-facing behavior', () => {
     const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
-    assert.doesNotMatch(readme, /aimbot|rshook|wallhack|aim[- ]assist/i);
+    assert.match(readme, /ETJS_MODE/);
+    assert.match(readme, /vanilla/i);
+    assert.match(readme, /arcade/i);
+    assert.match(readme, /aimbot/i);
   });
 
   it('keeps reference workspaces, game data, builds, and credentials out of Git', () => {
@@ -55,7 +58,10 @@ describe('reproducible source repository', () => {
     assert.match(setup, /a44ab4f396370a694109da33df901d85f6fe9626/);
     const patch = path.join(ROOT, 'patches', 'etlegacy-wasm.patch');
     assert.ok(fs.statSync(patch).size > 300000);
-    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', patch]);
+    const modesPatch = path.join(ROOT, 'patches', 'etlegacy-modes.patch');
+    assert.ok(fs.statSync(modesPatch).size > 1000);
+    assert.match(setup, /etlegacy-modes\.patch/);
+    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', modesPatch]);
   });
 
   it('builds and requires the matching native qagame module', () => {
@@ -65,6 +71,7 @@ describe('reproducible source repository', () => {
     assert.match(pkg.scripts['build:server-mod'], /build-server-mod\.sh/);
     assert.match(pkg.scripts.setup, /build:server-mod/);
     assert.match(script, /--target qagame/);
+    assert.match(script, /INSTALL_EXTRA=OFF/);
     assert.match(script, /qagame\.mp\.x86_64\.so/);
     assert.match(dedicated, /assertServerMod/);
     assert.match(dedicated, /SERVER_MOD_HASH/);
@@ -80,11 +87,18 @@ describe('reproducible source repository', () => {
     assert.match(dockerfile, /platforms: linux\/amd64|EXPOSE 8088\/tcp 27960\/udp/);
     assert.match(dockerfile, /COPY third_party third_party/);
     assert.match(dockerfile, /COPY web-port web-port/);
+    assert.match(dockerfile, /ETJS_MODE=arcade/);
+    assert.match(dockerfile, /ETJS_SLOTS=12/);
+    assert.match(dockerfile, /KEEP_ALIVE=false/);
+    assert.match(dockerfile, /IDLE_TIMEOUT=15m/);
     assert.match(dockerignore, /runtime\/etmain\/\*\.pk3/);
     assert.match(dockerignore, /runtime\/legacy\/\*\.pk3/);
     assert.match(entrypoint, /ETJS_DATA_ROOT="\$DATA_ROOT"/);
     assert.match(entrypoint, /fetch-game-data\.sh/);
     assert.match(entrypoint, /ETJS_LEGACY_PAK_SOURCE/);
+    assert.match(entrypoint, /DATA_ROOT\/custom_maps/);
+    assert.match(entrypoint, /DATA_OWNER_UID/);
+    assert.match(entrypoint, /KEEP_ALIVE/);
     assert.match(workflow, /platforms: linux\/amd64/);
     assert.match(workflow, /type=raw,value=dev/);
     assert.match(workflow, /type=raw,value=latest/);

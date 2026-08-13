@@ -35,10 +35,11 @@ describe('status parser classifies Omni-Bot vs humans', () => {
 });
 
 describe('runtime reconciliation', () => {
-  it('reasserts fun gameplay cvars without the unsupported minplayers command', () => {
+  it('reasserts the selected gameplay mode without the unsupported minplayers command', () => {
     const supervisor = fs.readFileSync(path.join(ROOT, 'server', 'supervisor.js'), 'utf8');
     const commands = GAMEPLAY_CVARS.join('\n');
     assert.match(commands, /g_speed 400/);
+    assert.match(commands, /g_etjsArcade 1/);
     assert.match(commands, /g_friendlyFire 0/);
     assert.match(commands, /g_forcerespawn 1/);
     assert.doesNotMatch(supervisor, /bot minplayers/);

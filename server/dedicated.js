@@ -4,6 +4,8 @@ const { spawn, execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { MATCH_SLOTS } = require('./botfill');
+const gameMode = require('./mode');
 
 const ROOT = path.join(__dirname, '..');
 const DATA_ROOT = path.resolve(process.env.ETJS_DATA_ROOT || ROOT);
@@ -20,6 +22,15 @@ const IMAGE = process.env.ETJS_DED_IMAGE ||
 const CONTAINER = process.env.ETJS_DED_CONTAINER || 'etjs-dedicated';
 const RCON_FILE = path.join(RUNTIME_ROOT, '.rcon-password');
 const DATA_FETCHER = path.join(ROOT, 'scripts', 'fetch-game-data.sh');
+const CUSTOM_MAPS_DIR = path.join(DATA_ROOT, 'custom_maps');
+const OBJECTIVE_ROTATION_FILE = path.join(RUNTIME_ETMAIN, 'objectiverotate.cfg');
+const LAST_START_MAP_FILE = path.join(RUNTIME_ROOT, '.last-start-map');
+const BASE_OBJECTIVE_MAPS = Object.freeze([
+  'oasis', 'battery', 'goldrush', 'radar', 'railgun', 'fueldump'
+]);
+const RESERVED_ETMAIN_PAKS = new Set(['pak0.pk3', 'pak1.pk3', 'pak2.pk3', 'mp_bin.pk3']);
+let activeCustomAssets = [];
+let activeObjectiveMaps = BASE_OBJECTIVE_MAPS.slice();
 
 /** Host UDP port the website / proxy / status queries talk to. */
 const HOST_UDP_PORT = Number(process.env.ETJS_DED_PORT || 27961);
@@ -68,7 +79,8 @@ const ETJS_PAK_HASH = fs.existsSync(ETJS_PAK)
   ? crypto.createHash('sha256').update(fs.readFileSync(ETJS_PAK)).digest('hex')
   : 'missing';
 const CONFIG_LABEL = crypto.createHash('sha256')
-  .update(IMAGE + '\0' + RCON_PASSWORD + '\0' + SERVER_MOD_HASH + '\0' + ETJS_PAK_HASH)
+  .update(IMAGE + '\0' + RCON_PASSWORD + '\0' + SERVER_MOD_HASH + '\0' + ETJS_PAK_HASH +
+    '\0' + MATCH_SLOTS + '\0' + gameMode.MODE)
   .digest('hex');
 
 const DEFAULT_ARGS = [
@@ -76,7 +88,9 @@ const DEFAULT_ARGS = [
   '+set', 'dedicated', '1',
   '+set', 'sv_advert', '0',
   '+set', 'net_port', String(EMBEDDED ? HOST_UDP_PORT : CONTAINER_UDP_PORT),
-  '+set', 'sv_maxclients', '13',
+  /* Keep one connection transition slot above the maintained population so a
+   * human can join before the supervisor removes the bot they replace. */
+  '+set', 'sv_maxclients', String(MATCH_SLOTS + 1),
   '+set', 'sv_privateclients', '0',
   '+set', 'sv_hostname', 'wolfet-wasm Shared Match',
   '+set', 'sv_pure', '0',
@@ -85,7 +99,8 @@ const DEFAULT_ARGS = [
   '+set', 'g_friendlyFire', '0',
   '+set', 'g_gametype', '2',
   '+set', 'g_heavyWeaponRestriction', '100',
-  '+set', 'g_speed', '400',
+  '+set', 'g_etjsArcade', gameMode.ARCADE ? '1' : '0',
+  '+set', 'g_speed', String(gameMode.GAME_SPEED),
   '+set', 'g_bluelimbotime', '1000',
   '+set', 'g_redlimbotime', '1000',
   /* Automatically enter the reinforcement queue after death. Without this,
@@ -98,11 +113,13 @@ const DEFAULT_ARGS = [
   '+set', 'g_xpSaverMaxAge', '604800',
   '+set', 'rconpassword', RCON_PASSWORD,
   '+set', 'logfile', '2',
-  '+set', 'com_hunkMegs', '128',
-  '+map', 'oasis',
-  '+exec', 'objectiverotate.cfg',
+  '+set', 'com_hunkMegs', '128'
+];
+
+const POST_MAP_ARGS = [
   /* legacy's defaultpublic config is loaded during map init and resets speed. */
-  '+set', 'g_speed', '400',
+  '+set', 'g_etjsArcade', gameMode.ARCADE ? '1' : '0',
+  '+set', 'g_speed', String(gameMode.GAME_SPEED),
   '+set', 'g_friendlyFire', '0',
   '+set', 'g_forcerespawn', '1'
 ];
@@ -113,6 +130,224 @@ function assertOfficialPaks() {
   if (missing.length) {
     throw new Error('official ET paks missing from ' + RUNTIME_ETMAIN + ': ' + missing.join(', '));
   }
+}
+
+function hashFile(filePath) {
+  const hash = crypto.createHash('sha256');
+  const fd = fs.openSync(filePath, 'r');
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let bytesRead;
+    do {
+      bytesRead = fs.readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead > 0) {
+        hash.update(buffer.subarray(0, bytesRead));
+      }
+    } while (bytesRead > 0);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('hex');
+}
+
+function isInside(parent, candidate) {
+  const rel = path.relative(path.resolve(parent), path.resolve(candidate));
+  return rel === '' || (!rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel));
+}
+
+function mapsInPk3(pk3Path) {
+  let listing;
+  try {
+    listing = execFileSync('unzip', ['-Z1', pk3Path], {
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024
+    });
+  } catch (err) {
+    throw new Error('cannot read custom map PK3 ' + path.basename(pk3Path) + ': ' + err.message);
+  }
+  const maps = [];
+  String(listing).split(/\r?\n/).forEach((entry) => {
+    const match = /^maps\/([A-Za-z0-9_-]+)\.bsp$/i.exec(entry.trim());
+    if (match) {
+      maps.push(match[1]);
+    }
+  });
+  return maps;
+}
+
+function objectiveRotation(customMaps) {
+  const seen = new Set();
+  const maps = [];
+  BASE_OBJECTIVE_MAPS.concat(customMaps || []).forEach((mapName) => {
+    const map = String(mapName || '').trim();
+    const key = map.toLowerCase();
+    if (/^[A-Za-z0-9_-]+$/.test(map) && !seen.has(key)) {
+      seen.add(key);
+      maps.push(map);
+    }
+  });
+  const lines = maps.map((map, index) => {
+    const current = index + 1;
+    const next = current === maps.length ? 1 : current + 1;
+    return 'set d' + current + ' "set g_gametype 2 ; map ' + map +
+      ' ; set nextmap vstr d' + next + '"';
+  });
+  /* This fallback is replaced by the selected dN command at server start. */
+  lines.push('set nextmap "vstr d' + (maps.length > 1 ? 2 : 1) + '"');
+  return { maps: maps, text: lines.join('\n') + '\n' };
+}
+
+function writeFileIfChanged(filePath, contents) {
+  try {
+    if (fs.readFileSync(filePath, 'utf8') === contents) {
+      return;
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      throw err;
+    }
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const temp = filePath + '.tmp-' + process.pid;
+  fs.writeFileSync(temp, contents, { encoding: 'utf8', mode: 0o644 });
+  fs.renameSync(temp, filePath);
+}
+
+/**
+ * Mount operator-provided PK3s into etmain, discover maps/*.bsp entries, and
+ * append those maps to the stock Objective rotation. Supporting PK3s without a
+ * BSP are still published so browsers receive all dependencies.
+ */
+function prepareCustomMaps(options) {
+  const opts = options || {};
+  const customMapsDir = path.resolve(opts.customMapsDir || CUSTOM_MAPS_DIR);
+  const etmainDir = path.resolve(opts.etmainDir || RUNTIME_ETMAIN);
+  const rotationFile = path.resolve(opts.rotationFile || path.join(etmainDir, 'objectiverotate.cfg'));
+  fs.mkdirSync(customMapsDir, { recursive: true });
+  fs.mkdirSync(etmainDir, { recursive: true });
+
+  const names = fs.readdirSync(customMapsDir)
+    .filter((name) => /^[A-Za-z0-9][A-Za-z0-9_.-]*\.pk3$/i.test(name))
+    .sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+  const activeDestinations = new Set();
+  const assets = [];
+  const customMapNames = [];
+
+  names.forEach((name) => {
+    if (RESERVED_ETMAIN_PAKS.has(name.toLowerCase())) {
+      throw new Error('custom map PK3 uses a reserved filename: ' + name);
+    }
+    const source = path.join(customMapsDir, name);
+    const sourceStat = fs.statSync(source);
+    if (!sourceStat.isFile()) {
+      return;
+    }
+    const destination = path.join(etmainDir, name);
+    activeDestinations.add(destination);
+    try {
+      const existing = fs.lstatSync(destination);
+      if (!existing.isSymbolicLink()) {
+        throw new Error('custom map destination already exists and is not managed: ' + destination);
+      }
+      const target = path.resolve(etmainDir, fs.readlinkSync(destination));
+      if (target !== source) {
+        if (!isInside(customMapsDir, target)) {
+          throw new Error('refusing to replace unmanaged symlink: ' + destination);
+        }
+        fs.unlinkSync(destination);
+        fs.symlinkSync(path.relative(etmainDir, source), destination);
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        fs.symlinkSync(path.relative(etmainDir, source), destination);
+      } else {
+        throw err;
+      }
+    }
+
+    const hash = hashFile(source);
+    assets.push({
+      parent: '/etmain',
+      name: name,
+      filePath: destination,
+      bytes: sourceStat.size,
+      hash: hash
+    });
+    mapsInPk3(source).forEach((mapName) => customMapNames.push(mapName));
+  });
+
+  fs.readdirSync(etmainDir).forEach((name) => {
+    const destination = path.join(etmainDir, name);
+    let stat;
+    try {
+      stat = fs.lstatSync(destination);
+    } catch (err) {
+      return;
+    }
+    if (!stat.isSymbolicLink()) {
+      return;
+    }
+    const target = path.resolve(etmainDir, fs.readlinkSync(destination));
+    if (isInside(customMapsDir, target) && !activeDestinations.has(destination)) {
+      fs.unlinkSync(destination);
+    }
+  });
+
+  const rotation = objectiveRotation(customMapNames);
+  writeFileIfChanged(rotationFile, rotation.text);
+  const result = { assets: assets, maps: rotation.maps, rotationFile: rotationFile };
+  if (!options) {
+    activeCustomAssets = assets;
+    activeObjectiveMaps = rotation.maps;
+  }
+  return result;
+}
+
+function customGameAssets() {
+  return activeCustomAssets.slice();
+}
+
+function objectiveMaps() {
+  return activeObjectiveMaps.slice();
+}
+
+/** Pick a rotation map without immediately repeating the previous start. */
+function chooseStartMap(options) {
+  const opts = options || {};
+  const maps = (opts.maps || objectiveMaps()).slice();
+  const stateFile = opts.stateFile || LAST_START_MAP_FILE;
+  const randomInt = opts.randomInt || crypto.randomInt;
+  if (!maps.length) {
+    throw new Error('cannot start dedicated server without an Objective map');
+  }
+
+  let previous = '';
+  try {
+    previous = fs.readFileSync(stateFile, 'utf8').trim().toLowerCase();
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      throw err;
+    }
+  }
+  const choices = maps.length > 1
+    ? maps.filter((map) => map.toLowerCase() !== previous)
+    : maps;
+  const selected = choices[randomInt(choices.length)];
+  writeFileIfChanged(stateFile, selected + '\n');
+  return selected;
+}
+
+function launchArgs(startMap) {
+  const maps = objectiveMaps();
+  const requested = String(startMap || maps[0] || '').toLowerCase();
+  let index = maps.findIndex((map) => map.toLowerCase() === requested);
+  if (index < 0) {
+    index = 0;
+  }
+  return DEFAULT_ARGS.concat([
+    '+exec', 'objectiverotate.cfg',
+    '+vstr', 'd' + (index + 1)
+  ], POST_MAP_ARGS);
 }
 
 /**
@@ -128,6 +363,7 @@ function ensureGameData() {
     stdio: 'inherit'
   });
   assertOfficialPaks();
+  return prepareCustomMaps();
 }
 
 function assertServerMod() {
@@ -184,7 +420,6 @@ function stopDedicated() {
     if (embeddedProcess && embeddedProcess.exitCode === null) {
       embeddedProcess.kill('SIGTERM');
     }
-    embeddedProcess = null;
     return;
   }
   try {
@@ -192,6 +427,28 @@ function stopDedicated() {
   } catch (err) {
     /* not running */
   }
+}
+
+function waitForDedicatedStopped(timeoutMs) {
+  if (!EMBEDDED || !embeddedProcess || embeddedProcess.exitCode !== null) {
+    return Promise.resolve();
+  }
+  const child = embeddedProcess;
+  return new Promise((resolve, reject) => {
+    let timer = null;
+    const done = () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      resolve();
+    };
+    child.once('exit', done);
+    timer = setTimeout(() => {
+      child.removeListener('exit', done);
+      try { child.kill('SIGKILL'); } catch (err) { /* already exited */ }
+      reject(new Error('dedicated server did not stop within ' + (timeoutMs || 10000) + 'ms'));
+    }, timeoutMs || 10000);
+  });
 }
 
 /**
@@ -208,16 +465,21 @@ function startDedicated(opts) {
     throw new Error('docker is required to start etlegacy/server');
   }
 
-  stopDedicated();
-
   const extra = (opts && opts.args) || [];
+  const argsForGame = launchArgs(opts && opts.map).concat(extra);
   if (EMBEDDED) {
-    embeddedProcess = spawn(EMBEDDED_BIN, DEFAULT_ARGS.concat(extra), {
+    if (embeddedProcess && embeddedProcess.exitCode === null) {
+      throw new Error('embedded dedicated server is already running or stopping');
+    }
+    const child = spawn(EMBEDDED_BIN, argsForGame, {
       cwd: RUNTIME_ROOT,
       stdio: ['ignore', 'inherit', 'inherit']
     });
-    embeddedProcess.on('exit', () => {
-      embeddedProcess = null;
+    embeddedProcess = child;
+    child.on('exit', () => {
+      if (embeddedProcess === child) {
+        embeddedProcess = null;
+      }
     });
     return {
       container: null,
@@ -225,6 +487,8 @@ function startDedicated(opts) {
       kill: stopDedicated
     };
   }
+
+  stopDedicated();
 
   const args = [
     'run',
@@ -240,7 +504,7 @@ function startDedicated(opts) {
     '-w', '/legacy/server',
     '--entrypoint', './etlded',
     IMAGE
-  ].concat(DEFAULT_ARGS).concat(extra);
+  ].concat(argsForGame);
 
   execFileSync('docker', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -269,6 +533,10 @@ module.exports = {
   RUNTIME_ETMAIN: RUNTIME_ETMAIN,
   SERVER_MOD: SERVER_MOD,
   ETJS_PAK: ETJS_PAK,
+  CUSTOM_MAPS_DIR: CUSTOM_MAPS_DIR,
+  OBJECTIVE_ROTATION_FILE: OBJECTIVE_ROTATION_FILE,
+  LAST_START_MAP_FILE: LAST_START_MAP_FILE,
+  BASE_OBJECTIVE_MAPS: BASE_OBJECTIVE_MAPS,
   IMAGE: IMAGE,
   CONTAINER: CONTAINER,
   HOST_UDP_PORT: HOST_UDP_PORT,
@@ -283,13 +551,25 @@ module.exports = {
   SERVER_MOD_HASH: SERVER_MOD_HASH,
   ETJS_PAK_HASH: ETJS_PAK_HASH,
   DEFAULT_ARGS: DEFAULT_ARGS,
+  POST_MAP_ARGS: POST_MAP_ARGS,
+  MATCH_SLOTS: MATCH_SLOTS,
+  MODE: gameMode.MODE,
+  ARCADE_MODE: gameMode.ARCADE,
   assertOfficialPaks: assertOfficialPaks,
   ensureGameData: ensureGameData,
+  mapsInPk3: mapsInPk3,
+  objectiveRotation: objectiveRotation,
+  prepareCustomMaps: prepareCustomMaps,
+  customGameAssets: customGameAssets,
+  objectiveMaps: objectiveMaps,
+  chooseStartMap: chooseStartMap,
+  launchArgs: launchArgs,
   assertServerMod: assertServerMod,
   dockerAvailable: dockerAvailable,
   containerRunning: containerRunning,
   containerConfigured: containerConfigured,
   startDedicated: startDedicated,
   stopDedicated: stopDedicated,
+  waitForDedicatedStopped: waitForDedicatedStopped,
   followLogs: followLogs
 };

@@ -27,9 +27,49 @@ function attachWsProxy(server, opts) {
 
   const wss = new WebSocketServer({ server: server, path: path });
 
-  wss.on('connection', (ws) => {
+  const registry = opts && opts.registry;
+  const banStore = opts && opts.banStore;
+  const clientAddress = opts && opts.clientAddress;
+  const ensureDedicated = opts && opts.ensureDedicated;
+
+  wss.on('connection', (ws, req) => {
+    const address = clientAddress ? clientAddress(req) : String(req.socket.remoteAddress || '');
+    if (banStore && banStore.isBanned(address)) {
+      ws.close(1008, 'banned by server administrator');
+      return;
+    }
     const udp = dgram.createSocket('udp4');
     udp.bind(0, '127.0.0.1');
+    let proxyPort = 0;
+    let wakePromise = null;
+    let ready = !ensureDedicated;
+    let pending = [];
+    let pendingBytes = 0;
+
+    const beginWake = () => {
+      if (wakePromise || ready) {
+        return;
+      }
+      wakePromise = Promise.resolve().then(() => ensureDedicated('browser game connection'))
+        .then(() => {
+          ready = true;
+          const queued = pending;
+          pending = [];
+          pendingBytes = 0;
+          queued.forEach((packet) => udp.send(packet, destPort, destHost));
+        })
+        .catch((err) => {
+          pending = [];
+          pendingBytes = 0;
+          try { ws.close(1013, 'game server wake failed'); } catch (e) { /* ignore */ }
+        });
+    };
+    udp.on('listening', () => {
+      proxyPort = udp.address().port;
+      if (registry) {
+        registry.set(proxyPort, { ws: ws, address: address });
+      }
+    });
 
     udp.on('message', (msg) => {
       if (ws.readyState === ws.OPEN) {
@@ -50,10 +90,25 @@ function attachWsProxy(server, opts) {
       if (isPortAnnouncement(buf)) {
         return;
       }
+      if (!ready) {
+        if (pending.length >= 256 || pendingBytes + buf.length > 1024 * 1024) {
+          ws.close(1009, 'too much queued game data');
+          return;
+        }
+        pending.push(Buffer.from(buf));
+        pendingBytes += buf.length;
+        beginWake();
+        return;
+      }
       udp.send(buf, destPort, destHost);
     });
 
     const cleanup = () => {
+      pending = [];
+      pendingBytes = 0;
+      if (registry && proxyPort) {
+        registry.delete(proxyPort);
+      }
       try {
         udp.close();
       } catch (e) {

@@ -1,7 +1,22 @@
 'use strict';
 
-/** Slots in the one shared match. */
-const MATCH_SLOTS = 12;
+const DEFAULT_MATCH_SLOTS = 12;
+const MIN_MATCH_SLOTS = 2;
+const MAX_MATCH_SLOTS = 63;
+
+function parseMatchSlots(value) {
+  if (value == null || String(value).trim() === '') {
+    return DEFAULT_MATCH_SLOTS;
+  }
+  const slots = Number(value);
+  if (!Number.isInteger(slots) || slots < MIN_MATCH_SLOTS || slots > MAX_MATCH_SLOTS) {
+    throw new Error('ETJS_SLOTS must be an integer from ' + MIN_MATCH_SLOTS + ' to ' + MAX_MATCH_SLOTS);
+  }
+  return slots;
+}
+
+/** Human + bot population maintained in the one shared match. */
+const MATCH_SLOTS = parseMatchSlots(process.env.ETJS_SLOTS);
 
 /**
  * How many bots the dedicated match should run for H connected humans.
@@ -54,7 +69,11 @@ function applyFill(state, hooks) {
 }
 
 module.exports = {
+  DEFAULT_MATCH_SLOTS: DEFAULT_MATCH_SLOTS,
+  MIN_MATCH_SLOTS: MIN_MATCH_SLOTS,
+  MAX_MATCH_SLOTS: MAX_MATCH_SLOTS,
   MATCH_SLOTS: MATCH_SLOTS,
+  parseMatchSlots: parseMatchSlots,
   desiredBots: desiredBots,
   fillPlan: fillPlan,
   applyFill: applyFill

@@ -2361,7 +2361,7 @@ index 6651a0127..ee3153252 100644
  	Cmd_AddCommand("+right", IN_RightDown);
  	Cmd_AddCommand("-right", IN_RightUp);
  	Cmd_AddCommand("+forward", IN_ForwardDown);
-@@ -1532,3 +1706,216 @@ void CL_ClearKeys(void)
+@@ -1532,3 +1706,235 @@ void CL_ClearKeys(void)
  {
  	Com_Memset(kb, 0, sizeof(kb));
  }
@@ -2456,23 +2456,42 @@ index 6651a0127..ee3153252 100644
 +EMSCRIPTEN_KEEPALIVE
 +int ETJS_OpenCommunication(int mode)
 +{
-+	const char *command;
++	int menu;
 +
 +	if (cls.state != CA_ACTIVE || !cgvm || !uivm)
 +	{
++		Com_Printf("ETJS communication unavailable (state=%d cg=%d ui=%d)\n",
++		           (int)cls.state, cgvm ? 1 : 0, uivm ? 1 : 0);
 +		return 0;
 +	}
 +
 +	switch (mode)
 +	{
-+		case 1: command = "messagemode\n"; break;
-+		case 2: command = "messagemode2\n"; break;
-+		case 3: command = "mp_quickmessage\n"; break;
++		case 1:
++			Cvar_Set("cg_messageType", "1");
++			Cvar_Set("cg_messageText", "");
++			menu = UIMENU_INGAME_MESSAGEMODE;
++			break;
++		case 2:
++			Cvar_Set("cg_messageType", "2");
++			Cvar_Set("cg_messageText", "");
++			menu = UIMENU_INGAME_MESSAGEMODE;
++			break;
++		case 3:
++			menu = UIMENU_WM_QUICKMESSAGE;
++			break;
 +		default: return 0;
 +	}
 +
-+	Cbuf_ExecuteText(EXEC_NOW, command);
-+	return (cls.keyCatchers & (KEYCATCH_UI | KEYCATCH_CGAME)) != 0;
++	/* Open the stock UI directly. Routing through the command buffer can be
++	 * rejected by transient cgame eventHandling state and still leave the
++	 * browser believing chat opened. This bridge is called only from a
++	 * captured gameplay key, so bypassing that race is both safe and exact. */
++	VM_Call(uivm, UI_SET_ACTIVE_MENU, menu);
++	Com_DPrintf("ETJS communication mode=%d menu=%d active=%ld catchers=%d\n",
++	            mode, menu, (long)VM_Call(uivm, UI_GET_ACTIVE_MENU), cls.keyCatchers);
++	return (cls.keyCatchers & KEYCATCH_UI) != 0 &&
++	       VM_Call(uivm, UI_GET_ACTIVE_MENU) == menu;
 +}
 +
 +EMSCRIPTEN_KEEPALIVE
@@ -2702,7 +2721,7 @@ index 28b4bb510..c2c529ddd 100644
  }
  
  
-@@ -3135,6 +3188,33 @@ void CL_InitRef(void)
+@@ -3135,6 +3188,45 @@ void CL_InitRef(void)
  
  //===========================================================================================
  
@@ -2723,13 +2742,25 @@ index 28b4bb510..c2c529ddd 100644
 +{
 +	const char *addr = Cvar_VariableString("etjs_connect");
 +	const char *name = Cvar_VariableString("name");
++	int handled;
 +
 +	if (!addr || !addr[0])
 +	{
 +		addr = "127.0.0.1:27961";
 +	}
 +	Com_DPrintf("ETJS join name=%s connect=%s\n", name ? name : "", addr);
-+	Cbuf_AddText(va("connect %s\n", addr));
++	handled = EM_ASM_INT({
++		if (Module['etjsWakeAndJoin'])
++		{
++			Module['etjsWakeAndJoin'](UTF8ToString($0));
++			return 1;
++		}
++		return 0;
++	}, addr);
++	if (!handled)
++	{
++		Cbuf_AddText(va("connect %s\n", addr));
++	}
 +}
 +#endif
 +

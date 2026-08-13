@@ -47,6 +47,9 @@
   var selectedQualityLevel = 3;
   var selectedFpsTarget = 60;
   var adaptiveQuality = true;
+  var wakeJoinPromise = null;
+  var communicationInput = false;
+  var communicationInputGraceUntil = 0;
 
   var AUTOEXEC_LINES = [
     'set rate 25000',
@@ -561,7 +564,7 @@
     var connect = (cfg && cfg.connect) || (window.location.hostname + ':27961');
     /* ET only keeps 96 startup +commands; put connect first so it cannot
      * be dropped. Everything else lives in autoexec.cfg. */
-    return nameArgs.concat([
+    var args = nameArgs.concat([
       '+set', 'etjs_connect', connect,
       '+set', 'fs_basepath', '/',
       '+set', 'fs_homepath', '/home',
@@ -578,6 +581,10 @@
       '+set', 'com_ansiColor', '0',
       '+set', 'con_fontName', 'courbd'
     ]);
+    if (cfg && cfg.admin === true) {
+      args = args.concat(['+set', 'etjs_admin', '1']);
+    }
+    return args;
   }
 
   function loadScript(src) {
@@ -700,12 +707,18 @@
 
   function gameFilesFromConfig(cfg) {
     var files = cfg && Array.isArray(cfg.assets) ? cfg.assets : null;
-    if (!files || files.length !== 6 || files.some(function (file) {
+    var required = [
+      '/etmain/pak0.pk3', '/etmain/pak1.pk3', '/etmain/pak2.pk3',
+      '/etmain/mp_bin.pk3', '/legacy/legacy_v2.84.0.pk3', '/legacy/etjs.pk3'
+    ];
+    if (!files || files.length < required.length || files.some(function (file) {
       return !file || (file.parent !== '/etmain' && file.parent !== '/legacy') ||
         !/^[A-Za-z0-9_.-]+\.pk3$/.test(file.name || '') ||
         !/^\/(?:etmain|legacy)\/[A-Za-z0-9_.-]+\.pk3(?:\?v=[a-f0-9]+)?$/.test(file.url || '') ||
         !Number.isSafeInteger(file.bytes) || file.bytes <= 0 ||
         !/^sha256:[a-f0-9]{64}$/.test(String(file.cacheKey || '').split('@')[1] || '');
+    }) || required.some(function (requiredPath) {
+      return !files.some(function (file) { return file.parent + '/' + file.name === requiredPath; });
     })) {
       return defaultGameFiles();
     }
@@ -784,14 +797,26 @@
 
     function openCommunication(mode) {
       var M = window.Module;
+      var opened = false;
       try {
         if (M && typeof M._ETJS_OpenCommunication === 'function') {
-          return M._ETJS_OpenCommunication(mode) !== 0;
+          opened = M._ETJS_OpenCommunication(mode) !== 0;
         }
       } catch (e) { /* not ready */ }
-      var fallback = mode === 1 ? 'messagemode' :
-        (mode === 2 ? 'messagemode2' : 'mp_quickmessage');
-      return engineCmd(fallback);
+      if (!opened && (!M || typeof M._ETJS_OpenCommunication !== 'function')) {
+        var fallback = mode === 1 ? 'messagemode' :
+          (mode === 2 ? 'messagemode2' : 'mp_quickmessage');
+        opened = engineCmd(fallback);
+      }
+      if (opened) {
+        /* Pointer lock is released when the stock menu takes KEYCATCH_UI.
+         * Retain the keyboard session that opened it so text, Enter/Escape,
+         * and voice-menu letter choices continue reaching ET. */
+        communicationInput = true;
+        communicationInputGraceUntil = Date.now() + 750;
+        canvas.focus();
+      }
+      return opened;
     }
 
     function handleCommunicationKey(code) {
@@ -973,7 +998,8 @@
     }
 
     function inputCaptured() {
-      var captured = pointerLocked() || document.activeElement === canvas;
+      var captured = pointerLocked() || document.activeElement === canvas ||
+        communicationInput || !!typingMode;
       window.__etjsInputCaptured = captured;
       return captured;
     }
@@ -1366,6 +1392,7 @@
     window.addEventListener('contextmenu', onContextMenu, true);
     window.addEventListener('blur', function () {
       releaseInputHolds();
+      communicationInput = false;
       window.__etjsInputCaptured = false;
     });
     canvas.addEventListener('blur', function () {
@@ -1384,6 +1411,10 @@
     canvas.addEventListener('mouseout', onMouseOut, true);
     function pumpMove() {
       sendMove();
+      if (communicationInput && !typingMode &&
+          Date.now() > communicationInputGraceUntil && !engineUiOpen()) {
+        communicationInput = false;
+      }
       var dead = cvarInt('etjs_dead') !== 0;
       if (wasDead && !dead) {
         /* The server supplies a fresh spawn view, while the browser keeps an
@@ -1446,6 +1477,54 @@
         canvas: canvas,
         elementPointerLock: false,
         arguments: args,
+        etjsWakeAndJoin: function (address) {
+          var connectAddress = String(address || cfg.connect || '127.0.0.1:27961')
+            .replace(/[^A-Za-z0-9.:[\]_-]/g, '');
+          if (wakeJoinPromise) {
+            return wakeJoinPromise;
+          }
+          engineCmd('echo "^3Waking game server…^7"');
+          wakeJoinPromise = fetch('/wake', { method: 'POST' }).then(function (response) {
+            return response.json().then(function (body) {
+              if (!response.ok || !body.ok) {
+                throw new Error(body.error || ('HTTP ' + response.status));
+              }
+              return body;
+            });
+          }).then(function (body) {
+            engineCmd('echo "^2Game server ready on ' +
+              String(body.map || 'rotation map').replace(/[^A-Za-z0-9_.-]/g, '') + '^7"');
+            engineCmd('connect ' + connectAddress);
+            return body;
+          }).catch(function (err) {
+            engineCmd('echo "^1Could not wake game server: ' +
+              String(err.message || err).replace(/[";\r\n]/g, '') + '^7"');
+            throw err;
+          }).finally(function () {
+            wakeJoinPromise = null;
+          });
+          return wakeJoinPromise;
+        },
+        etjsAdminCommand: function (command) {
+          fetch('/admin', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ command: String(command || '') })
+          }).then(function (response) {
+            return response.json().then(function (body) {
+              if (!response.ok || !body.ok) {
+                throw new Error(body.error || ('HTTP ' + response.status));
+              }
+              return body.message || 'OK';
+            });
+          }).then(function (message) {
+            String(message).split(/\r?\n/).slice(0, 80).forEach(function (line) {
+              engineCmd('echo "^2[admin]^7 ' + line.replace(/[";\r\n]/g, '') + '"');
+            });
+          }).catch(function (err) {
+            engineCmd('echo "^1[admin]^7 ' + String(err.message || err).replace(/[";\r\n]/g, '') + '"');
+          });
+        },
         noInitialRun: true,
         locateFile: function (path) {
           return '/client/' + path + '?v=' + (window.ETJS_ASSET_VER || Date.now());

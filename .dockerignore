@@ -23,6 +23,9 @@ runtime/legacy/screenshots
 runtime/legacy/*.db
 runtime/legacy/*.db-*
 runtime/.rcon-password
+runtime/.admin-bans.json
+runtime/.last-start-map
+custom_maps
 web/client/*
 web/img/et.png
 web/img/et.ico

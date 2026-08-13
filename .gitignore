@@ -27,6 +27,9 @@
 
 # Dedicated-server state and locally generated credentials
 /runtime/.rcon-password
+/runtime/.admin-bans.json
+/runtime/.last-start-map
+/custom_maps/
 /runtime/legacy/etconsole.log
 /runtime/legacy/etconfig_server.cfg
 /runtime/legacy/session/

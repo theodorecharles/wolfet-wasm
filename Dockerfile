@@ -9,6 +9,7 @@ RUN apt-get update \
 WORKDIR /source
 COPY scripts/setup-etlegacy.sh scripts/setup-etlegacy.sh
 COPY patches/etlegacy-wasm.patch patches/etlegacy-wasm.patch
+COPY patches/etlegacy-modes.patch patches/etlegacy-modes.patch
 RUN sh scripts/setup-etlegacy.sh
 
 FROM debian:trixie-slim AS native-builder
@@ -68,7 +69,12 @@ ENV ETJS_DATA_ROOT=/data \
     ETJS_DED_BIN=/legacy/server/etlded \
     ETJS_DED_PORT=27960 \
     ETJS_HTTP_PORT=8088 \
-    ETJS_OMNIBOT=1
+    ETJS_MODE=arcade \
+    ETJS_SLOTS=12 \
+    ETJS_TRUST_PROXY=0 \
+    ETJS_OMNIBOT=1 \
+    KEEP_ALIVE=false \
+    IDLE_TIMEOUT=15m
 
 VOLUME ["/data"]
 EXPOSE 8088/tcp 27960/udp

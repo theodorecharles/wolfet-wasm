@@ -4,7 +4,15 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 
+const {
+  connectionAddress,
+  createAdminController,
+  createBanStore,
+  isAdminRequest
+} = require('./admin');
 const dedicated = require('./dedicated');
+const lifecycleConfig = require('./lifecycle');
+const { sendRcon } = require('./rcon');
 const { attachWsProxy } = require('./ws-proxy');
 const { startSupervisor } = require('./supervisor');
 const { queryStatus } = require('./status');
@@ -15,6 +23,18 @@ const DATA_WEB_ROOT = path.join(dedicated.DATA_ROOT, 'web');
 const HTTP_PORT = Number(process.env.ETJS_HTTP_PORT || 8088);
 const DED_PORT = dedicated.HOST_UDP_PORT;
 const RCON = dedicated.RCON_PASSWORD;
+const CONNECTION_REGISTRY = new Map();
+const BAN_STORE = createBanStore(path.join(dedicated.RUNTIME_ROOT, '.admin-bans.json'));
+const RUN_ADMIN_COMMAND = createAdminController({
+  registry: CONNECTION_REGISTRY,
+  banStore: BAN_STORE,
+  maps: dedicated.objectiveMaps,
+  sendRcon: (command) => sendRcon(command, {
+    host: '127.0.0.1',
+    port: DED_PORT,
+    password: RCON
+  })
+});
 const GAME_ASSET_DEFS = [
   { parent: '/etmain', name: 'pak0.pk3', hash: '712966b20e06523fe81419516500e499c86b2b4fec823856ddbd333fcb3d26e5' },
   { parent: '/etmain', name: 'pak1.pk3', hash: '5610fd749024405b4425a7ce6397e58187b941d22092ef11d4844b427df53e5d' },
@@ -23,6 +43,7 @@ const GAME_ASSET_DEFS = [
   { parent: '/legacy', name: 'legacy_v2.84.0.pk3', hash: 'd1abab70f6e3e3af8f34dfb4d94542c8bd592b0a1a582f0107d2162ee23c679b' },
   { parent: '/legacy', name: 'etjs.pk3', hash: dedicated.ETJS_PAK_HASH }
 ];
+let RUNTIME_LIFECYCLE = null;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -58,12 +79,12 @@ function safeJoin(root, reqPath) {
 }
 
 function gameAssets() {
-  return GAME_ASSET_DEFS.map((def) => {
+  return GAME_ASSET_DEFS.concat(dedicated.customGameAssets()).map((def) => {
     const base = def.parent === '/etmain'
       ? path.join(dedicated.RUNTIME_ROOT, 'etmain')
       : path.join(dedicated.RUNTIME_ROOT, 'legacy');
-    const filePath = path.join(base, def.name);
-    const bytes = fs.statSync(filePath).size;
+    const filePath = def.filePath || path.join(base, def.name);
+    const bytes = def.bytes || fs.statSync(filePath).size;
     return {
       parent: def.parent,
       name: def.name,
@@ -122,11 +143,17 @@ function serveStatic(req, res) {
 
   if (urlPath === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, dedicatedPort: DED_PORT }));
+    res.end(JSON.stringify(Object.assign({ ok: true, dedicatedPort: DED_PORT },
+      RUNTIME_LIFECYCLE ? RUNTIME_LIFECYCLE.status() : { state: 'unmanaged' })));
     return;
   }
 
   if (urlPath === '/status') {
+    if (RUNTIME_LIFECYCLE && RUNTIME_LIFECYCLE.status().state !== 'running') {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(Object.assign({ sleeping: true, players: [] }, RUNTIME_LIFECYCLE.status())));
+      return;
+    }
     queryStatus({ host: '127.0.0.1', port: DED_PORT })
       .then((st) => {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -139,16 +166,88 @@ function serveStatic(req, res) {
     return;
   }
 
+  if (urlPath === '/wake') {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' });
+      res.end(JSON.stringify({ ok: false, error: 'POST required' }));
+      return;
+    }
+    if (!RUNTIME_LIFECYCLE) {
+      res.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ ok: false, error: 'dedicated server lifecycle is unavailable' }));
+      return;
+    }
+    RUNTIME_LIFECYCLE.wake('browser Connect button').then((status) => {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(Object.assign({ ok: true }, status)));
+    }).catch((err) => {
+      res.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    });
+    return;
+  }
+
   if (urlPath === '/config.json') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({
+    const admin = isAdminRequest(req);
+    const config = {
       connect: '127.0.0.1:' + DED_PORT,
       wsPath: '/ws',
       httpPort: HTTP_PORT,
-      map: 'oasis',
+      map: (RUNTIME_LIFECYCLE && RUNTIME_LIFECYCLE.status().map) || dedicated.objectiveMaps()[0],
       gametype: 2,
-      assets: gameAssets()
-    }));
+      mode: dedicated.MODE,
+      slots: dedicated.MATCH_SLOTS,
+      rotation: dedicated.objectiveMaps(),
+      assets: gameAssets(),
+      server: RUNTIME_LIFECYCLE ? RUNTIME_LIFECYCLE.status() : { state: 'unmanaged' }
+    };
+    if (admin) {
+      config.admin = true;
+    }
+    res.writeHead(200, {
+      'content-type': 'application/json',
+      'cache-control': 'no-store'
+    });
+    res.end(JSON.stringify(config));
+    return;
+  }
+
+  if (urlPath === '/admin') {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' });
+      res.end(JSON.stringify({ ok: false, error: 'POST required' }));
+      return;
+    }
+    if (!isAdminRequest(req)) {
+      res.writeHead(403, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ ok: false, error: 'local server administration only' }));
+      return;
+    }
+    const chunks = [];
+    let bytes = 0;
+    req.on('data', (chunk) => {
+      bytes += chunk.length;
+      if (bytes <= 8192) {
+        chunks.push(chunk);
+      }
+    });
+    req.on('end', async () => {
+      try {
+        if (bytes > 8192) {
+          throw new Error('request is too large');
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        if (RUNTIME_LIFECYCLE) {
+          await RUNTIME_LIFECYCLE.wake('local administration');
+        }
+        const message = await RUN_ADMIN_COMMAND(body.command);
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ ok: true, message: message }));
+      } catch (err) {
+        res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+    });
     return;
   }
 
@@ -189,7 +288,17 @@ function serveStatic(req, res) {
 
 function startHttp(port) {
   const server = http.createServer(serveStatic);
-  attachWsProxy(server, { destHost: '127.0.0.1', destPort: DED_PORT, path: '/ws' });
+  attachWsProxy(server, {
+    destHost: '127.0.0.1',
+    destPort: DED_PORT,
+    path: '/ws',
+    registry: CONNECTION_REGISTRY,
+    banStore: BAN_STORE,
+    clientAddress: (req) => connectionAddress(req, process.env.ETJS_TRUST_PROXY === '1'),
+    ensureDedicated: RUNTIME_LIFECYCLE
+      ? (reason) => RUNTIME_LIFECYCLE.wake(reason)
+      : null
+  });
   return new Promise((resolve) => {
     server.listen(typeof port === 'number' ? port : HTTP_PORT, '0.0.0.0', () => {
       const boundPort = server.address().port;
@@ -218,54 +327,101 @@ async function waitForDedicated(timeoutMs) {
 async function main() {
   log('wolfet-wasm starting');
   log('validating server-side game data');
-  dedicated.ensureGameData();
+  const custom = dedicated.ensureGameData();
   dedicated.assertServerMod();
   log('official paks ready for same-origin browser delivery: ' + dedicated.RUNTIME_ETMAIN);
+  log('mode=' + dedicated.MODE + ' match population=' + dedicated.MATCH_SLOTS +
+    ' custom PK3s=' + custom.assets.length +
+    ' objective maps=' + custom.maps.length);
+
+  let lastFillSummary = '';
+  let supervisor = null;
+
+  const stopSupervisor = () => {
+    if (supervisor) {
+      supervisor.stop();
+      supervisor = null;
+    }
+  };
+  const startGameSupervisor = () => {
+    stopSupervisor();
+    lastFillSummary = '';
+    supervisor = startSupervisor({
+      host: '127.0.0.1',
+      port: DED_PORT,
+      password: RCON,
+      intervalMs: 1500,
+      manageBots: dedicated.OMNIBOT_ENABLED,
+      log: log,
+      onTick: (result) => {
+        RUNTIME_LIFECYCLE.observeHumans(result.state.humans);
+        const summary = 'fill humans=' + result.state.humans + ' bots=' + result.state.bots +
+          ' target=' + result.plan.target + ' add=' + result.plan.add + ' remove=' + result.plan.remove;
+        if (summary !== lastFillSummary || result.plan.add || result.plan.remove) {
+          log(summary);
+          lastFillSummary = summary;
+        }
+      }
+    });
+  };
 
   if (process.env.ETJS_SKIP_DED !== '1') {
-    if (dedicated.containerRunning() && dedicated.containerConfigured()) {
-      log(dedicated.EMBEDDED
-        ? 'reusing embedded dedicated server'
-        : 'reusing running dedicated container ' + dedicated.CONTAINER);
-    } else {
-      log(dedicated.EMBEDDED
-        ? 'starting embedded ET: Legacy server on udp/' + DED_PORT
-        : 'starting dedicated server (' + dedicated.IMAGE + ') on udp/' + DED_PORT);
-      dedicated.startDedicated();
-    }
-    const st = await waitForDedicated(90000);
-    log('dedicated ready map=' + st.map + ' gametype=' + st.gametype + ' players=' + st.players.length);
+    RUNTIME_LIFECYCLE = lifecycleConfig.createLifecycle({
+      keepAlive: lifecycleConfig.KEEP_ALIVE,
+      idleTimeoutMs: lifecycleConfig.IDLE_TIMEOUT_SECONDS * 1000,
+      isRunning: dedicated.containerRunning,
+      log: log,
+      start: async () => {
+        stopSupervisor();
+        if (dedicated.containerRunning()) {
+          dedicated.stopDedicated();
+          await dedicated.waitForDedicatedStopped(15000);
+        }
+        const startMap = dedicated.chooseStartMap();
+        log((dedicated.EMBEDDED ? 'starting embedded ET: Legacy server' : 'starting dedicated server') +
+          ' on udp/' + DED_PORT + ' map=' + startMap);
+        dedicated.startDedicated({ map: startMap });
+        const st = await waitForDedicated(90000);
+        log('dedicated ready map=' + st.map + ' gametype=' + st.gametype + ' players=' + st.players.length);
+        startGameSupervisor();
+        return { map: st.map || startMap };
+      },
+      stop: async () => {
+        stopSupervisor();
+        dedicated.stopDedicated();
+        await dedicated.waitForDedicatedStopped(15000);
+      }
+    });
   }
 
   const httpServer = await startHttp();
 
-  let lastFillSummary = '';
-  const supervisor = dedicated.OMNIBOT_ENABLED ? startSupervisor({
-    host: '127.0.0.1',
-    port: DED_PORT,
-    password: RCON,
-    intervalMs: 1500,
-    log: log,
-    onTick: (result) => {
-      const summary = 'fill humans=' + result.state.humans + ' bots=' + result.state.bots +
-        ' target=' + result.plan.target + ' add=' + result.plan.add + ' remove=' + result.plan.remove;
-      if (summary !== lastFillSummary || result.plan.add || result.plan.remove) {
-        log(summary);
-        lastFillSummary = summary;
-      }
+  if (RUNTIME_LIFECYCLE) {
+    RUNTIME_LIFECYCLE.startMonitoring();
+    if (lifecycleConfig.KEEP_ALIVE) {
+      await RUNTIME_LIFECYCLE.wake('KEEP_ALIVE=true startup');
+    } else {
+      log('dedicated server sleeping until Connect; idle timeout=' +
+        lifecycleConfig.IDLE_TIMEOUT_SECONDS + 's');
     }
-  }) : { stop: function () {} };
+  }
+
   if (!dedicated.OMNIBOT_ENABLED) {
     log('Omni-Bot disabled; automatic bot fill is inactive');
   }
 
-  const shutdown = () => {
-    log('shutting down');
-    supervisor.stop();
-    httpServer.close();
-    if (process.env.ETJS_KEEP_DED !== '1') {
-      dedicated.stopDedicated();
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) {
+      return;
     }
+    shuttingDown = true;
+    log('shutting down');
+    stopSupervisor();
+    if (RUNTIME_LIFECYCLE && process.env.ETJS_KEEP_DED !== '1') {
+      try { await RUNTIME_LIFECYCLE.shutdown(); } catch (err) { log('shutdown: ' + err.message); }
+    }
+    await new Promise((resolve) => httpServer.close(resolve));
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
@@ -285,5 +441,6 @@ module.exports = {
   sendFile: sendFile,
   serveStatic: serveStatic,
   startHttp: startHttp,
-  waitForDedicated: waitForDedicated
+  waitForDedicated: waitForDedicated,
+  setLifecycleForTests: function (lifecycle) { RUNTIME_LIFECYCLE = lifecycle; }
 };

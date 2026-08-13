@@ -6,7 +6,7 @@ const path = require('path');
 
 const botfill = require(path.join(__dirname, '..', 'server', 'botfill'));
 const supervisor = require(path.join(__dirname, '..', 'server', 'supervisor'));
-const { desiredBots, fillPlan, applyFill, MATCH_SLOTS } = botfill;
+const { desiredBots, fillPlan, applyFill, MATCH_SLOTS, parseMatchSlots } = botfill;
 
 describe('shipped bot fill policy', () => {
   it('fills to 12 bots when the match is empty', () => {
@@ -14,6 +14,16 @@ describe('shipped bot fill policy', () => {
     assert.equal(desiredBots(0), 12);
     assert.deepEqual(fillPlan({ humans: 0, bots: 0 }).target, 12);
     assert.equal(fillPlan({ humans: 0, bots: 0 }).add, 12);
+  });
+
+  it('accepts configurable match populations and rejects invalid values', () => {
+    assert.equal(parseMatchSlots(), 12);
+    assert.equal(parseMatchSlots('2'), 2);
+    assert.equal(parseMatchSlots('24'), 24);
+    assert.equal(parseMatchSlots('63'), 63);
+    assert.throws(() => parseMatchSlots('1'), /ETJS_SLOTS/);
+    assert.throws(() => parseMatchSlots('64'), /ETJS_SLOTS/);
+    assert.throws(() => parseMatchSlots('twelve'), /ETJS_SLOTS/);
   });
 
   it('uses bots = max(0, 12 - H) for each human count', () => {

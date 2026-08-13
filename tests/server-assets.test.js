@@ -44,6 +44,9 @@ describe('same-origin content-addressed game assets', () => {
     const response = await request(port, '/config.json');
     assert.equal(response.status, 200);
     const config = JSON.parse(response.body.toString('utf8'));
+    assert.equal(config.admin, true);
+    assert.equal(Object.hasOwn(config, 'rconPassword'), false);
+    assert.equal(response.headers['cache-control'], 'no-store');
     assert.equal(config.assets.length, 6);
     config.assets.forEach((asset) => {
       assert.match(asset.url, /^\/(?:etmain|legacy)\/[^?]+\.pk3\?v=[a-f0-9]{16}$/);

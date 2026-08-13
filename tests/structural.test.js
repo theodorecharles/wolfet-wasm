@@ -237,7 +237,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(mineSnapshot, /#ifdef ETJS_SERVER[\s\S]*?return qtrue/);
     const draw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw.c'), 'utf8');
     const awareness = extractFn(draw, 'CG_DrawEnvironmentalAwareness');
-    assert.match(awareness, /#ifdef __EMSCRIPTEN__[\s\S]*?if \(!cg_rshook\.integer\)[\s\S]*?return/);
+    assert.match(awareness, /#ifdef __EMSCRIPTEN__[\s\S]*?if \(!cg_etjsArcade\.integer \|\| !cg_rshook\.integer\)[\s\S]*?return/);
   });
 
   it('releases browser pointer lock and routes debrief cursor input', () => {
@@ -328,7 +328,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(view, /CG_AddTrails\(\)/);
   });
 
-  it('ships the ETJS fun movement rules in shared prediction and server config', () => {
+  it('ships mode-gated arcade movement in shared prediction and server config', () => {
     const pmove = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'bg_pmove.c'), 'utf8');
     const bg = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'bg_public.h'), 'utf8');
     const dedicated = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
@@ -338,8 +338,10 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(pmove, /PM_DOUBLE_JUMP_IMPULSE \(JUMP_VELOCITY \* 0\.8f\)/);
     assert.match(pmove, /PM_DOUBLE_JUMP_MAX_VELOCITY \(JUMP_VELOCITY \* 1\.5f\)/);
     assert.match(pmove, /doubleJumped\s*=\s*qfalse/);
+    assert.match(pmove, /if \(!PM_ETJS_ARCADE\)/);
     assert.match(pmove, /sprintTime\s*=\s*SPRINTTIME;[\s\S]*?return;/);
-    assert.match(dedicated, /'g_speed', '400'/);
+    assert.match(dedicated, /gameMode\.GAME_SPEED/);
+    assert.match(dedicated, /'g_etjsArcade'/);
     const serverBuild = fs.readFileSync(path.join(ROOT, 'scripts', 'build-server-mod.sh'), 'utf8');
     const gameCvars = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_cvars.c'), 'utf8');
     const scripts = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_script_actions.c'), 'utf8');
@@ -356,6 +358,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(event, /etjsMultiKillCount/);
     assert.match(event, /cg\.time - etjsLastKillTime <= 4000/);
     assert.match(event, /ci->team != ca->team/);
+    assert.match(event, /cg_etjsArcade\.integer/);
     assert.match(main, /sound\/announcer\/doublekill\.wav/);
     assert.match(main, /sound\/announcer\/ultrakill\.wav/);
     assert.ok(fs.existsSync(path.join(ROOT, 'assets', 'etjs', 'sound', 'announcer', 'doublekill.wav')));
@@ -478,7 +481,11 @@ describe('no overlay theater in the shipped draw path', () => {
     const keyDown = page.split('function onKeyDown(ev)')[1].split('function onKeyUp(ev)')[0];
     assert.ok(keyDown.indexOf('if (typingMode)') < keyDown.indexOf('if (uiOpen())'));
     assert.match(input, /int ETJS_OpenCommunication\(int mode\)/);
-    assert.match(input, /Cbuf_ExecuteText\(EXEC_NOW, command\)/);
+    assert.match(input, /VM_Call\(uivm, UI_SET_ACTIVE_MENU, menu\)/);
+    assert.match(input, /UIMENU_INGAME_MESSAGEMODE/);
+    assert.match(input, /UIMENU_WM_QUICKMESSAGE/);
+    assert.doesNotMatch(input, /Cbuf_ExecuteText\(EXEC_NOW, command\)/);
+    assert.match(page, /communicationInput/);
     assert.match(page, /engineCmd\(TAP_KEYS\[code\]\)/);
     assert.match(page, /con_fontName', 'courbd'/);
     assert.match(page, /Enter: 13/);
