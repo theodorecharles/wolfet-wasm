@@ -17,7 +17,7 @@ describe('status parser classifies Omni-Bot vs humans', () => {
       Buffer.from([0xff, 0xff, 0xff, 0xff]),
       Buffer.from(
         'statusResponse\n' +
-        '\\mapname\\oasis\\g_gametype\\2\\sv_hostname\\ETJS Shared Match\\sv_maxclients\\12\n' +
+        '\\mapname\\oasis\\g_gametype\\2\\sv_hostname\\wolfet-wasm Shared Match\\sv_maxclients\\12\n' +
         '0 0 "^o[BOT]^7Nundak"\n' +
         '0 12 "TankRed"\n'
       )

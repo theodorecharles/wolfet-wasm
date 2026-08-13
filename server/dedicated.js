@@ -72,7 +72,7 @@ const DEFAULT_ARGS = [
   '+set', 'net_port', String(CONTAINER_UDP_PORT),
   '+set', 'sv_maxclients', '13',
   '+set', 'sv_privateclients', '0',
-  '+set', 'sv_hostname', 'ETJS Shared Match',
+  '+set', 'sv_hostname', 'wolfet-wasm Shared Match',
   '+set', 'sv_pure', '0',
   '+set', 'sv_tempbantime', '0',
   '+set', 'sv_allowDownload', '1',

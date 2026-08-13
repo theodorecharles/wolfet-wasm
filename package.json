@@ -1,12 +1,12 @@
 {
-  "name": "etjs",
+  "name": "wolfet-wasm",
   "version": "0.1.0",
   "private": true,
   "description": "Wolfenstein: Enemy Territory in the browser — one shared 12-slot match",
   "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/theodorecharles/ETJS.git"
+    "url": "git+https://github.com/theodorecharles/wolfet-wasm.git"
   },
   "scripts": {
     "setup": "npm run setup:engine && npm run setup:data && npm run build:tools && npm run build:pak && npm run build:server-mod",

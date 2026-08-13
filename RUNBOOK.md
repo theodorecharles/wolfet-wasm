@@ -1,4 +1,4 @@
-# ETJS runbook
+# wolfet-wasm runbook
 
 What this project is supposed to do, and how to fix it without guessing.
 

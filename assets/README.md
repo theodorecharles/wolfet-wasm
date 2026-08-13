@@ -1,4 +1,4 @@
-# ETJS-owned assets
+# wolfet-wasm-owned assets
 
 The short announcer clips under `etjs/sound/announcer/` were generated for this
 project from synthesized speech and normalized as mono WAV files. They are not

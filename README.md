@@ -1,14 +1,14 @@
-# ETJS
+# wolfet-wasm
 
-ETJS is an in-progress port of **Wolfenstein: Enemy Territory** to the browser. It combines a WebAssembly/WebGL build of [ET: Legacy](https://github.com/etlegacy/etlegacy), browser behavior learned from [QuakeJS](https://github.com/inolen/quakejs), server-side provisioning of the original Wolf: ET data from Splash Damage, and a Dockerized ET: Legacy dedicated server.
+wolfet-wasm is an in-progress port of **Wolfenstein: Enemy Territory** to the browser. It combines a WebAssembly/WebGL build of [ET: Legacy](https://github.com/etlegacy/etlegacy), browser behavior learned from [QuakeJS](https://github.com/inolen/quakejs), server-side provisioning of the original Wolf: ET data from Splash Damage, and a Dockerized ET: Legacy dedicated server.
 
 The intended product is the actual ET visit path in a browser: enter a name, download the official data, watch the logos, use the official main menu, click **JOIN GAME**, choose a team in limbo, and play one shared 12-slot Objective match. Omni-Bot fills every slot not occupied by a human. There is intentionally no server browser or Host Game flow.
 
-The core browser match is implemented and playable. The latest rendering, HUD, input, rshook, and adaptive-quality changes still need the fresh browser acceptance pass listed in [KNOWN_ISSUES.md](KNOWN_ISSUES.md). [RUNBOOK.md](RUNBOOK.md) is the authoritative validation procedure.
+The core browser match is implemented and playable. The latest rendering, HUD, input, and adaptive-quality changes still need the fresh browser acceptance pass listed in [KNOWN_ISSUES.md](KNOWN_ISSUES.md). [RUNBOOK.md](RUNBOOK.md) is the authoritative validation procedure.
 
 ## Repository boundary
 
-The repository contains ETJS-owned browser/server code, tests, build glue, runtime configuration, and the ETJS patch against a pinned ET: Legacy revision. It does **not** contain:
+The repository contains wolfet-wasm-owned browser/server code, tests, build glue, runtime configuration, and the browser-port patch against a pinned ET: Legacy revision. It does **not** contain:
 
 - either full upstream checkout (`etlegacy/` and `quakejs/` are ignored workspaces);
 - the original Wolf: ET installers or PK3 files;
@@ -25,7 +25,7 @@ The repository contains ETJS-owned browser/server code, tests, build glue, runti
 - Docker with permission to pull and run images
 - Emscripten/emsdk and Ninja when rebuilding the browser client
 
-The host's initial game-data provision is about 276 MB. A browser later transfers roughly 262 MB from the ETJS host on a cold visit and caches PK3s in IndexedDB. Browsers never download directly from Splash Damage.
+The host's initial game-data provision is about 276 MB. A browser later transfers roughly 262 MB from the wolfet-wasm host on a cold visit and caches PK3s in IndexedDB. Browsers never download directly from Splash Damage.
 
 ## Setup
 
@@ -37,11 +37,11 @@ npm run setup
 
 `npm run setup` does five things:
 
-1. clones the pinned ET: Legacy source and applies the ETJS patch;
+1. clones the pinned ET: Legacy source and applies the browser-port patch;
 2. downloads the official Linux game archive on the host from [Splash Damage](https://www.splashdamage.com/games/wolfenstein-enemy-territory/), verifies fixed SHA-256 checksums, and extracts only the required data and web assets;
 3. extracts the matching ET: Legacy data PK3 from the pinned dedicated-server image and builds the native Huffman helper;
-4. packages ETJS-owned announcer assets separately from the original game data;
-5. builds the native ETJS qagame module used by the dedicated server, so browser prediction and authoritative movement use the same rules.
+4. packages project-owned announcer assets separately from the original game data;
+5. builds the matching native qagame module used by the dedicated server, so browser prediction and authoritative movement use the same rules.
 
 The original game data remains ignored and local. Downloading and using it is subject to the Wolfenstein: Enemy Territory license included in Splash Damage's installer.
 
@@ -52,7 +52,7 @@ cached files are reused. The web client only sees same-origin paths such as
 content hashes and byte counts in `/config.json`; large PK3s transfer in 16 MiB
 HTTP ranges and changed content receives a new persistent browser-cache key.
 Hard refreshes do not clear that IndexedDB cache. The loading panel reports
-cache checks and cached reads separately from real ETJS network downloads.
+cache checks and cached reads separately from real wolfet-wasm network downloads.
 
 Activate Emscripten, then build the browser client:
 
@@ -81,7 +81,7 @@ Performance, or Minimum graphics ceiling. Dynamic quality can be disabled or
 assigned a 30, 60, or 120 FPS target. The target is a quality-governor goal,
 not a frame-rate cap; 120 FPS requires a high-refresh browser/display.
 
-The RCON password is read from `ETJS_RCON` when set. Otherwise ETJS creates a random local password in the ignored `runtime/.rcon-password` file. Do not expose that file or commit runtime logs.
+The RCON password is read from `ETJS_RCON` when set. Otherwise wolfet-wasm creates a random local password in the ignored `runtime/.rcon-password` file. Do not expose that file or commit runtime logs.
 
 Useful commands:
 
@@ -89,7 +89,7 @@ Useful commands:
 npm run setup:data       # revalidate/fetch ignored game and ETL data
 npm run setup:engine     # prepare or verify the patched ET: Legacy checkout
 npm run build:tools      # rebuild tools/huffpack
-npm run build:pak        # package ETJS-owned sounds/data
+npm run build:pak        # package project-owned sounds/data
 npm run build:server-mod # rebuild/deploy native qagame movement rules
 npm run build:web        # rebuild etjs.js + etjs.wasm
 npm run test:e2e
@@ -117,4 +117,4 @@ Docker
 
 ## Licensing and trademarks
 
-The ET: Legacy-derived engine modifications are distributed under the repository's GPLv3 license and the additional Wolf ET source terms in [LICENSE](LICENSE). Original game data is not distributed here. Wolfenstein: Enemy Territory and related marks and assets belong to their respective owners. ETJS is an independent community project and is not affiliated with or endorsed by Splash Damage, id Software, Bethesda, or Microsoft.
+The ET: Legacy-derived engine modifications are distributed under the repository's GPLv3 license and the additional Wolf ET source terms in [LICENSE](LICENSE). Original game data is not distributed here. Wolfenstein: Enemy Territory and related marks and assets belong to their respective owners. wolfet-wasm is an independent community project and is not affiliated with or endorsed by Splash Damage, id Software, Bethesda, or Microsoft.

@@ -213,7 +213,7 @@ async function waitForDedicated(timeoutMs) {
 }
 
 async function main() {
-  log('ETJS starting');
+  log('wolfet-wasm starting');
   log('validating server-side game data');
   dedicated.ensureGameData();
   dedicated.assertServerMod();

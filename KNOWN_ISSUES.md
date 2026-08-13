@@ -1,4 +1,4 @@
-# ETJS known issues and acceptance status
+# wolfet-wasm known issues and acceptance status
 
 Status as of 2026-08-13. This file distinguishes an open defect from a fix that
 is compiled and covered by regression tests but still needs a fresh visual or

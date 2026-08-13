@@ -9,6 +9,11 @@ const { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 
 describe('reproducible source repository', () => {
+  it('keeps private gameplay assists out of the public README', () => {
+    const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
+    assert.doesNotMatch(readme, /aimbot|rshook|wallhack|aim[- ]assist/i);
+  });
+
   it('keeps reference workspaces, game data, builds, and credentials out of Git', () => {
     const ignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
     [
