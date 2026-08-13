@@ -4,7 +4,7 @@ wolfet-wasm is an in-progress port of **Wolfenstein: Enemy Territory** to the br
 
 The intended product is the actual ET visit path in a browser: enter a name, see the real engine startup console while same-origin game data is prepared, arrive directly at the official main menu, click **JOIN GAME**, choose a team in limbo, and play one shared 12-slot Objective match. Omni-Bot fills every slot not occupied by a human. There is intentionally no server browser or Host Game flow.
 
-The core browser match is implemented and playable. [RUNBOOK.md](RUNBOOK.md) is the authoritative validation procedure for rendering, HUD, input, chat, and adaptive quality.
+The core browser match is implemented and playable. Automated tests cover the reproducible build, browser input bridge, rendering guardrails, server provisioning, and deployment image; final graphics and gameplay acceptance still requires a real browser playthrough.
 
 ## Repository boundary
 
@@ -135,7 +135,7 @@ npm run build:web        # rebuild etjs.js + etjs.wasm
 npm run test:e2e
 ```
 
-Automated tests are guardrails, not acceptance evidence. A fix is complete only after following the real visit path and the before/after screenshot loop in the runbook.
+Automated tests are guardrails, not acceptance evidence. Rendering and gameplay changes still need a real visit from the name gate through MAIN, loading, limbo, spawn, play, and debrief.
 
 ## Architecture
 

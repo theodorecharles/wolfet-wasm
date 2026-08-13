@@ -78,6 +78,8 @@ describe('reproducible source repository', () => {
 
     assert.match(dockerfile, /FROM \$\{ETLEGACY_IMAGE\} AS runtime/);
     assert.match(dockerfile, /platforms: linux\/amd64|EXPOSE 8088\/tcp 27960\/udp/);
+    assert.match(dockerfile, /COPY third_party third_party/);
+    assert.match(dockerfile, /COPY web-port web-port/);
     assert.match(dockerignore, /runtime\/etmain\/\*\.pk3/);
     assert.match(dockerignore, /runtime\/legacy\/\*\.pk3/);
     assert.match(entrypoint, /ETJS_DATA_ROOT="\$DATA_ROOT"/);

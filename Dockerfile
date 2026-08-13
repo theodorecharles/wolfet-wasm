@@ -33,6 +33,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY --from=etlegacy-source /source/etlegacy etlegacy
+COPY third_party third_party
+COPY web-port web-port
 COPY scripts/build-web-client.sh scripts/patch-etjs-gl.js scripts/
 RUN sh scripts/build-web-client.sh
 
