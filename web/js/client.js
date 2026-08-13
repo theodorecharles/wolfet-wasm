@@ -1578,11 +1578,41 @@
         etjsWakeAndJoin: function (address) {
           var connectAddress = String(address || cfg.connect || '127.0.0.1:27961')
             .replace(/[^A-Za-z0-9.:[\]_-]/g, '');
+          var wakeStarted = Date.now();
+          var wakeTicker;
+          /* The engine has already hidden this overlay after reaching MAIN.
+           * Reset that one-shot state synchronously so the Join click gives
+           * visual feedback before any server wake/network work begins. */
+          loadHidden = false;
+          if (loadPanel) {
+            loadPanel.classList.remove('hidden');
+          }
+          if (frame) {
+            frame.classList.remove('hidden');
+          }
+          stopMenuMusic();
+          setLoadProgress(0.08, 'Starting game server…',
+            'Waking the dedicated server · 0.0s');
           if (wakeJoinPromise) {
             return wakeJoinPromise;
           }
           engineCmd('echo "^3Waking game server…^7"');
-          wakeJoinPromise = fetch('/wake', { method: 'POST' }).then(function (response) {
+          wakeTicker = setInterval(function () {
+            setLoadProgress(0.08, 'Starting game server…',
+              'Waking the dedicated server · ' +
+              ((Date.now() - wakeStarted) / 1000).toFixed(1) + 's');
+          }, 250);
+          /* Yield one animation frame so the loading panel is painted before
+           * the wake request starts doing work. */
+          wakeJoinPromise = new Promise(function (resolve) {
+            if (typeof requestAnimationFrame === 'function') {
+              requestAnimationFrame(resolve);
+            } else {
+              setTimeout(resolve, 0);
+            }
+          }).then(function () {
+            return fetch('/wake', { method: 'POST' });
+          }).then(function (response) {
             return response.json().then(function (body) {
               if (!response.ok || !body.ok) {
                 throw new Error(body.error || ('HTTP ' + response.status));
@@ -1590,6 +1620,8 @@
               return body;
             });
           }).then(function (body) {
+            setLoadProgress(0.28, 'Game server is ready…',
+              'Loading ' + String(body.map || 'rotation map').replace(/[^A-Za-z0-9_.-]/g, ''));
             engineCmd('echo "^2Game server ready on ' +
               String(body.map || 'rotation map').replace(/[^A-Za-z0-9_.-]/g, '') + '^7"');
             engineCmd('connect ' + connectAddress);
@@ -1599,6 +1631,9 @@
               String(err.message || err).replace(/[";\r\n]/g, '') + '^7"');
             throw err;
           }).finally(function () {
+            if (wakeTicker) {
+              clearInterval(wakeTicker);
+            }
             wakeJoinPromise = null;
           });
           return wakeJoinPromise;

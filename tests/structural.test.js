@@ -466,6 +466,9 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(page, /etjs_connect/);
     assert.match(page, /ETJS_ASSET_VER/);
     assert.match(page, /etjs\.js\?v=/);
+    assert.match(page, /loadHidden = false;[\s\S]*Starting game server/);
+    assert.match(page, /requestAnimationFrame\(resolve\)/);
+    assert.match(page, /Game server is ready/);
     assert.match(page, /wasDead\s*&&\s*!dead/);
     assert.match(page, /set etjs_resetlook 1/);
     assert.match(page, /toggleInGameMenu\('escape-key'\)/);
