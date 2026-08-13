@@ -549,10 +549,26 @@ index fc37ed49e..9fa52bd71 100644
  extern vmCvar_t cg_weapBankCollisions;
  extern vmCvar_t cg_weapSwitchNoAmmoSounds;
 diff --git a/src/cgame/cg_draw.c b/src/cgame/cg_draw.c
-index a238bea96..377d15479 100644
+index a238bea96..a268201c4 100644
 --- a/src/cgame/cg_draw.c
 +++ b/src/cgame/cg_draw.c
-@@ -4801,14 +4801,21 @@ void CG_DrawActive()
+@@ -4133,6 +4133,15 @@ static void CG_DrawEnvironmentalAwareness()
+ 	snapshot_t *snap;
+ 	int        i;
+ 
++#ifdef __EMSCRIPTEN__
++	/* ETJS treats the world-space objective/distance overlay as part of the
++	 * optional rshook, not as always-on HUD information. */
++	if (!cg_rshook.integer)
++	{
++		return;
++	}
++#endif
++
+ 	if (!cg_drawEnvAwareness.integer)
+ 	{
+ 		return;
+@@ -4801,14 +4810,21 @@ void CG_DrawActive()
  	}
  
  	// clear around the rendered view if sized down
@@ -684,7 +700,7 @@ index df6f257de..cbfcbe65c 100644
  	*x *= cgs.screenXScale;
  	*y *= cgs.screenYScale;
 diff --git a/src/cgame/cg_ents.c b/src/cgame/cg_ents.c
-index a9639bb6c..8075c6879 100644
+index a9639bb6c..923c53850 100644
 --- a/src/cgame/cg_ents.c
 +++ b/src/cgame/cg_ents.c
 @@ -1231,6 +1231,69 @@ static qboolean CG_LerpRifleGrenadeDir(centity_t *cent, vec3_t outDir)
@@ -787,7 +803,26 @@ index a9639bb6c..8075c6879 100644
  						return;
  					}
  				}
-@@ -1457,27 +1529,22 @@ static void CG_Missile(centity_t *cent)
+@@ -1451,33 +1523,41 @@ static void CG_Missile(centity_t *cent)
+ 			ent.oldorigin[2] -= 8;
+ 		}
+ 
++#ifdef __EMSCRIPTEN__
++		/* An unspotted armed mine is almost completely buried, so a shader shell
++		 * on the mine model alone is not a useful reveal. Reuse ET's animated
++		 * spotted-mine flag while rshook is active, then let the hook shell below
++		 * color it blue in sight or red through world geometry. */
++		if (cent->currentState.effect1Time == 1 &&
++		    !cent->currentState.modelindex2 &&
++		    ETJS_RevealEnemyDeployable(&cent->currentState))
++		{
++			CG_DrawMineMarkerFlag(cent, &ent, weapon);
++		}
++#endif
++
+ 		if (cent->currentState.groundEntityNum != ENTITYNUM_NONE)  /*is on the ground*/
+ 		{
+ 			CG_ReduceEntityZFight(&ent, cent->currentState.number);
  		}
  	}
  
@@ -826,7 +861,7 @@ index a9639bb6c..8075c6879 100644
  			}
  		}
  
-@@ -1501,10 +1568,6 @@ static void CG_Missile(centity_t *cent)
+@@ -1501,10 +1581,6 @@ static void CG_Missile(centity_t *cent)
  		}
  #endif
  
@@ -837,7 +872,7 @@ index a9639bb6c..8075c6879 100644
  	}
  	else if (!riflenadeAxis && cent->lerpAngles[0] == 0.f && cent->lerpAngles[1] == 0.f && cent->lerpAngles[2] == 0.f)
  	{
-@@ -1538,6 +1601,9 @@ static void CG_Missile(centity_t *cent)
+@@ -1538,6 +1614,9 @@ static void CG_Missile(centity_t *cent)
  	{
  		// add to refresh list, possibly with quad glow
  		CG_AddRefEntityWithPowerups(&ent, s1->powerups, TEAM_FREE, s1, vec3_origin);
@@ -905,6 +940,30 @@ index 10e7f55f8..c2f4f5ea0 100644
  	// check for kill messages from the current clientNum
  	if (attacker != target)
  	{
+diff --git a/src/cgame/cg_info.c b/src/cgame/cg_info.c
+index 7acd45682..7969c69e5 100644
+--- a/src/cgame/cg_info.c
++++ b/src/cgame/cg_info.c
+@@ -123,12 +123,19 @@ void CG_DrawInformation(qboolean forcerefresh)
+ 
+ 	ms = trap_Milliseconds();
+ 
++#ifndef __EMSCRIPTEN__
+ 	if (ms < nextcall)
+ 	{
+ 		return;
+ 	}
+ 
+ 	nextcall = ms + 250;
++#else
++	/* The browser clears letterbox/pillarbox pixels at the start of every
++	 * frame, so redraw the official loading panel every frame as well. */
++	(void)nextcall;
++	(void)ms;
++#endif
+ 
+ 	// loadpanel: erase the screen now, because otherwise the "awaiting challenge"-UI-screen is still visible behind the client-version of it (the one with the progressbar),..
+ 	// ..and we do not want a flickering screen (on widescreens).
 diff --git a/src/cgame/cg_limbopanel.c b/src/cgame/cg_limbopanel.c
 index 65af36c2c..e89ccb510 100644
 --- a/src/cgame/cg_limbopanel.c
@@ -3790,6 +3849,33 @@ index fc1fc773c..d527e72b9 100644
  	{ &g_medicChargeTime,                 "g_medicChargeTime",                 "45000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qtrue  },
  	{ &g_engineerChargeTime,              "g_engineerChargeTime",              "30000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qtrue  },
  	{ &g_fieldopsChargeTime,              "g_fieldopsChargeTime",              "40000",                      CVAR_SERVERINFO | CVAR_LATCH,                    0, qfalse, qtrue  },
+diff --git a/src/game/g_missile.c b/src/game/g_missile.c
+index 1166f38bc..41aed2c69 100644
+--- a/src/game/g_missile.c
++++ b/src/game/g_missile.c
+@@ -1775,6 +1775,14 @@ void G_LandminePrime(gentity_t *self)
+  */
+ qboolean G_LandmineSnapshotCallback(int entityNum, int clientNum)
+ {
++#ifdef ETJS_SERVER
++	/* The browser's rshook is a client-side toggle, so the cgame must receive
++	 * every mine in order to reveal enemy mines immediately when it is enabled.
++	 * Stock rendering still hides unspotted enemy mines while the hook is off. */
++	(void)entityNum;
++	(void)clientNum;
++	return qtrue;
++#else
+ 	gentity_t *ent   = &g_entities[entityNum];
+ 	gentity_t *clEnt = &g_entities[clientNum];
+ 	int       i;
+@@ -1832,6 +1840,7 @@ qboolean G_LandmineSnapshotCallback(int entityNum, int clientNum)
+ 	}
+ 
+ 	return qfalse;
++#endif
+ }
+ 
+ /**
 diff --git a/src/game/g_script_actions.c b/src/game/g_script_actions.c
 index 23e11e7fb..13717e221 100644
 --- a/src/game/g_script_actions.c
@@ -6097,7 +6183,7 @@ index 54efa40ab..3a6aac363 100644
  		case RC_SET_COLOR:
  			data = RB_SetColor(data);
 diff --git a/src/renderer/tr_cmds.c b/src/renderer/tr_cmds.c
-index 4b6e070c4..b0e3fe883 100644
+index 4b6e070c4..63287278a 100644
 --- a/src/renderer/tr_cmds.c
 +++ b/src/renderer/tr_cmds.c
 @@ -101,7 +101,10 @@ void R_IssueRenderCommands(qboolean runPerformanceCounters)
@@ -6112,7 +6198,25 @@ index 4b6e070c4..b0e3fe883 100644
  
  	// clear it out, in case this is a sync and not a buffer flip
  	cmdList->used = 0;
-@@ -508,7 +511,9 @@ void RE_BeginFrame(void)
+@@ -454,6 +457,17 @@ void RE_BeginFrame(void)
+ 
+ 	R_ClearHudFBO();
+ 	R_BindMainFBO();
++#ifdef __EMSCRIPTEN__
++	/* Fullscreen menus and loading panels retain ET's authored 4:3 aspect in
++	 * the browser. Clear the entire physical framebuffer first so the unused
++	 * bars stay black and cannot retain cursor/menu pixels from prior frames. */
++	glViewport(0, 0, glConfig.vidWidth, glConfig.vidHeight);
++	glScissor(0, 0, glConfig.vidWidth, glConfig.vidHeight);
++	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
++	glDepthMask(GL_TRUE);
++	glClearColor(0.f, 0.f, 0.f, 1.f);
++	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
++#endif
+ 
+ 	// do overdraw measurement
+ 	if (r_measureOverdraw->integer)
+@@ -508,7 +522,9 @@ void RE_BeginFrame(void)
  	}
  
  	// check for errors
@@ -6122,7 +6226,7 @@ index 4b6e070c4..b0e3fe883 100644
  
  	// draw buffer stuff
  	cmd = R_GetCommandBuffer(sizeof(*cmd));
-@@ -546,8 +551,11 @@ void RE_EndFrame(int *frontEndMsec, int *backEndMsec)
+@@ -546,8 +562,11 @@ void RE_EndFrame(int *frontEndMsec, int *backEndMsec)
  	cmdList = &backEndData->commands;
  	etl_assert(cmdList != NULL);
  	// add swap-buffers command
@@ -10829,36 +10933,22 @@ index 763152af1..289a24734 100644
  
  /*
 diff --git a/src/ui/ui_loadpanel.c b/src/ui/ui_loadpanel.c
-index 3411587b9..c59f57a27 100644
+index 3411587b9..cee5fda34 100644
 --- a/src/ui/ui_loadpanel.c
 +++ b/src/ui/ui_loadpanel.c
-@@ -177,14 +177,24 @@ void UI_DrawLoadPanel(qboolean ownerdraw, qboolean uihack)
+@@ -177,10 +177,10 @@ void UI_DrawLoadPanel(qboolean ownerdraw, qboolean uihack)
  	if (!bg_loadscreeninited)
  	{
  		RegisterSharedFonts();
 -
-+#ifndef __EMSCRIPTEN__
  		BG_PanelButtonsSetup(loadpanelButtons);
++#ifndef __EMSCRIPTEN__
  		C_PanelButtonsSetup(loadpanelButtons, Cui_WideXoffset());   // convert to possible widescreen coordinates..
 -
 +#endif
  		bg_loadscreeninited = qtrue;
  	}
  
-+#ifndef __EMSCRIPTEN__
- 	BG_PanelButtonsRender(loadpanelButtons);
-+#else
-+	{
-+		qhandle_t back = trap_R_RegisterShaderNoMip("gfx/loading/camp_side");
-+		if (back)
-+		{
-+			trap_R_DrawStretchPic(0, 0, 640, 480, 0, 0, 1, 1, back);
-+		}
-+	}
-+#endif
- 
- 	if (!uihack && trap_Cvar_VariableValue("ui_connecting") != 0.f)
- 	{
 diff --git a/src/ui/ui_local.h b/src/ui/ui_local.h
 index 5cecb3f56..bf8511b18 100644
 --- a/src/ui/ui_local.h

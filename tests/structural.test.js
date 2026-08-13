@@ -15,7 +15,7 @@ const TR_WORLD = path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_world.c');
 const TR_BACKEND = path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_backend.c');
 
 function extractFn(src, name) {
-  const startRe = new RegExp('(?:void|static void|const void \\*)\\s*' + name + '\\s*\\(');
+  const startRe = new RegExp('(?:void|static void|const void \\*|qboolean)\\s*' + name + '\\s*\\(');
   const m = src.match(startRe);
   assert.ok(m, name + ' must exist');
   let i = m.index + m[0].length;
@@ -231,6 +231,13 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(ents, /WP_LANDMINE[\s\S]*?WP_DYNAMITE[\s\S]*?WP_SATCHEL/);
     assert.match(ents, /ETJS_AddDeployableHookShell/);
     assert.match(ents, /customShader\s*=\s*cgs\.media\.shoutcastLandmineShader/);
+    assert.match(ents, /effect1Time == 1[\s\S]*?ETJS_RevealEnemyDeployable[\s\S]*?CG_DrawMineMarkerFlag/);
+    const missile = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_missile.c'), 'utf8');
+    const mineSnapshot = extractFn(missile, 'G_LandmineSnapshotCallback');
+    assert.match(mineSnapshot, /#ifdef ETJS_SERVER[\s\S]*?return qtrue/);
+    const draw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw.c'), 'utf8');
+    const awareness = extractFn(draw, 'CG_DrawEnvironmentalAwareness');
+    assert.match(awareness, /#ifdef __EMSCRIPTEN__[\s\S]*?if \(!cg_rshook\.integer\)[\s\S]*?return/);
   });
 
   it('releases browser pointer lock and routes debrief cursor input', () => {
@@ -371,6 +378,23 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_menus.txt'), 'utf8'), /etjs_official\.menu/);
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_official.menu'), 'utf8'), /ui\/assets\/et_clouds/);
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_official.menu'), 'utf8'), /ui\/assets\/et_logo_huge/);
+  });
+
+  it('clears contained menu bars and renders the complete stock loading panel', () => {
+    const cmds = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_cmds.c'), 'utf8');
+    const beginFrame = extractFn(cmds, 'RE_BeginFrame');
+    assert.match(beginFrame, /#ifdef __EMSCRIPTEN__[\s\S]*?glClearColor\(0\.f, 0\.f, 0\.f, 1\.f\)/);
+    assert.match(beginFrame, /glClear\(GL_COLOR_BUFFER_BIT \| GL_DEPTH_BUFFER_BIT\)/);
+
+    const uiLoad = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_loadpanel.c'), 'utf8');
+    const drawLoad = extractFn(uiLoad, 'UI_DrawLoadPanel');
+    assert.match(drawLoad, /BG_PanelButtonsSetup\(loadpanelButtons\)/);
+    assert.match(drawLoad, /BG_PanelButtonsRender\(loadpanelButtons\)/);
+    assert.doesNotMatch(drawLoad, /trap_R_DrawStretchPic\(0, 0, 640, 480[\s\S]*?camp_side/);
+
+    const info = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_info.c'), 'utf8');
+    const drawInfo = extractFn(info, 'CG_DrawInformation');
+    assert.match(drawInfo, /#ifndef __EMSCRIPTEN__[\s\S]*?if \(ms < nextcall\)/);
   });
 
   it('streams real engine startup output into the loading console', () => {

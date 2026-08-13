@@ -126,7 +126,10 @@ can fail as `ASM_CONSTS[emAsmAddr] is not a function`.
   straight up/down or select a target behind a wall.
 - Enemy players get an animated shader shell: blue when visible and red when
   occluded. Teammates do not glow. Enemy deployables and normally hidden mines
-  receive the reveal shell.
+  receive the reveal shell. The ETJS server publishes hidden mine snapshots so
+  the browser can show an animated mine marker only while rshook is enabled.
+- World-space objective icons and distance labels are part of rshook and remain
+  hidden during normal play.
 
 ## Confirmed by the project owner during this work
 
