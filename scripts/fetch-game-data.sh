@@ -1,6 +1,7 @@
 #!/bin/sh
 # Fetch proprietary Wolf: ET assets from Splash Damage and compatible ETL data
-# from the pinned dedicated-server image. Downloaded files are gitignored.
+# from either a bundled seed or the pinned dedicated-server image. Downloaded
+# files are gitignored.
 set -eu
 
 DEFAULT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,6 +13,7 @@ OFFICIAL_SHA256="2a8fef8e8558efffcad658bb9a8b12df8740418b3514142350eba3b7641eb3e
 INSTALLER_NAME="et260b.x86_keygen_V03.run"
 INSTALLER_SHA256="5b6bd440470f211d4c60ec23249739741362baec3a9b52091bbbb4b670a4af41"
 LEGACY_IMAGE="${ETJS_DED_IMAGE:-etlegacy/server@sha256:e8810511b59a70cd66ddf36951cbb873333c4081d236241343e19ee4a0a30d63}"
+LEGACY_PAK_SOURCE="${ETJS_LEGACY_PAK_SOURCE:-}"
 LEGACY_PAK_SHA256="d1abab70f6e3e3af8f34dfb4d94542c8bd592b0a1a582f0107d2162ee23c679b"
 
 require_command() {
@@ -28,7 +30,6 @@ file_matches() {
 }
 
 require_command curl
-require_command docker
 require_command node
 require_command sha256sum
 require_command unzip
@@ -118,20 +119,34 @@ fi
 
 LEGACY_PAK="$ROOT/runtime/legacy/legacy_v2.84.0.pk3"
 if ! file_matches "$LEGACY_PAK_SHA256" "$LEGACY_PAK"; then
-  if [ -z "$TMP_DIR" ]; then
-    TMP_DIR="$(mktemp -d /tmp/etjs-data.XXXXXX)"
+  if [ -n "$LEGACY_PAK_SOURCE" ]; then
+    if ! file_matches "$LEGACY_PAK_SHA256" "$LEGACY_PAK_SOURCE"; then
+      echo "bundled ET: Legacy data checksum mismatch: $LEGACY_PAK_SOURCE" >&2
+      exit 1
+    fi
+    install -m 0644 "$LEGACY_PAK_SOURCE" "$LEGACY_PAK"
+    echo "installed ET: Legacy v2.84.0 data from the bundled seed"
+  else
+    require_command docker
+    if [ -z "$TMP_DIR" ]; then
+      TMP_DIR="$(mktemp -d /tmp/etjs-data.XXXXXX)"
+    fi
+    docker image inspect "$LEGACY_IMAGE" >/dev/null 2>&1 || docker pull "$LEGACY_IMAGE"
+    CONTAINER_ID="$(docker create "$LEGACY_IMAGE")"
+    docker cp "$CONTAINER_ID:/legacy/server/legacy/legacy_v2.84.0.pk3" "$TMP_DIR/legacy_v2.84.0.pk3"
+    docker rm "$CONTAINER_ID" >/dev/null
+    CONTAINER_ID=""
+    if ! file_matches "$LEGACY_PAK_SHA256" "$TMP_DIR/legacy_v2.84.0.pk3"; then
+      echo "ET: Legacy data checksum mismatch" >&2
+      exit 1
+    fi
+    install -m 0644 "$TMP_DIR/legacy_v2.84.0.pk3" "$LEGACY_PAK"
+    echo "installed ET: Legacy v2.84.0 data from the pinned server image"
   fi
-  docker image inspect "$LEGACY_IMAGE" >/dev/null 2>&1 || docker pull "$LEGACY_IMAGE"
-  CONTAINER_ID="$(docker create "$LEGACY_IMAGE")"
-  docker cp "$CONTAINER_ID:/legacy/server/legacy/legacy_v2.84.0.pk3" "$TMP_DIR/legacy_v2.84.0.pk3"
-  docker rm "$CONTAINER_ID" >/dev/null
-  CONTAINER_ID=""
-  if ! file_matches "$LEGACY_PAK_SHA256" "$TMP_DIR/legacy_v2.84.0.pk3"; then
+  if ! file_matches "$LEGACY_PAK_SHA256" "$LEGACY_PAK"; then
     echo "ET: Legacy data checksum mismatch" >&2
     exit 1
   fi
-  install -m 0644 "$TMP_DIR/legacy_v2.84.0.pk3" "$LEGACY_PAK"
-  echo "installed ET: Legacy v2.84.0 data from the pinned server image"
 else
   echo "ET: Legacy data already matches the pinned checksum"
 fi

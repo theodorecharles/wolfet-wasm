@@ -6,20 +6,26 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
-const RUNTIME_ETMAIN = path.join(ROOT, 'runtime', 'etmain');
-const SERVER_MOD = path.join(ROOT, 'runtime', 'legacy', 'qagame.mp.x86_64.so');
-const ETJS_PAK = path.join(ROOT, 'runtime', 'legacy', 'etjs.pk3');
-const OMNIBOT_CFG = path.join(ROOT, 'runtime', 'omni-bot-user', 'omni-bot.cfg');
+const DATA_ROOT = path.resolve(process.env.ETJS_DATA_ROOT || ROOT);
+const RUNTIME_ROOT = path.join(DATA_ROOT, 'runtime');
+const RUNTIME_ETMAIN = path.join(RUNTIME_ROOT, 'etmain');
+const SERVER_MOD = path.join(RUNTIME_ROOT, 'legacy', 'qagame.mp.x86_64.so');
+const ETJS_PAK = path.join(RUNTIME_ROOT, 'legacy', 'etjs.pk3');
+const OMNIBOT_CFG = path.join(RUNTIME_ROOT, 'omni-bot-user', 'omni-bot.cfg');
+const EMBEDDED = process.env.ETJS_EMBEDDED_DED === '1';
+const EMBEDDED_BIN = process.env.ETJS_DED_BIN || path.join(ROOT, 'bin', 'etlded');
+const OMNIBOT_ENABLED = process.env.ETJS_OMNIBOT !== '0';
 const IMAGE = process.env.ETJS_DED_IMAGE ||
   'etlegacy/server@sha256:e8810511b59a70cd66ddf36951cbb873333c4081d236241343e19ee4a0a30d63';
 const CONTAINER = process.env.ETJS_DED_CONTAINER || 'etjs-dedicated';
-const RCON_FILE = path.join(ROOT, 'runtime', '.rcon-password');
+const RCON_FILE = path.join(RUNTIME_ROOT, '.rcon-password');
 const DATA_FETCHER = path.join(ROOT, 'scripts', 'fetch-game-data.sh');
 
 /** Host UDP port the website / proxy / status queries talk to. */
 const HOST_UDP_PORT = Number(process.env.ETJS_DED_PORT || 27961);
 /** Container-internal dedicated port. */
 const CONTAINER_UDP_PORT = 27960;
+let embeddedProcess = null;
 
 function readOrCreateRconPassword() {
   if (process.env.ETJS_RCON) {
@@ -66,10 +72,10 @@ const CONFIG_LABEL = crypto.createHash('sha256')
   .digest('hex');
 
 const DEFAULT_ARGS = [
-  '+set', 'fs_homepath', '/legacy/homepath',
+  '+set', 'fs_homepath', EMBEDDED ? RUNTIME_ROOT : '/legacy/homepath',
   '+set', 'dedicated', '1',
   '+set', 'sv_advert', '0',
-  '+set', 'net_port', String(CONTAINER_UDP_PORT),
+  '+set', 'net_port', String(EMBEDDED ? HOST_UDP_PORT : CONTAINER_UDP_PORT),
   '+set', 'sv_maxclients', '13',
   '+set', 'sv_privateclients', '0',
   '+set', 'sv_hostname', 'wolfet-wasm Shared Match',
@@ -85,8 +91,8 @@ const DEFAULT_ARGS = [
   /* Automatically enter the reinforcement queue after death. Without this,
    * ET keeps displaying the one-second wave while waiting for a manual tapout. */
   '+set', 'g_forcerespawn', '1',
-  '+set', 'omnibot_enable', '1',
-  '+set', 'omnibot_path', './legacy/omni-bot',
+  '+set', 'omnibot_enable', OMNIBOT_ENABLED ? '1' : '0',
+  '+set', 'omnibot_path', EMBEDDED ? '/legacy/server/legacy/omni-bot' : './legacy/omni-bot',
   '+set', 'omnibot_flags', '0',
   '+set', 'g_xpSaver', '15',
   '+set', 'g_xpSaverMaxAge', '604800',
@@ -134,6 +140,9 @@ function assertServerMod() {
 }
 
 function dockerAvailable() {
+  if (EMBEDDED) {
+    return true;
+  }
   try {
     execFileSync('docker', ['info'], { stdio: 'ignore' });
     return true;
@@ -143,6 +152,9 @@ function dockerAvailable() {
 }
 
 function containerRunning() {
+  if (EMBEDDED) {
+    return !!embeddedProcess && embeddedProcess.exitCode === null && !embeddedProcess.killed;
+  }
   try {
     const out = execFileSync('docker', ['inspect', '-f', '{{.State.Running}}', CONTAINER], {
       encoding: 'utf8'
@@ -154,6 +166,9 @@ function containerRunning() {
 }
 
 function containerConfigured() {
+  if (EMBEDDED) {
+    return containerRunning();
+  }
   try {
     const out = execFileSync('docker', [
       'inspect', '-f', '{{ index .Config.Labels "net.etjs.config" }}', CONTAINER
@@ -165,6 +180,13 @@ function containerConfigured() {
 }
 
 function stopDedicated() {
+  if (EMBEDDED) {
+    if (embeddedProcess && embeddedProcess.exitCode === null) {
+      embeddedProcess.kill('SIGTERM');
+    }
+    embeddedProcess = null;
+    return;
+  }
   try {
     execFileSync('docker', ['rm', '-f', CONTAINER], { stdio: 'ignore' });
   } catch (err) {
@@ -179,6 +201,9 @@ function stopDedicated() {
 function startDedicated(opts) {
   assertOfficialPaks();
   assertServerMod();
+  if (EMBEDDED && !fs.existsSync(EMBEDDED_BIN)) {
+    throw new Error('embedded ET: Legacy server missing: ' + EMBEDDED_BIN);
+  }
   if (!dockerAvailable()) {
     throw new Error('docker is required to start etlegacy/server');
   }
@@ -186,6 +211,21 @@ function startDedicated(opts) {
   stopDedicated();
 
   const extra = (opts && opts.args) || [];
+  if (EMBEDDED) {
+    embeddedProcess = spawn(EMBEDDED_BIN, DEFAULT_ARGS.concat(extra), {
+      cwd: RUNTIME_ROOT,
+      stdio: ['ignore', 'inherit', 'inherit']
+    });
+    embeddedProcess.on('exit', () => {
+      embeddedProcess = null;
+    });
+    return {
+      container: null,
+      hostPort: HOST_UDP_PORT,
+      kill: stopDedicated
+    };
+  }
+
   const args = [
     'run',
     '--name', CONTAINER,
@@ -194,7 +234,7 @@ function startDedicated(opts) {
     '--label', 'net.etjs.config=' + CONFIG_LABEL,
     '-v', RUNTIME_ETMAIN + ':/legacy/server/etmain',
     '-v', OMNIBOT_CFG + ':/legacy/server/legacy/omni-bot/et/user/omni-bot.cfg',
-    '-v', path.join(ROOT, 'runtime', 'legacy') + ':/legacy/homepath/legacy',
+    '-v', path.join(RUNTIME_ROOT, 'legacy') + ':/legacy/homepath/legacy',
     '--user', '0',
     '-p', HOST_UDP_PORT + ':' + CONTAINER_UDP_PORT + '/udp',
     '-w', '/legacy/server',
@@ -224,6 +264,8 @@ function followLogs(logStream) {
 
 module.exports = {
   ROOT: ROOT,
+  DATA_ROOT: DATA_ROOT,
+  RUNTIME_ROOT: RUNTIME_ROOT,
   RUNTIME_ETMAIN: RUNTIME_ETMAIN,
   SERVER_MOD: SERVER_MOD,
   ETJS_PAK: ETJS_PAK,
@@ -234,6 +276,9 @@ module.exports = {
   RCON_PASSWORD: RCON_PASSWORD,
   RCON_FILE: RCON_FILE,
   DATA_FETCHER: DATA_FETCHER,
+  EMBEDDED: EMBEDDED,
+  EMBEDDED_BIN: EMBEDDED_BIN,
+  OMNIBOT_ENABLED: OMNIBOT_ENABLED,
   CONFIG_LABEL: CONFIG_LABEL,
   SERVER_MOD_HASH: SERVER_MOD_HASH,
   ETJS_PAK_HASH: ETJS_PAK_HASH,

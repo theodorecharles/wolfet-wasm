@@ -70,12 +70,32 @@ describe('reproducible source repository', () => {
     assert.match(dedicated, /SERVER_MOD_HASH/);
   });
 
+  it('packages an amd64 deployment image without proprietary game data', () => {
+    const dockerfile = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
+    const dockerignore = fs.readFileSync(path.join(ROOT, '.dockerignore'), 'utf8');
+    const entrypoint = fs.readFileSync(path.join(ROOT, 'docker', 'entrypoint.sh'), 'utf8');
+    const workflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'docker.yml'), 'utf8');
+
+    assert.match(dockerfile, /FROM \$\{ETLEGACY_IMAGE\} AS runtime/);
+    assert.match(dockerfile, /platforms: linux\/amd64|EXPOSE 8088\/tcp 27960\/udp/);
+    assert.match(dockerignore, /runtime\/etmain\/\*\.pk3/);
+    assert.match(dockerignore, /runtime\/legacy\/\*\.pk3/);
+    assert.match(entrypoint, /ETJS_DATA_ROOT="\$DATA_ROOT"/);
+    assert.match(entrypoint, /fetch-game-data\.sh/);
+    assert.match(entrypoint, /ETJS_LEGACY_PAK_SOURCE/);
+    assert.match(workflow, /platforms: linux\/amd64/);
+    assert.match(workflow, /type=raw,value=dev/);
+    assert.match(workflow, /type=raw,value=latest/);
+    assert.match(workflow, /DOCKERHUB_USERNAME/);
+    assert.match(workflow, /DOCKERHUB_TOKEN/);
+  });
+
   it('does not ship the old shared RCON password', () => {
     const dedicatedSource = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
     const rconSource = fs.readFileSync(path.join(ROOT, 'server', 'rcon.js'), 'utf8');
     assert.doesNotMatch(dedicatedSource, /ETJS_RCON \|\| ['"]etjs['"]/);
     assert.doesNotMatch(rconSource, /password\) \|\| ['"]etjs['"]/);
     assert.match(dedicatedSource, /randomBytes\(24\)/);
-    assert.match(dedicatedSource, /runtime', '\.rcon-password/);
+    assert.match(dedicatedSource, /RUNTIME_ROOT, '\.rcon-password/);
   });
 });

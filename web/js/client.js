@@ -731,6 +731,7 @@
       ControlLeft: 137, ControlRight: 137,
       AltLeft: 136, AltRight: 136,
       CapsLock: 129,
+      Delete: 140, Home: 143, End: 144,
       Backquote: 297,
       ArrowUp: 132, ArrowDown: 133, ArrowLeft: 134, ArrowRight: 135,
       F1: 145, F2: 146, F3: 147, F4: 148, F7: 151, F11: 155, F12: 156,
@@ -778,6 +779,32 @@
           return true;
         }
       } catch (e) { /* not ready */ }
+      return false;
+    }
+
+    function openCommunication(mode) {
+      var M = window.Module;
+      try {
+        if (M && typeof M._ETJS_OpenCommunication === 'function') {
+          return M._ETJS_OpenCommunication(mode) !== 0;
+        }
+      } catch (e) { /* not ready */ }
+      var fallback = mode === 1 ? 'messagemode' :
+        (mode === 2 ? 'messagemode2' : 'mp_quickmessage');
+      return engineCmd(fallback);
+    }
+
+    function handleCommunicationKey(code) {
+      if (code === 'KeyT' || code === 'KeyY') {
+        if (openCommunication(code === 'KeyT' ? 1 : 2)) {
+          typingMode = 'chat';
+        }
+        return true;
+      }
+      if (code === 'KeyV') {
+        openCommunication(3);
+        return true;
+      }
       return false;
     }
 
@@ -1023,26 +1050,6 @@
         releaseInputHolds();
         return;
       }
-      if (uiOpen()) {
-        var menuKey = CODE_TO_KEY[code] ||
-          (ev.key && ev.key.length === 1 ? ev.key.toLowerCase().charCodeAt(0) : 0);
-        if (!menuKey) {
-          return;
-        }
-        if (bareControl(code)) {
-          /* Deliver bindable Ctrl ourselves but keep SDL from cancelling the
-           * modifier's DOM event before it can become a browser shortcut. */
-          ev.stopImmediatePropagation();
-        } else {
-          ev.preventDefault();
-        }
-        if (ev.repeat) {
-          return;
-        }
-        held[code] = menuKey;
-        sendKey(menuKey, 1);
-        return;
-      }
       if (typingMode) {
         /* Firefox uses `/` to open Quick Find. Cancelling keydown also
          * suppresses SDL's later textinput event, so inject printable Unicode
@@ -1054,7 +1061,8 @@
           return;
         }
         if (code === 'Backspace' || code === 'Enter' ||
-            code === 'NumpadEnter' || code === 'Tab' || code === 'Escape') {
+            code === 'NumpadEnter' || code === 'Tab' || code === 'Escape' ||
+            code === 'ArrowUp' || code === 'ArrowDown') {
           ev.preventDefault();
           ev.stopImmediatePropagation();
           /* Cancelling the browser event also hides it from SDL, so deliver
@@ -1077,6 +1085,52 @@
         }
         return;
       }
+      /* The debrief owns the cgame key catcher and its CHAT field is always
+       * ready for input. Feed text and editing keys directly to that native
+       * field so T, Y and V remain ordinary letters. Voice chat is opened by
+       * the debrief's clickable QUICK CHAT button, matching stock ET. */
+      if (intermissionOpen() && !engineUiOpen()) {
+        if (ev.key && ev.key.length === 1 && !ev.isComposing) {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          sendChar(ev.key.codePointAt(0));
+          return;
+        }
+        if (code === 'Backspace' || code === 'Enter' ||
+            code === 'NumpadEnter' || code === 'Delete' ||
+            code === 'ArrowLeft' || code === 'ArrowRight' ||
+            code === 'Home' || code === 'End') {
+          ev.preventDefault();
+          ev.stopImmediatePropagation();
+          var debriefKey = CODE_TO_KEY[code];
+          sendKey(debriefKey, 1);
+          if (code === 'Backspace') {
+            sendChar(8);
+          }
+          sendKey(debriefKey, 0);
+          return;
+        }
+      }
+      if (uiOpen()) {
+        var menuKey = CODE_TO_KEY[code] ||
+          (ev.key && ev.key.length === 1 ? ev.key.toLowerCase().charCodeAt(0) : 0);
+        if (!menuKey) {
+          return;
+        }
+        if (bareControl(code)) {
+          /* Deliver bindable Ctrl ourselves but keep SDL from cancelling the
+           * modifier's DOM event before it can become a browser shortcut. */
+          ev.stopImmediatePropagation();
+        } else {
+          ev.preventDefault();
+        }
+        if (ev.repeat) {
+          return;
+        }
+        held[code] = menuKey;
+        sendKey(menuKey, 1);
+        return;
+      }
       /* These default gameplay actions open a catcher/menu immediately. Send
        * the command directly so the ensuing pointer-lock release cannot eat
        * the corresponding key-up event. Once open, Escape and voice-menu
@@ -1090,9 +1144,11 @@
         }
         if (code === 'Escape') {
           engineCmd('togglemenu');
+        } else if (code === 'KeyT' || code === 'KeyY' || code === 'KeyV') {
+          handleCommunicationKey(code);
         } else {
           engineCmd(TAP_KEYS[code]);
-          if (code === 'KeyT' || code === 'KeyY' || code === 'KeyU') {
+          if (code === 'KeyU') {
             typingMode = 'chat';
           }
         }

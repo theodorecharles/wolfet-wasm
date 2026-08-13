@@ -20,6 +20,8 @@ fi
 mkdir -p "$BUILD" "$ROOT/runtime/legacy"
 cmake -S "$SOURCE" -B "$BUILD" -GNinja \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCROSS_COMPILE32=OFF \
+  -DBUNDLED_LIBS=OFF \
   -DBUILD_CLIENT=OFF \
   -DBUILD_SERVER=OFF \
   -DBUILD_CLIENT_MOD=OFF \

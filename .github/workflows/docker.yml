@@ -1,0 +1,66 @@
+name: Publish Docker image
+
+on:
+  push:
+    branches:
+      - devel
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/devel' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - name: Credentials are not configured yet
+        if: env.DOCKERHUB_USERNAME == '' || env.DOCKERHUB_TOKEN == ''
+        run: echo "Add DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets, then run this workflow again."
+
+      - name: Check out repository
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Generate image metadata
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.DOCKERHUB_USERNAME }}/wolfet-wasm
+          tags: |
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/devel' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+
+      - name: Build and push amd64 image
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=wolfet-wasm-${{ github.ref_name }}
+          cache-to: type=gha,mode=max,scope=wolfet-wasm-${{ github.ref_name }}
+          provenance: mode=max
+          sbom: true

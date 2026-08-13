@@ -2,9 +2,9 @@
 
 wolfet-wasm is an in-progress port of **Wolfenstein: Enemy Territory** to the browser. It combines a WebAssembly/WebGL build of [ET: Legacy](https://github.com/etlegacy/etlegacy), browser behavior learned from [QuakeJS](https://github.com/inolen/quakejs), server-side provisioning of the original Wolf: ET data from Splash Damage, and a Dockerized ET: Legacy dedicated server.
 
-The intended product is the actual ET visit path in a browser: enter a name, download the official data, watch the logos, use the official main menu, click **JOIN GAME**, choose a team in limbo, and play one shared 12-slot Objective match. Omni-Bot fills every slot not occupied by a human. There is intentionally no server browser or Host Game flow.
+The intended product is the actual ET visit path in a browser: enter a name, see the real engine startup console while same-origin game data is prepared, arrive directly at the official main menu, click **JOIN GAME**, choose a team in limbo, and play one shared 12-slot Objective match. Omni-Bot fills every slot not occupied by a human. There is intentionally no server browser or Host Game flow.
 
-The core browser match is implemented and playable. The latest rendering, HUD, input, and adaptive-quality changes still need the fresh browser acceptance pass listed in [KNOWN_ISSUES.md](KNOWN_ISSUES.md). [RUNBOOK.md](RUNBOOK.md) is the authoritative validation procedure.
+The core browser match is implemented and playable. [RUNBOOK.md](RUNBOOK.md) is the authoritative validation procedure for rendering, HUD, input, chat, and adaptive quality.
 
 ## Repository boundary
 
@@ -54,6 +54,40 @@ HTTP ranges and changed content receives a new persistent browser-cache key.
 Hard refreshes do not clear that IndexedDB cache. The loading panel reports
 cache checks and cached reads separately from real wolfet-wasm network downloads.
 
+## Docker image
+
+The self-contained deployment image supports `linux/amd64`. It includes the
+WebAssembly client, Node host, patched native game module, and the pinned ET:
+Legacy/Omni-Bot runtime. It does not include Wolf: ET's proprietary game data.
+
+Build and run it locally:
+
+```bash
+docker build --platform linux/amd64 -t wolfet-wasm:local .
+docker run --rm --name wolfet-wasm \
+  -p 8088:8088/tcp \
+  -p 27960:27960/udp \
+  -v wolfet-wasm-data:/data \
+  wolfet-wasm:local
+```
+
+On the first start, the container downloads the official archive directly from
+Splash Damage, verifies its pinned SHA-256 checksums, and installs the required
+files beneath `/data`. A named volume preserves both the downloaded archive and
+the extracted runtime data, so later starts only perform checksum validation.
+Open <http://127.0.0.1:8088/> after the container reports that the dedicated
+server is ready.
+
+The GitHub workflow publishes `${DOCKERHUB_USERNAME}/wolfet-wasm:dev` from
+`devel` and `${DOCKERHUB_USERNAME}/wolfet-wasm:latest` from `master`. Configure
+these repository secrets before running it:
+
+- `DOCKERHUB_USERNAME`: the Docker Hub account or organization name;
+- `DOCKERHUB_TOKEN`: a Docker Hub personal access token with write access.
+
+The workflow exits successfully with a setup message when the secrets have not
+been configured, and can be run manually after they are added.
+
 Activate Emscripten, then build the browser client:
 
 ```bash
@@ -75,6 +109,12 @@ ETJS_KEEP_DED=1 npm start
 ```
 
 Open <http://127.0.0.1:8088/>. The server also exposes `/health`, `/status`, and the `/ws` WebSocket-to-UDP game proxy. The dedicated server listens on UDP 27961 by default.
+
+Live play uses the stock communication controls: **T** opens global chat,
+**Y** opens team chat, and **V** opens the voice menu. The level-end debrief has
+its own always-ready chat field and a clickable **QUICK CHAT** voice button, so
+all letters remain typeable there. In the engine console, **Up/Down** traverse
+command history and Backspace/Enter edit and submit commands.
 
 Before Play, the name gate's **Advanced settings** selects a Maximum, Balanced,
 Performance, or Minimum graphics ceiling. Dynamic quality can be disabled or
@@ -109,8 +149,9 @@ Node host
     -> checksum-based provisioning from Splash Damage when local data is absent
     -> one UDP socket per browser client
     -> ET protocol UDP 27961
-Docker
-    -> pinned ET: Legacy dedicated server
+ET: Legacy dedicated server
+    -> pinned native runtime (separate container for local npm development;
+       embedded in the deployment image)
     -> one shared Objective match
     -> Omni-Bot keeps humans + bots at 12
 ```

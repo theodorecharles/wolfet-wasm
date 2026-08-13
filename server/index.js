@@ -11,6 +11,7 @@ const { queryStatus } = require('./status');
 
 const ROOT = path.join(__dirname, '..');
 const WEB_ROOT = path.join(ROOT, 'web');
+const DATA_WEB_ROOT = path.join(dedicated.DATA_ROOT, 'web');
 const HTTP_PORT = Number(process.env.ETJS_HTTP_PORT || 8088);
 const DED_PORT = dedicated.HOST_UDP_PORT;
 const RCON = dedicated.RCON_PASSWORD;
@@ -59,8 +60,8 @@ function safeJoin(root, reqPath) {
 function gameAssets() {
   return GAME_ASSET_DEFS.map((def) => {
     const base = def.parent === '/etmain'
-      ? path.join(ROOT, 'runtime', 'etmain')
-      : path.join(ROOT, 'runtime', 'legacy');
+      ? path.join(dedicated.RUNTIME_ROOT, 'etmain')
+      : path.join(dedicated.RUNTIME_ROOT, 'legacy');
     const filePath = path.join(base, def.name);
     const bytes = fs.statSync(filePath).size;
     return {
@@ -152,9 +153,11 @@ function serveStatic(req, res) {
   }
 
   const searchRoots = [
-    { prefix: '/etmain/', root: path.join(ROOT, 'runtime', 'etmain'), strip: '/etmain/' },
-    { prefix: '/legacy/', root: path.join(ROOT, 'runtime', 'legacy'), strip: '/legacy/' },
+    { prefix: '/etmain/', root: path.join(dedicated.RUNTIME_ROOT, 'etmain'), strip: '/etmain/' },
+    { prefix: '/legacy/', root: path.join(dedicated.RUNTIME_ROOT, 'legacy'), strip: '/legacy/' },
     { prefix: '/client/', root: path.join(ROOT, 'web', 'client'), strip: '/client/' },
+    { prefix: '/img/', root: path.join(DATA_WEB_ROOT, 'img'), strip: '/img/' },
+    { prefix: '/sound/music/', root: path.join(DATA_WEB_ROOT, 'sound', 'music'), strip: '/sound/music/' },
     { prefix: '/', root: WEB_ROOT, strip: '/' }
   ];
 
@@ -221,9 +224,13 @@ async function main() {
 
   if (process.env.ETJS_SKIP_DED !== '1') {
     if (dedicated.containerRunning() && dedicated.containerConfigured()) {
-      log('reusing running dedicated container ' + dedicated.CONTAINER);
+      log(dedicated.EMBEDDED
+        ? 'reusing embedded dedicated server'
+        : 'reusing running dedicated container ' + dedicated.CONTAINER);
     } else {
-      log('starting dedicated server (' + dedicated.IMAGE + ') on udp/' + DED_PORT);
+      log(dedicated.EMBEDDED
+        ? 'starting embedded ET: Legacy server on udp/' + DED_PORT
+        : 'starting dedicated server (' + dedicated.IMAGE + ') on udp/' + DED_PORT);
       dedicated.startDedicated();
     }
     const st = await waitForDedicated(90000);
@@ -233,7 +240,7 @@ async function main() {
   const httpServer = await startHttp();
 
   let lastFillSummary = '';
-  const supervisor = startSupervisor({
+  const supervisor = dedicated.OMNIBOT_ENABLED ? startSupervisor({
     host: '127.0.0.1',
     port: DED_PORT,
     password: RCON,
@@ -247,7 +254,10 @@ async function main() {
         lastFillSummary = summary;
       }
     }
-  });
+  }) : { stop: function () {} };
+  if (!dedicated.OMNIBOT_ENABLED) {
+    log('Omni-Bot disabled; automatic bot fill is inactive');
+  }
 
   const shutdown = () => {
     log('shutting down');

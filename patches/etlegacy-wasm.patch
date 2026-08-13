@@ -124,7 +124,7 @@ index 075dae759..1e600a512 100644
  #
 diff --git a/cmake/ETLEmscripten.cmake b/cmake/ETLEmscripten.cmake
 new file mode 100644
-index 000000000..d8bae4f16
+index 000000000..e88220e14
 --- /dev/null
 +++ b/cmake/ETLEmscripten.cmake
 @@ -0,0 +1,155 @@
@@ -227,7 +227,7 @@ index 000000000..d8bae4f16
 +	"-sGL_MAX_TEMP_BUFFER_SIZE=16777216"
 +	"-sFORCE_FILESYSTEM=1"
 +	"-sEXPORTED_RUNTIME_METHODS=['callMain','ccall','cwrap','FS','setCanvasSize']"
-+	"-sEXPORTED_FUNCTIONS=['_main','_Cbuf_AddText','_ETJS_AddLook','_ETJS_KeyEvent','_ETJS_CharEvent','_Cvar_VariableIntegerValue']"
++	"-sEXPORTED_FUNCTIONS=['_main','_Cbuf_AddText','_ETJS_AddLook','_ETJS_KeyEvent','_ETJS_CharEvent','_ETJS_OpenCommunication','_Cvar_VariableIntegerValue']"
 +	"-sEXIT_RUNTIME=0"
 +	"-sINVOKE_RUN=0"
 +	"-Wl,--allow-multiple-definition"
@@ -284,10 +284,25 @@ index 000000000..d8bae4f16
 +message(STATUS "ETJS minizip: ${ETJS_MINIZIP_DIR}")
 +message(STATUS "ETJS webport: ${ETJS_WEBPORT}")
 diff --git a/cmake/ETLPlatform.cmake b/cmake/ETLPlatform.cmake
-index b9bcb5864..0c7f08617 100644
+index b9bcb5864..c1204e8ab 100644
 --- a/cmake/ETLPlatform.cmake
 +++ b/cmake/ETLPlatform.cmake
-@@ -183,6 +183,9 @@ if(UNIX)
+@@ -15,7 +15,13 @@ add_library(os_libraries INTERFACE)
+ 
+ # Always treat implicit function declarations as hard errors in C code.
+ include(CheckCCompilerFlag)
+-if(MSVC)
++if(EMSCRIPTEN)
++	# Emscripten's compiler accepts this Clang diagnostic, but CMake 3.28's
++	# try-compile cannot link the flag probe with current emcc. Apply the known
++	# compile-only flag directly; the wasm build relaxes it during bring-up in
++	# the top-level CMakeLists after platform setup.
++	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror=implicit-function-declaration")
++elseif(MSVC)
+ 	check_c_compiler_flag("/we4013" SUPPORT_ERROR_IMPLICIT_FUNCTION_DECLARATION)
+ 	if(SUPPORT_ERROR_IMPLICIT_FUNCTION_DECLARATION)
+ 		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /we4013")
+@@ -183,6 +189,9 @@ if(UNIX)
  		endif()
  		set(LIB_SUFFIX "_mac")
  		set(CMAKE_SHARED_MODULE_SUFFIX "")
@@ -965,7 +980,7 @@ index 7acd45682..7969c69e5 100644
  	// loadpanel: erase the screen now, because otherwise the "awaiting challenge"-UI-screen is still visible behind the client-version of it (the one with the progressbar),..
  	// ..and we do not want a flickering screen (on widescreens).
 diff --git a/src/cgame/cg_limbopanel.c b/src/cgame/cg_limbopanel.c
-index 65af36c2c..e89ccb510 100644
+index 65af36c2c..cd84eafe5 100644
 --- a/src/cgame/cg_limbopanel.c
 +++ b/src/cgame/cg_limbopanel.c
 @@ -1244,6 +1244,9 @@ qboolean CG_LimboPanel_CancelButton_KeyDown(panel_button_t *button, int key)
@@ -978,55 +993,7 @@ index 65af36c2c..e89ccb510 100644
  		//SOUND_CANCEL;
  		SOUND_SELECT;
  
-@@ -2086,6 +2089,47 @@ void CG_DrawPlayerHead(rectDef_t *rect, bg_character_t *character, bg_character_
- 	refdef_t    refdef;
- 	refEntity_t head, hat, mrank;
- 
-+#ifdef __EMSCRIPTEN__
-+	/* Nested 3D hud-head scenes used the full viewport and wiped the world. */
-+	float px, py, pw, ph, drawW, drawH;
-+	qhandle_t helmet;
-+
-+	(void)character;
-+	(void)headcharacter;
-+	(void)yaw;
-+	(void)pitch;
-+	(void)drawHat;
-+	(void)animation;
-+	(void)painSkin;
-+	(void)rank;
-+	(void)spectator;
-+	(void)team;
-+	helmet = team == TEAM_AXIS ? cgs.media.hudAxisHelmet : cgs.media.hudAlliedHelmet;
-+	if (rect && helmet)
-+	{
-+		px = rect->x;
-+		py = rect->y;
-+		pw = rect->w;
-+		ph = rect->h;
-+		CG_AdjustFrom640(&px, &py, &pw, &ph);
-+
-+		/* The temporary browser portrait is the authored 64x32 helmet image,
-+		 * not the native animated 3D head. Contain it at 2:1 in physical pixels
-+		 * so neither tall nor wide canvases can stretch it. */
-+		drawW = pw;
-+		drawH = drawW * 0.5f;
-+		if (drawH > ph)
-+		{
-+			drawH = ph;
-+			drawW = drawH * 2.f;
-+		}
-+		trap_R_DrawStretchPic(px + (pw - drawW) * 0.5f,
-+		                      py + (ph - drawH) * 0.5f,
-+		                      drawW, drawH, 0, 0, 1, 1, helmet);
-+	}
-+	return;
-+#endif
-+
- 	if (!character)
- 	{
- 		return;
-@@ -3393,6 +3437,31 @@ void CG_LimboPanel_Setup(void)
+@@ -3393,6 +3396,31 @@ void CG_LimboPanel_Setup(void)
  	CG_LimboPanel_RequestWeaponStats();
  }
  
@@ -1058,7 +1025,7 @@ index 65af36c2c..e89ccb510 100644
  /**
   * @brief CG_LimboPanel_Init
   */
-@@ -3410,6 +3479,9 @@ qboolean CG_LimboPanel_Draw(void)
+@@ -3410,6 +3438,9 @@ qboolean CG_LimboPanel_Draw(void)
  {
  	static panel_button_t *lastHighlight;
  	panel_button_t        *hilight;
@@ -1068,7 +1035,7 @@ index 65af36c2c..e89ccb510 100644
  
  	hilight = BG_PanelButtonsGetHighlightButton(limboPanelButtons);
  	if (hilight && hilight != lastHighlight)
-@@ -3463,6 +3535,14 @@ void CG_LimboPanel_KeyHandling(int key, qboolean down)
+@@ -3463,6 +3494,14 @@ void CG_LimboPanel_KeyHandling(int key, qboolean down)
  {
  	int b1, b2;
  
@@ -2086,7 +2053,7 @@ index ddb8e87d2..240b246a8 100644
  }
  
 diff --git a/src/client/cl_input.c b/src/client/cl_input.c
-index 6651a0127..58f4f7dba 100644
+index 6651a0127..ee3153252 100644
 --- a/src/client/cl_input.c
 +++ b/src/client/cl_input.c
 @@ -34,6 +34,9 @@
@@ -2394,7 +2361,7 @@ index 6651a0127..58f4f7dba 100644
  	Cmd_AddCommand("+right", IN_RightDown);
  	Cmd_AddCommand("-right", IN_RightUp);
  	Cmd_AddCommand("+forward", IN_ForwardDown);
-@@ -1532,3 +1706,187 @@ void CL_ClearKeys(void)
+@@ -1532,3 +1706,216 @@ void CL_ClearKeys(void)
  {
  	Com_Memset(kb, 0, sizeof(kb));
  }
@@ -2477,6 +2444,35 @@ index 6651a0127..58f4f7dba 100644
 +	{
 +		CL_CharEvent(ch);
 +	}
++}
++
++/**
++ * Open text or voice communication synchronously from the browser input
++ * bridge. Queuing these commands from JavaScript races pointer-lock loss and
++ * leaves the page guessing whether the UI catcher actually opened.
++ *
++ * mode 1: global chat, mode 2: team chat, mode 3: quick voice menu
++ */
++EMSCRIPTEN_KEEPALIVE
++int ETJS_OpenCommunication(int mode)
++{
++	const char *command;
++
++	if (cls.state != CA_ACTIVE || !cgvm || !uivm)
++	{
++		return 0;
++	}
++
++	switch (mode)
++	{
++		case 1: command = "messagemode\n"; break;
++		case 2: command = "messagemode2\n"; break;
++		case 3: command = "mp_quickmessage\n"; break;
++		default: return 0;
++	}
++
++	Cbuf_ExecuteText(EXEC_NOW, command);
++	return (cls.keyCatchers & (KEYCATCH_UI | KEYCATCH_CGAME)) != 0;
 +}
 +
 +EMSCRIPTEN_KEEPALIVE

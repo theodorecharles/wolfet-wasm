@@ -9,13 +9,13 @@ The visit path is always:
 1. Web name form + optional Advanced graphics settings (XP ET icon, **no music**)
 2. Play opens the blue Modern DOS startup console and streams real engine logs
 3. Browser downloads official paks from this ETJS host (**no music**)
-4. Skippable company logos + menu music
-5. Official MAIN + music
-6. Click **JOIN GAME**
-7. Official connect/loading + music
-8. Spectator limbo → pick team + OK → 3D world stays
-9. WASD moves, mouse1 fires, F activates/picks up, T chats, V opens voice,
-   Tab shows scores, L opens limbo, and Escape opens settings
+4. Official MAIN + music (no synthetic logo/splash sequence)
+5. Click **JOIN GAME**
+6. Official connect/loading + music
+7. Spectator limbo → pick team + OK → 3D world stays
+8. WASD moves, mouse1 fires, F activates/picks up, T opens global chat,
+   Y opens team chat, V opens voice, Tab shows scores, L opens limbo, and
+   Escape opens settings
 
 The browser must never fetch from Splash Damage. At host startup the server
 checks its ignored local data and invokes the pinned, checksum-verifying Splash
@@ -23,8 +23,6 @@ Damage fetcher only if it needs to provision or repair that cache. Browsers then
 receive the files from same-origin `/etmain/` and `/legacy/` URLs.
 
 Never inject `etjs_joingame` / `connect` to “see the world.” If the real sequence is black or hangs, that is the bug.
-
-Issue inventory: [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
 ---
 
@@ -47,7 +45,7 @@ Four classes, in this order. Later classes are meaningless if you cannot get int
 
 | Order | Class | Done when |
 | --- | --- | --- |
-| 1 | **Startup** | Name/settings → console → host download → logos → MAIN → JOIN → loading → limbo, no skip, no hang |
+| 1 | **Startup** | Name/settings → console → host data → MAIN → JOIN → loading → limbo, no skip, no hang |
 | 2 | **Aspect** | Window resize: canvas + engine resolution = the window. No 4:3 bars, no skew, no orange strip |
 | 3 | **Graphics** | In-game 3D stays map geometry + lightmaps after you look around. No sky-blue holes |
 | 4 | **Input** | WASD changes origin, mouse1 fires, L toggles limbo, Escape opens settings, look does not wreck the picture |
@@ -64,7 +62,7 @@ Public: `https://wolfet.tedcharles.net/` (this laptop is only `:8088`; nginx is 
 
 ### 1. Startup sequence
 
-**Wanted:** the path above, music from splash through loading, skippable logos like the real intro, JOIN GAME is the only connect, tilde works on MAIN, no pointer lock on the menu.
+**Wanted:** the path above, direct transition from startup console to MAIN, music from MAIN through loading, JOIN GAME as the only connect, tilde on MAIN, and no pointer lock on the menu.
 
 **Loop:**
 
@@ -76,7 +74,7 @@ Public: `https://wolfet.tedcharles.net/` (this laptop is only `:8088`; nginx is 
    same-origin `/etmain/` or `/legacy/`, never `splashdamage.com`. `pak0.pk3`
    should arrive as sequential `206` responses no larger than 16 MiB; reload
    after changing `etjs.pk3` and confirm its SHA-keyed cache entry changes.
-4. Screenshot each logo, then MAIN (animated clouds, eagle, JOIN GAME). Confirm music.
+4. Confirm it goes directly to MAIN (animated clouds, eagle, JOIN GAME) and starts music.
 5. Click JOIN GAME. Screenshot loading + music, then limbo.
 6. If any step is black, ETL-on-black, highlight-without-click, or a hang, fix **that** step. Do not jump to connect.
 7. Repeat from step 1 until a cold visit walks the whole path.
@@ -134,14 +132,20 @@ A menu screenshot is not a graphics pass. A world shot taken after injecting con
 2. Screenshot / log **WASD**: origin must change, not just `etjs_fwd=127`.
 3. Screenshot / log **mouse1**: `+attack` while in-world.
 4. Aim at a dropped Thompson and press **F** (`+activate`): it is picked up.
-5. Hold **Tab**: names and stats appear. Press **T** for chat and **V** for the
-   voice menu. Verify text entry and the debrief cursor both move normally.
-6. Press **L**: limbo opens. Close it, press L again: it opens again.
-7. Press **Escape**: in-game settings (binds, crosshair). Change one bind, reload, it stuck.
-8. Look while **following**: the followed player’s head does not turn with your mouse.
-9. Die and respawn: look works without first firing and retains the full pitch range.
-10. If only right-click (next spec) works, that is not “input done.”
-11. Fix the cause (catchers eating keys, binds never issued, lock stealing menu clicks, follow look). Start again. Repeat until all of the above work in one visit.
+5. Hold **Tab**: names and stats appear. During live play, **T** opens global
+   chat, **Y** opens team chat, and **V** opens the voice menu. At debrief, click
+   its global/team/fireteam selector and type into its built-in chat field;
+   every letter including T, Y, and V must work. Click **QUICK CHAT** for the
+   debrief voice menu. Verify Backspace and Enter edit/send, and that every
+   debrief button works with its visible cursor.
+6. Open the console: `/` types normally, Backspace edits, Enter executes, and
+   Up/Down move through command history.
+7. Press **L**: limbo opens. Close it, press L again: it opens again.
+8. Press **Escape**: in-game settings (binds, crosshair). Change one bind, reload, it stuck.
+9. Look while **following**: the followed player’s head does not turn with your mouse.
+10. Die and respawn: look works without first firing and retains the full pitch range.
+11. If only right-click (next spec) works, that is not “input done.”
+12. Fix the cause (catchers eating keys, binds never issued, lock stealing menu clicks, follow look). Start again. Repeat until all of the above work in one visit.
 
 ---
 
@@ -214,10 +218,11 @@ Tests do not replace the screenshot loop.
 ## Definition of done (one visit)
 
 A person can: enter a name, choose/persist graphics settings, see the real startup
-console, receive data only from the ETJS host, watch logos, click JOIN GAME, pick
+console, receive data only from the wolfet-wasm host, reach MAIN directly, click JOIN GAME, pick
 a team, and look around a solid lit map. In the same visit they can move/fire,
-pick up with F, chat with T, use voice with V, see scores with Tab, use limbo and
-settings, see every entity/HUD/overlay class above, respawn with normal mouse
+pick up with F, use live T/Y/V communication, type and send debrief chat, open
+debrief QUICK CHAT, see scores with Tab, use limbo and settings, see every
+entity/HUD/overlay class above, respawn with normal mouse
 look, and resize without moving the crosshair or projected labels away from the
 3D view. The chosen dynamic target responds without a renderer restart.
 
