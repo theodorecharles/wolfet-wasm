@@ -237,7 +237,8 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(mineSnapshot, /#ifdef ETJS_SERVER[\s\S]*?return qtrue/);
     const draw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw.c'), 'utf8');
     const awareness = extractFn(draw, 'CG_DrawEnvironmentalAwareness');
-    assert.match(awareness, /#ifdef __EMSCRIPTEN__[\s\S]*?if \(!cg_etjsArcade\.integer \|\| !cg_rshook\.integer\)[\s\S]*?return/);
+    assert.match(awareness, /#ifdef __EMSCRIPTEN__[\s\S]*?Stock ET does not paint floating objective icons[\s\S]*?return/);
+    assert.doesNotMatch(awareness.split('#endif')[0], /cg_rshook\.integer/);
   });
 
   it('releases browser pointer lock and routes debrief cursor input', () => {
@@ -467,7 +468,9 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(page, /etjs\.js\?v=/);
     assert.match(page, /wasDead\s*&&\s*!dead/);
     assert.match(page, /set etjs_resetlook 1/);
-    assert.match(page, /engineCmd\('togglemenu'\)/);
+    assert.match(page, /toggleInGameMenu\('escape-key'\)/);
+    assert.match(page, /showInGameMenuWhenUncaptured\('pointer-lock-lost'\)/);
+    assert.match(page, /showInGameMenuWhenUncaptured\('window-blur'\)/);
     assert.match(page, /typingMode = 'chat'/);
     assert.match(page, /_ETJS_OpenCommunication/);
     assert.match(page, /openCommunication\(code === 'KeyT' \? 1 : 2\)/);

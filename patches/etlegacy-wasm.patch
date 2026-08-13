@@ -567,17 +567,14 @@ diff --git a/src/cgame/cg_draw.c b/src/cgame/cg_draw.c
 index a238bea96..a268201c4 100644
 --- a/src/cgame/cg_draw.c
 +++ b/src/cgame/cg_draw.c
-@@ -4133,6 +4133,15 @@ static void CG_DrawEnvironmentalAwareness()
+@@ -4133,6 +4133,12 @@ static void CG_DrawEnvironmentalAwareness()
  	snapshot_t *snap;
  	int        i;
  
 +#ifdef __EMSCRIPTEN__
-+	/* ETJS treats the world-space objective/distance overlay as part of the
-+	 * optional rshook, not as always-on HUD information. */
-+	if (!cg_rshook.integer)
-+	{
-+		return;
-+	}
++	/* Stock ET does not paint floating objective icons and distances over the
++	 * 3D view. Keep objectives on the compass/command map instead. */
++	return;
 +#endif
 +
  	if (!cg_drawEnvAwareness.integer)
@@ -2361,7 +2358,7 @@ index 6651a0127..ee3153252 100644
  	Cmd_AddCommand("+right", IN_RightDown);
  	Cmd_AddCommand("-right", IN_RightUp);
  	Cmd_AddCommand("+forward", IN_ForwardDown);
-@@ -1532,3 +1706,235 @@ void CL_ClearKeys(void)
+@@ -1532,3 +1706,243 @@ void CL_ClearKeys(void)
  {
  	Com_Memset(kb, 0, sizeof(kb));
  }
@@ -2457,6 +2454,13 @@ index 6651a0127..ee3153252 100644
 +int ETJS_OpenCommunication(int mode)
 +{
 +	int menu;
++	intptr_t activeMenu;
++	int opened;
++
++	Com_Printf("ETJS communication request mode=%d state=%d cg=%d ui=%d catchers=%d active=%ld\n",
++	           mode, (int)cls.state, cgvm ? 1 : 0, uivm ? 1 : 0,
++	           cls.keyCatchers,
++	           uivm ? (long)VM_Call(uivm, UI_GET_ACTIVE_MENU) : -1L);
 +
 +	if (cls.state != CA_ACTIVE || !cgvm || !uivm)
 +	{
@@ -2488,10 +2492,11 @@ index 6651a0127..ee3153252 100644
 +	 * browser believing chat opened. This bridge is called only from a
 +	 * captured gameplay key, so bypassing that race is both safe and exact. */
 +	VM_Call(uivm, UI_SET_ACTIVE_MENU, menu);
-+	Com_DPrintf("ETJS communication mode=%d menu=%d active=%ld catchers=%d\n",
-+	            mode, menu, (long)VM_Call(uivm, UI_GET_ACTIVE_MENU), cls.keyCatchers);
-+	return (cls.keyCatchers & KEYCATCH_UI) != 0 &&
-+	       VM_Call(uivm, UI_GET_ACTIVE_MENU) == menu;
++	activeMenu = VM_Call(uivm, UI_GET_ACTIVE_MENU);
++	opened = (cls.keyCatchers & KEYCATCH_UI) != 0 && activeMenu == menu;
++	Com_Printf("ETJS communication result mode=%d requested=%d active=%ld catchers=%d opened=%d\n",
++	           mode, menu, (long)activeMenu, cls.keyCatchers, opened);
++	return opened;
 +}
 +
 +EMSCRIPTEN_KEEPALIVE

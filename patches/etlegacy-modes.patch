@@ -133,17 +133,6 @@
  	if (hitSound == HIT_NONE)
  	{
  		return;
---- a/src/cgame/cg_draw.c
-+++ b/src/cgame/cg_draw.c
-@@ -4136,7 +4136,7 @@ static void CG_DrawEnvironmentalAwareness()
- #ifdef __EMSCRIPTEN__
- 	/* ETJS treats the world-space objective/distance overlay as part of the
- 	 * optional rshook, not as always-on HUD information. */
--	if (!cg_rshook.integer)
-+	if (!cg_etjsArcade.integer || !cg_rshook.integer)
- 	{
- 		return;
- 	}
 --- a/src/cgame/cg_ents.c
 +++ b/src/cgame/cg_ents.c
 @@ -1242,7 +1242,7 @@ static qboolean ETJS_RevealEnemyDeployable(const entityState_t *state)

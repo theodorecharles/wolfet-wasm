@@ -50,6 +50,32 @@
   var wakeJoinPromise = null;
   var communicationInput = false;
   var communicationInputGraceUntil = 0;
+  var communicationLogSequence = 0;
+
+  function communicationLog(event, detail) {
+    var entry = Object.assign({
+      sequence: ++communicationLogSequence,
+      event: event,
+      time: new Date().toISOString()
+    }, detail || {});
+    /* Keep a local buffer for DevTools and mirror it to the host process so
+     * input failures can be diagnosed without asking players to copy a
+     * browser console. Only T/Y/V/Escape diagnostics use this endpoint. */
+    window.ETJSCommunicationLog = window.ETJSCommunicationLog || [];
+    window.ETJSCommunicationLog.push(entry);
+    if (window.ETJSCommunicationLog.length > 30) {
+      window.ETJSCommunicationLog.shift();
+    }
+    console.info('[ETJS communication]', entry);
+    try {
+      fetch('/client-log', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(entry),
+        keepalive: true
+      }).catch(function () {});
+    } catch (e) { /* diagnostics must never break input */ }
+  }
 
   var AUTOEXEC_LINES = [
     'set rate 25000',
@@ -798,12 +824,24 @@
     function openCommunication(mode) {
       var M = window.Module;
       var opened = false;
+      var exportAvailable = !!(M && typeof M._ETJS_OpenCommunication === 'function');
+      communicationLog('open-attempt', {
+        mode: mode,
+        exportAvailable: exportAvailable,
+        inWorld: inWorld(),
+        uiOpen: engineUiOpen(),
+        intermission: intermissionOpen(),
+        pointerLocked: pointerLocked(),
+        activeElement: document.activeElement && document.activeElement.id || ''
+      });
       try {
-        if (M && typeof M._ETJS_OpenCommunication === 'function') {
+        if (exportAvailable) {
           opened = M._ETJS_OpenCommunication(mode) !== 0;
         }
-      } catch (e) { /* not ready */ }
-      if (!opened && (!M || typeof M._ETJS_OpenCommunication !== 'function')) {
+      } catch (e) {
+        communicationLog('engine-exception', { mode: mode, message: String(e) });
+      }
+      if (!opened && !exportAvailable) {
         var fallback = mode === 1 ? 'messagemode' :
           (mode === 2 ? 'messagemode2' : 'mp_quickmessage');
         opened = engineCmd(fallback);
@@ -816,6 +854,12 @@
         communicationInputGraceUntil = Date.now() + 750;
         canvas.focus();
       }
+      communicationLog('open-result', {
+        mode: mode,
+        opened: opened,
+        engineUiOpen: engineUiOpen(),
+        inputCaptured: inputCaptured()
+      });
       return opened;
     }
 
@@ -831,6 +875,32 @@
         return true;
       }
       return false;
+    }
+
+    function toggleInGameMenu(reason) {
+      communicationLog('escape-menu-attempt', {
+        reason: reason,
+        inWorld: inWorld(),
+        engineUiOpen: engineUiOpen(),
+        pointerLocked: pointerLocked()
+      });
+      var down = sendKey(CODE_TO_KEY.Escape, 1);
+      var up = sendKey(CODE_TO_KEY.Escape, 0);
+      communicationLog('escape-menu-result', {
+        reason: reason,
+        keyDownSent: down,
+        keyUpSent: up,
+        engineUiOpen: engineUiOpen()
+      });
+      return down;
+    }
+
+    function showInGameMenuWhenUncaptured(reason) {
+      if (!playReady || !inWorld() || engineUiOpen() || intermissionOpen() ||
+          communicationInput || typingMode) {
+        return false;
+      }
+      return toggleInGameMenu(reason);
     }
 
     function releaseInputHolds() {
@@ -1046,6 +1116,26 @@
 
     function onKeyDown(ev) {
       var initialCode = resolveCode(ev) || ev.code;
+      if (initialCode === 'KeyT' || initialCode === 'KeyY' || initialCode === 'KeyV' ||
+          initialCode === 'Escape') {
+        communicationLog('keydown', {
+          code: initialCode,
+          key: ev.key || '',
+          repeat: !!ev.repeat,
+          playReady: playReady,
+          captured: inputCaptured(),
+          pointerLocked: pointerLocked(),
+          inWorld: inWorld(),
+          uiOpen: engineUiOpen(),
+          intermission: intermissionOpen(),
+          typingMode: typingMode || '',
+          target: ev.target && (ev.target.id || ev.target.tagName) || '',
+          activeElement: document.activeElement && (document.activeElement.id || document.activeElement.tagName) || '',
+          ctrl: !!ev.ctrlKey,
+          alt: !!ev.altKey,
+          meta: !!ev.metaKey
+        });
+      }
       /* Browser/system chords always win. Bare Ctrl remains available as an
        * ET key, while Ctrl+Shift+R, Ctrl+R, Cmd+R, Ctrl+L, and devtools never
        * become game input or have their browser defaults cancelled. */
@@ -1169,7 +1259,7 @@
           return;
         }
         if (code === 'Escape') {
-          engineCmd('togglemenu');
+          toggleInGameMenu('escape-key');
         } else if (code === 'KeyT' || code === 'KeyY' || code === 'KeyV') {
           handleCommunicationKey(code);
         } else {
@@ -1391,9 +1481,13 @@
     window.addEventListener('wheel', onWheel, { capture: true, passive: false });
     window.addEventListener('contextmenu', onContextMenu, true);
     window.addEventListener('blur', function () {
+      var shouldShowMenu = !communicationInput && !typingMode;
       releaseInputHolds();
       communicationInput = false;
       window.__etjsInputCaptured = false;
+      if (shouldShowMenu) {
+        showInGameMenuWhenUncaptured('window-blur');
+      }
     });
     canvas.addEventListener('blur', function () {
       if (!pointerLocked()) {
@@ -1405,6 +1499,10 @@
       if (pointerLocked()) {
         ignoreLookUntil = Date.now() + 350;
         window.__etjsInputCaptured = true;
+      } else {
+        releaseInputHolds();
+        window.__etjsInputCaptured = false;
+        showInGameMenuWhenUncaptured('pointer-lock-lost');
       }
     });
     canvas.addEventListener('click', onCanvasClick, true);

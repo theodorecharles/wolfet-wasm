@@ -141,6 +141,44 @@ function sendFile(req, res, filePath) {
 function serveStatic(req, res) {
   const urlPath = (req.url || '/').split('?')[0];
 
+  if (urlPath === '/client-log') {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' });
+      res.end(JSON.stringify({ ok: false, error: 'POST required' }));
+      return;
+    }
+    const chunks = [];
+    let bytes = 0;
+    req.on('data', (chunk) => {
+      bytes += chunk.length;
+      if (bytes <= 8192) {
+        chunks.push(chunk);
+      }
+    });
+    req.on('end', () => {
+      try {
+        if (bytes > 8192) {
+          throw new Error('request is too large');
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+        const safe = {
+          sequence: Number(body.sequence) || 0,
+          event: String(body.event || '').slice(0, 40),
+          detail: Object.fromEntries(Object.entries(body)
+            .filter(([key]) => !['sequence', 'event', 'time'].includes(key))
+            .slice(0, 24))
+        };
+        log('client communication ' + JSON.stringify(safe));
+        res.writeHead(204, { 'cache-control': 'no-store' });
+        res.end();
+      } catch (err) {
+        res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+        res.end(JSON.stringify({ ok: false, error: err.message }));
+      }
+    });
+    return;
+  }
+
   if (urlPath === '/health') {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify(Object.assign({ ok: true, dedicatedPort: DED_PORT },

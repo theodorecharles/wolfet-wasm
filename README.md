@@ -31,7 +31,7 @@ Set `ETJS_MODE` to `vanilla` or `arcade`. Arcade is the default.
 | Multi-kill announcer | Off | On |
 | Aimbot and visibility assists | Unavailable | Available with the `rshook` console command |
 
-In Arcade mode, `rshook` toggles the optional targeting and visibility layer. It aims while firing only when an enemy is visible, highlights opponents, exposes hostile deployables such as landmines, and enables world-space objective indicators. Teammates are excluded. Vanilla mode blocks this feature even if a client attempts to enable its cvar directly.
+In Arcade mode, `rshook` toggles the optional targeting and visibility layer. It aims while firing only when an enemy is visible, highlights opponents, and exposes hostile deployables such as landmines. Teammates are excluded. Objectives remain on ET's compass and command map rather than appearing as floating distance markers. Vanilla mode blocks this feature even if a client attempts to enable its cvar directly.
 
 ## Run with Docker
 
