@@ -309,12 +309,27 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.doesNotMatch(fn, /#ifdef\s+__EMSCRIPTEN__[\s\S]*?return\s*;/);
   });
 
+  it('renders smoke screens and marker trails in the browser effect pass', () => {
+    const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
+    assert.doesNotMatch(view, /#ifndef __EMSCRIPTEN__\s*\/\/ particles\s*CG_AddParticles/);
+    assert.doesNotMatch(view, /#ifndef __EMSCRIPTEN__\s*CG_AddLocalEntities\(qtrue\)/);
+    assert.doesNotMatch(view, /#ifndef __EMSCRIPTEN__\s*CG_AddSmokeSprites\(\)/);
+    assert.doesNotMatch(view, /#ifndef __EMSCRIPTEN__[\s\S]{0,100}CG_AddTrails\(\)/);
+    assert.match(view, /CG_AddParticles\(\)/);
+    assert.match(view, /CG_AddLocalEntities\(qtrue\)/);
+    assert.match(view, /CG_AddSmokeSprites\(\)/);
+    assert.match(view, /CG_AddTrails\(\)/);
+  });
+
   it('ships the ETJS fun movement rules in shared prediction and server config', () => {
     const pmove = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'bg_pmove.c'), 'utf8');
     const bg = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'bg_public.h'), 'utf8');
     const dedicated = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
     assert.match(bg, /doubleJumped/);
     assert.match(pmove, /PM_CheckDoubleJump/);
+    assert.match(pmove, /PM_DOUBLE_JUMP_DELAY 120/);
+    assert.match(pmove, /PM_DOUBLE_JUMP_IMPULSE \(JUMP_VELOCITY \* 0\.8f\)/);
+    assert.match(pmove, /PM_DOUBLE_JUMP_MAX_VELOCITY \(JUMP_VELOCITY \* 1\.5f\)/);
     assert.match(pmove, /doubleJumped\s*=\s*qfalse/);
     assert.match(pmove, /sprintTime\s*=\s*SPRINTTIME;[\s\S]*?return;/);
     assert.match(dedicated, /'g_speed', '400'/);
@@ -350,9 +365,8 @@ describe('no overlay theater in the shipped draw path', () => {
     const emDisc = disc.split('#ifdef __EMSCRIPTEN__')[1].split('#else')[0];
     assert.match(emDisc, /UI_SET_ACTIVE_MENU/);
     assert.match(emDisc, /UIMENU_MAIN/);
-    assert.match(emDisc, /ETJS_DrawEngineSplash/);
+    assert.doesNotMatch(emDisc, /ETJS_DrawEngineSplash/);
     assert.doesNotMatch(emDisc, /S_StopAllSounds/);
-    assert.match(scrn, /ETJS splash skip/);
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'main.menu'), 'utf8'), /JOIN GAME/);
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_menus.txt'), 'utf8'), /etjs_official\.menu/);
     assert.match(fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_official.menu'), 'utf8'), /ui\/assets\/et_clouds/);
@@ -424,6 +438,23 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(page, /etjs_connect/);
     assert.match(page, /ETJS_ASSET_VER/);
     assert.match(page, /etjs\.js\?v=/);
+    assert.match(page, /wasDead\s*&&\s*!dead/);
+    assert.match(page, /set etjs_resetlook 1/);
+    assert.match(page, /engineCmd\('togglemenu'\)/);
+    assert.match(page, /typingMode = 'chat'/);
+    assert.match(page, /engineCmd\(TAP_KEYS\[code\]\)/);
+    assert.match(page, /con_fontName', 'courbd'/);
+    assert.match(page, /Enter: 13/);
+    assert.match(page, /sendChar\(8\)/);
+    const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
+    assert.match(view, /etjsDeadViewAngles/);
+    assert.match(view, /etjsJustRespawned/);
+    assert.match(view, /Orbit the camera without changing the entity angles/);
+    const hud = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw_hud.c'), 'utf8');
+    assert.match(hud, /helmetH \*= cgs\.screenXScale \/ cgs\.screenYScale/);
+    const limboHead = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_limbopanel.c'), 'utf8');
+    assert.match(limboHead, /drawH = drawW \* 0\.5f/);
+    assert.match(limboHead, /hudAxisHelmet : cgs\.media\.hudAlliedHelmet/);
     const uiMain = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_main.c'), 'utf8');
     assert.match(uiMain, /UI_LoadMenus\("ui\/etjs_menus.txt"/);
     assert.doesNotMatch(uiMain, /ETJS skip parsed menus/);

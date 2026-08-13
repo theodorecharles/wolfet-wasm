@@ -1,6 +1,6 @@
 /**
  * Browser ET client bootstrap. Runs only in a window (no Node require).
- * name → download (silent) → splash+music → menu+music → Join Game →
+ * name → download (silent) → official menu+music → Join Game →
  * loading+music → game.
  */
 (function () {
@@ -93,7 +93,7 @@
     'set s_muteWhenUnfocused 0',
     'set s_muteWhenMinimized 0',
     'set com_ansiColor 0',
-    'set con_fontName ariblk',
+    'set con_fontName courbd',
     'set com_recommendedSet 1',
     'set cg_autoAction 0',
     'unbindall',
@@ -576,7 +576,7 @@
       '+set', 'com_recommendedSet', '1',
       '+set', 'com_introPlayed', '0',
       '+set', 'com_ansiColor', '0',
-      '+set', 'con_fontName', 'ariblk'
+      '+set', 'con_fontName', 'courbd'
     ]);
   }
 
@@ -726,7 +726,7 @@
       KeyY: 121, KeyU: 117, KeyV: 118, KeyZ: 122, KeyM: 109,
       Digit0: 48, Digit1: 49, Digit2: 50, Digit3: 51, Digit4: 52,
       Digit5: 53, Digit6: 54, Digit7: 55, Digit8: 56, Digit9: 57,
-      Space: 32, Tab: 9, Escape: 27, Backspace: 127,
+      Space: 32, Tab: 9, Enter: 13, Escape: 27, Backspace: 127,
       ShiftLeft: 138, ShiftRight: 138,
       ControlLeft: 137, ControlRight: 137,
       AltLeft: 136, AltRight: 136,
@@ -746,6 +746,8 @@
     var moveU = 0;
     var ignoreLookUntil = 0;
     var wasLimbo = false;
+    var wasDead = false;
+    var containedUiState = -1;
 
     function sendKey(key, down) {
       var M = window.Module;
@@ -963,11 +965,15 @@
           document.exitPointerLock();
         }
         if (canvas && canvas.style) {
-          canvas.style.cursor = 'default';
+          /* ET draws its own cursor. Keep the browser cursor available
+           * everywhere else on the page, but never double it over canvas. */
+          canvas.style.cursor = 'none';
         }
         if (document.body && document.body.style) {
           document.body.style.cursor = 'default';
         }
+      } else if (canvas && canvas.style) {
+        canvas.style.cursor = pointerLocked() ? 'none' : 'default';
       }
     }
 
@@ -1048,14 +1054,47 @@
           return;
         }
         if (code === 'Backspace' || code === 'Enter' ||
-            code === 'NumpadEnter' || code === 'Tab') {
+            code === 'NumpadEnter' || code === 'Tab' || code === 'Escape') {
           ev.preventDefault();
+          ev.stopImmediatePropagation();
+          /* Cancelling the browser event also hides it from SDL, so deliver
+           * these console/chat editing controls explicitly. */
+          var editingKey = CODE_TO_KEY[code];
+          sendKey(editingKey, 1);
+          if (code === 'Backspace') {
+            /* Match sdl_input.c: ET sends both K_BACKSPACE and ASCII BS.
+             * Console/chat fields depend on the character event in some
+             * catcher states. */
+            sendChar(8);
+          }
+          sendKey(editingKey, 0);
         }
         if (code === 'Escape') {
           typingMode = null;
           releaseInputHolds();
         } else if (typingMode === 'chat' && (code === 'Enter' || code === 'NumpadEnter')) {
           typingMode = null;
+        }
+        return;
+      }
+      /* These default gameplay actions open a catcher/menu immediately. Send
+       * the command directly so the ensuing pointer-lock release cannot eat
+       * the corresponding key-up event. Once open, Escape and voice-menu
+       * navigation continue through normal ET key events above. */
+      if (code === 'Escape' || code === 'KeyT' || code === 'KeyY' ||
+          code === 'KeyU' || code === 'KeyV') {
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
+        if (ev.repeat) {
+          return;
+        }
+        if (code === 'Escape') {
+          engineCmd('togglemenu');
+        } else {
+          engineCmd(TAP_KEYS[code]);
+          if (code === 'KeyT' || code === 'KeyY' || code === 'KeyU') {
+            typingMode = 'chat';
+          }
         }
         return;
       }
@@ -1133,7 +1172,7 @@
       var rect = canvas.getBoundingClientRect();
       var mapped = window.ETJSInput
         ? window.ETJSInput.letterboxTo640(ev.clientX, ev.clientY, rect,
-          limboOpen() || intermissionOpen())
+          uiOpen())
         : { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
       try { M._ETJS_SetCursor(mapped.x, mapped.y); } catch (e) { /* not ready */ }
     }
@@ -1145,6 +1184,11 @@
       canvas.focus();
       window.__etjsInputCaptured = true;
       syncCursor();
+      var contained = uiOpen() ? 1 : 0;
+      if (contained !== containedUiState) {
+        containedUiState = contained;
+        engineCmd('set etjs_containui ' + contained);
+      }
       pushCursor(ev);
       var mkey = MOUSE_TO_KEY[ev.button] || (K_MOUSE1 + ev.button);
       /* QuakeJS always delivers mouse down AND up. Menu/limbo must too. */
@@ -1284,6 +1328,15 @@
     canvas.addEventListener('mouseout', onMouseOut, true);
     function pumpMove() {
       sendMove();
+      var dead = cvarInt('etjs_dead') !== 0;
+      if (wasDead && !dead) {
+        /* The server supplies a fresh spawn view, while the browser keeps an
+         * absolute pitch accumulator. Rebase it before the next usercmd so a
+         * downward death view cannot clamp the new camera at one pole. */
+        engineCmd('set etjs_resetlook 1');
+        ignoreLookUntil = Date.now() + 100;
+      }
+      wasDead = dead;
       /* Intermission is entered by a snapshot rather than a DOM event. Polling
        * here releases pointer lock immediately even if the mouse is stationary. */
       syncCursor();

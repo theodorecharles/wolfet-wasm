@@ -16,15 +16,16 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.ok(Math.abs(mid.y - 240) < 1, 'y=' + mid.y);
   });
 
-  it('maps cgame screens through ETLegacy widescreen virtual coordinates', () => {
+  it('maps contained UI through an aspect-preserving centered 640x480 viewport', () => {
     const rect = { left: 0, top: 0, width: 1280, height: 800 };
     const mid = input.letterboxTo640(640, 400, rect, true);
-    assert.ok(Math.abs(mid.x - 384) < 1, 'x=' + mid.x);
+    assert.ok(Math.abs(mid.x - 320) < 1, 'x=' + mid.x);
     assert.ok(Math.abs(mid.y - 240) < 1, 'y=' + mid.y);
-    assert.ok(Math.abs(mid.xoff - 64) < 1, 'xoff=' + mid.xoff);
+    assert.ok(Math.abs(mid.xoff - (1280 - 640 * (800 / 480)) / 2) < 1,
+      'xoff=' + mid.xoff);
     const pagePoint = input.from640(495, 463, 1280, 800, true);
     const roundTrip = input.letterboxTo640(pagePoint.x, pagePoint.y, rect, true);
-    assert.ok(Math.abs(roundTrip.x - (495 + 64)) < 1, 'roundTrip.x=' + roundTrip.x);
+    assert.ok(Math.abs(roundTrip.x - 495) < 1, 'roundTrip.x=' + roundTrip.x);
     assert.ok(Math.abs(roundTrip.y - 463) < 1, 'roundTrip.y=' + roundTrip.y);
   });
 

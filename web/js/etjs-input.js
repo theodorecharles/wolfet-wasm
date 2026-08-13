@@ -14,34 +14,50 @@
     root.ETJSInput = api;
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
-  function letterboxTo640(clientX, clientY, rect, widescreenGame) {
+  function letterboxTo640(clientX, clientY, rect, containedUi) {
     var width = rect && rect.width ? rect.width : 0;
     var height = rect && rect.height ? rect.height : 0;
     var left = rect && typeof rect.left === 'number' ? rect.left : 0;
     var top = rect && typeof rect.top === 'number' ? rect.top : 0;
-    /* UI menus stretch 640×480 to the backbuffer. Cgame/HUD screens use
-     * ETLegacy's aspect-correct virtual width (768 at 1280×800), with the
-     * original 640-wide panel centered inside it. */
-    var aspect = height > 0 ? width / height : (4 / 3);
-    var virtualWidth = widescreenGame && aspect > (4 / 3)
-      ? 480 * aspect : 640;
-    var sx = width > 0 ? virtualWidth / width : 1;
+    /* Full-screen ET panels are authored at 640×480. In the browser they
+     * use object-fit: contain semantics: whichever axis reaches the window
+     * edge first determines a single scale and the other axis is centered.
+     * Gameplay keeps the full backbuffer and its aspect-aware HUD mapping. */
+    if (containedUi && width > 0 && height > 0) {
+      var scale = Math.min(width / 640, height / 480);
+      var xoff = (width - 640 * scale) * 0.5;
+      var yoff = (height - 480 * scale) * 0.5;
+      return {
+        x: (clientX - left - xoff) / scale,
+        y: (clientY - top - yoff) / scale,
+        scale: scale,
+        xoff: xoff,
+        yoff: yoff
+      };
+    }
+    var sx = width > 0 ? 640 / width : 1;
     var sy = height > 0 ? 480 / height : 1;
     return {
       x: (clientX - left) * sx,
       y: (clientY - top) * sy,
       scale: height > 0 ? height / 480 : 1,
-      xoff: (virtualWidth - 640) * 0.5
+      xoff: 0,
+      yoff: 0
     };
   }
 
-  function from640(x640, y640, width, height, widescreenGame) {
-    var aspect = height > 0 ? width / height : (4 / 3);
-    var virtualWidth = widescreenGame && aspect > (4 / 3)
-      ? 480 * aspect : 640;
-    var xoff = (virtualWidth - 640) * 0.5;
+  function from640(x640, y640, width, height, containedUi) {
+    if (containedUi && width > 0 && height > 0) {
+      var scale = Math.min(width / 640, height / 480);
+      var xoff = (width - 640 * scale) * 0.5;
+      var yoff = (height - 480 * scale) * 0.5;
+      return {
+        x: xoff + x640 * scale,
+        y: yoff + y640 * scale
+      };
+    }
     return {
-      x: (x640 + xoff) * width / virtualWidth,
+      x: x640 * width / 640,
       y: y640 * height / 480
     };
   }

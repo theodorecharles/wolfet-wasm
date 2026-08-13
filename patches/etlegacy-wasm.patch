@@ -508,42 +508,51 @@ index ca44a94d1..89fb8b5de 100644
  	// only allow configstrings command when cheats enabled
  	if (!cgs.sv_cheats)
 diff --git a/src/cgame/cg_cvars.c b/src/cgame/cg_cvars.c
-index 79f0172a8..888762776 100644
+index 79f0172a8..23701a9df 100644
 --- a/src/cgame/cg_cvars.c
 +++ b/src/cgame/cg_cvars.c
-@@ -67,6 +67,7 @@ vmCvar_t cg_bloodPuff;
+@@ -67,6 +67,10 @@ vmCvar_t cg_bloodPuff;
  vmCvar_t cg_brassTime;
  vmCvar_t cg_letterbox;
  vmCvar_t cg_drawGun;
 +vmCvar_t cg_rshook;
++#ifdef __EMSCRIPTEN__
++vmCvar_t cg_etjsContainUi;
++#endif
  vmCvar_t cg_weapAnims;
  vmCvar_t cg_weapBankCollisions;
  vmCvar_t cg_weapSwitchNoAmmoSounds;
-@@ -341,6 +342,7 @@ static cvarTable_t cvarTable[] =
+@@ -341,6 +345,10 @@ static cvarTable_t cvarTable[] =
  {
  	{ &cg_autoswitch,                         "cg_autoswitch",                         "2",           CVAR_ARCHIVE,                 0 },
  	{ &cg_drawGun,                            "cg_drawGun",                            "1",           CVAR_ARCHIVE,                 0 },
 +	{ &cg_rshook,                             "cl_rshook",                             "0",           0,                            0 },
++#ifdef __EMSCRIPTEN__
++	{ &cg_etjsContainUi,                      "etjs_containui",                        "1",           0,                            0 },
++#endif
  	{ &cg_weapAnims,                          "cg_weapAnims",                          "15",          CVAR_ARCHIVE,                 0 },
  	{ &cg_weapBankCollisions,                 "cg_weapBankCollisions",                 "0",           CVAR_ARCHIVE,                 0 },
  	{ &cg_weapSwitchNoAmmoSounds,             "cg_weapSwitchNoAmmoSounds",             "1",           CVAR_ARCHIVE,                 0 },
 diff --git a/src/cgame/cg_cvars.h b/src/cgame/cg_cvars.h
-index fc37ed49e..8bfcb4568 100644
+index fc37ed49e..9fa52bd71 100644
 --- a/src/cgame/cg_cvars.h
 +++ b/src/cgame/cg_cvars.h
-@@ -72,6 +72,7 @@ extern vmCvar_t cg_gun_x;
+@@ -72,6 +72,10 @@ extern vmCvar_t cg_gun_x;
  extern vmCvar_t cg_gun_y;
  extern vmCvar_t cg_gun_z;
  extern vmCvar_t cg_drawGun;
 +extern vmCvar_t cg_rshook;
++#ifdef __EMSCRIPTEN__
++extern vmCvar_t cg_etjsContainUi;
++#endif
  extern vmCvar_t cg_weapAnims;
  extern vmCvar_t cg_weapBankCollisions;
  extern vmCvar_t cg_weapSwitchNoAmmoSounds;
 diff --git a/src/cgame/cg_draw.c b/src/cgame/cg_draw.c
-index a238bea96..97da1e6ed 100644
+index a238bea96..377d15479 100644
 --- a/src/cgame/cg_draw.c
 +++ b/src/cgame/cg_draw.c
-@@ -4801,14 +4801,18 @@ void CG_DrawActive()
+@@ -4801,14 +4801,21 @@ void CG_DrawActive()
  	}
  
  	// clear around the rendered view if sized down
@@ -555,15 +564,19 @@ index a238bea96..97da1e6ed 100644
  
 +#ifndef __EMSCRIPTEN__
  	CG_ShakeCamera();
- 	CG_PB_RenderPolyBuffers();
+-	CG_PB_RenderPolyBuffers();
  	CG_DrawMiscGamemodels();
  	CG_DrawClientCoronas();
 +#endif
++	/* Flame sprites are batched in cgame polybuffers. The browser used to
++	 * suppress the entire batch with other expensive native-only effects,
++	 * which made a working flamethrower completely invisible. */
++	CG_PB_RenderPolyBuffers();
  
  	if (!(cg.limboEndCinematicTime > cg.time && cg.showGameView))
  	{
 diff --git a/src/cgame/cg_draw_hud.c b/src/cgame/cg_draw_hud.c
-index 259f96f5c..4501ca744 100644
+index 259f96f5c..68c1ade3e 100644
 --- a/src/cgame/cg_draw_hud.c
 +++ b/src/cgame/cg_draw_hud.c
 @@ -2184,6 +2184,12 @@ void CG_DrawDemoMessage(hudComponent_t *comp)
@@ -579,7 +592,36 @@ index 259f96f5c..4501ca744 100644
  	if (!cl_demorecording.integer && !cl_waverecording.integer && !cg.demoPlayback && !cg.generatingNoiseHud)
  	{
  		return;
-@@ -4451,6 +4457,32 @@ void CG_ComputeComponentPositions(hudStucture_t *hud)
+@@ -2321,6 +2327,9 @@ int CG_DrawField(int x, int y, int width, int value, int charWidth, int charHeig
+  */
+ void CG_DrawLivesLeft(hudComponent_t *comp)
+ {
++	float helmetY = comp->location.y;
++	float helmetH = comp->location.h;
++
+ 	if (cg.snap->ps.persistant[PERS_TEAM] == TEAM_SPECTATOR)
+ 	{
+ 		return;
+@@ -2336,7 +2345,17 @@ void CG_DrawLivesLeft(hudComponent_t *comp)
+ 		return;
+ 	}
+ 
+-	CG_DrawPic(comp->location.x, comp->location.y, comp->location.w, comp->location.h, cg.snap->ps.persistant[PERS_TEAM] == TEAM_ALLIES ? cgs.media.hudAlliedHelmet : cgs.media.hudAxisHelmet);
++#ifdef __EMSCRIPTEN__
++	/* ETLegacy's widescreen correction preserves HUD image aspect on wide
++	 * canvases, but not on canvases narrower than 4:3. Keep the 64x32 lives
++	 * texture at its authored 2:1 aspect and center it in the configured slot. */
++	if (cgs.screenYScale > cgs.screenXScale)
++	{
++		helmetH *= cgs.screenXScale / cgs.screenYScale;
++		helmetY += (comp->location.h - helmetH) * 0.5f;
++	}
++#endif
++	CG_DrawPic(comp->location.x, helmetY, comp->location.w, helmetH, cg.snap->ps.persistant[PERS_TEAM] == TEAM_ALLIES ? cgs.media.hudAlliedHelmet : cgs.media.hudAxisHelmet);
+ 
+ 	CG_DrawField(comp->location.w - 4, comp->location.y, 3, cg.snap->ps.persistant[PERS_RESPAWNS_LEFT], 14, 20, qtrue, qtrue);
+ }
+@@ -4451,6 +4470,32 @@ void CG_ComputeComponentPositions(hudStucture_t *hud)
  	hud->computed = qtrue;
  }
  
@@ -612,6 +654,35 @@ index 259f96f5c..4501ca744 100644
  static ID_INLINE qboolean CG_Hud_HasParent(hudComponent_t *comp, hudComponent_t *has)
  {
  	hudComponent_t *tmp = comp;
+diff --git a/src/cgame/cg_drawtools.c b/src/cgame/cg_drawtools.c
+index df6f257de..cbfcbe65c 100644
+--- a/src/cgame/cg_drawtools.c
++++ b/src/cgame/cg_drawtools.c
+@@ -44,6 +44,24 @@
+  */
+ void CG_AdjustFrom640(float *x, float *y, float *w, float *h)
+ {
++#ifdef __EMSCRIPTEN__
++	if (cg_etjsContainUi.integer != 0)
++	{
++		float scale = MIN((float)cgs.glconfig.vidWidth / 640.0f,
++		                  (float)cgs.glconfig.vidHeight / 480.0f);
++		float xbias = (cgs.glconfig.vidWidth - 640.0f * scale) * 0.5f;
++		float ybias = (cgs.glconfig.vidHeight - 480.0f * scale) * 0.5f;
++
++		/* Loading/limbo/debrief panels were shifted into ETLegacy's extended
++		 * widescreen virtual space during setup. Undo that permanent shift
++		 * before applying the browser's contained 640x480 transform. */
++		*x = (*x - cgs.wideXoffset) * scale + xbias;
++		*y = *y * scale + ybias;
++		*w *= scale;
++		*h *= scale;
++		return;
++	}
++#endif
+ 	// scale for screen sizes
+ 	*x *= cgs.screenXScale;
+ 	*y *= cgs.screenYScale;
 diff --git a/src/cgame/cg_ents.c b/src/cgame/cg_ents.c
 index a9639bb6c..8075c6879 100644
 --- a/src/cgame/cg_ents.c
@@ -835,7 +906,7 @@ index 10e7f55f8..c2f4f5ea0 100644
  	if (attacker != target)
  	{
 diff --git a/src/cgame/cg_limbopanel.c b/src/cgame/cg_limbopanel.c
-index 65af36c2c..ff849a45c 100644
+index 65af36c2c..e89ccb510 100644
 --- a/src/cgame/cg_limbopanel.c
 +++ b/src/cgame/cg_limbopanel.c
 @@ -1244,6 +1244,9 @@ qboolean CG_LimboPanel_CancelButton_KeyDown(panel_button_t *button, int key)
@@ -848,12 +919,15 @@ index 65af36c2c..ff849a45c 100644
  		//SOUND_CANCEL;
  		SOUND_SELECT;
  
-@@ -2086,6 +2089,25 @@ void CG_DrawPlayerHead(rectDef_t *rect, bg_character_t *character, bg_character_
+@@ -2086,6 +2089,47 @@ void CG_DrawPlayerHead(rectDef_t *rect, bg_character_t *character, bg_character_
  	refdef_t    refdef;
  	refEntity_t head, hat, mrank;
  
 +#ifdef __EMSCRIPTEN__
 +	/* Nested 3D hud-head scenes used the full viewport and wiped the world. */
++	float px, py, pw, ph, drawW, drawH;
++	qhandle_t helmet;
++
 +	(void)character;
 +	(void)headcharacter;
 +	(void)yaw;
@@ -864,9 +938,28 @@ index 65af36c2c..ff849a45c 100644
 +	(void)rank;
 +	(void)spectator;
 +	(void)team;
-+	if (rect && cgs.media.hudAlliedHelmet)
++	helmet = team == TEAM_AXIS ? cgs.media.hudAxisHelmet : cgs.media.hudAlliedHelmet;
++	if (rect && helmet)
 +	{
-+		CG_DrawPic(rect->x, rect->y, rect->w, rect->h, cgs.media.hudAlliedHelmet);
++		px = rect->x;
++		py = rect->y;
++		pw = rect->w;
++		ph = rect->h;
++		CG_AdjustFrom640(&px, &py, &pw, &ph);
++
++		/* The temporary browser portrait is the authored 64x32 helmet image,
++		 * not the native animated 3D head. Contain it at 2:1 in physical pixels
++		 * so neither tall nor wide canvases can stretch it. */
++		drawW = pw;
++		drawH = drawW * 0.5f;
++		if (drawH > ph)
++		{
++			drawH = ph;
++			drawW = drawH * 2.f;
++		}
++		trap_R_DrawStretchPic(px + (pw - drawW) * 0.5f,
++		                      py + (ph - drawH) * 0.5f,
++		                      drawW, drawH, 0, 0, 1, 1, helmet);
 +	}
 +	return;
 +#endif
@@ -874,7 +967,7 @@ index 65af36c2c..ff849a45c 100644
  	if (!character)
  	{
  		return;
-@@ -3393,6 +3415,28 @@ void CG_LimboPanel_Setup(void)
+@@ -3393,6 +3437,31 @@ void CG_LimboPanel_Setup(void)
  	CG_LimboPanel_RequestWeaponStats();
  }
  
@@ -892,7 +985,10 @@ index 65af36c2c..ff849a45c 100644
 +	trap_Cvar_VariableStringBuffer("etjs_cy", cyBuf, sizeof(cyBuf));
 +	if (cxBuf[0] && cyBuf[0])
 +	{
-+		cgs.cursorX  = Q_atof(cxBuf);
++		/* Panel button rectangles already carry ETLegacy's widescreen offset;
++		 * keep hit testing in that space while the renderer removes the offset
++		 * for the contained browser presentation. */
++		cgs.cursorX  = Q_atof(cxBuf) + cgs.wideXoffset;
 +		cgs.cursorY  = Q_atof(cyBuf);
 +		cgDC.cursorx = cgs.cursorX;
 +		cgDC.cursory = cgs.cursorY;
@@ -903,7 +999,7 @@ index 65af36c2c..ff849a45c 100644
  /**
   * @brief CG_LimboPanel_Init
   */
-@@ -3410,6 +3454,9 @@ qboolean CG_LimboPanel_Draw(void)
+@@ -3410,6 +3479,9 @@ qboolean CG_LimboPanel_Draw(void)
  {
  	static panel_button_t *lastHighlight;
  	panel_button_t        *hilight;
@@ -913,7 +1009,7 @@ index 65af36c2c..ff849a45c 100644
  
  	hilight = BG_PanelButtonsGetHighlightButton(limboPanelButtons);
  	if (hilight && hilight != lastHighlight)
-@@ -3463,6 +3510,14 @@ void CG_LimboPanel_KeyHandling(int key, qboolean down)
+@@ -3463,6 +3535,14 @@ void CG_LimboPanel_KeyHandling(int key, qboolean down)
  {
  	int b1, b2;
  
@@ -1274,10 +1370,24 @@ index fa102ceb7..02dd1ee7b 100644
  
  /**
 diff --git a/src/cgame/cg_view.c b/src/cgame/cg_view.c
-index 87cd79f2e..d13853fc0 100644
+index 87cd79f2e..16764c4b6 100644
 --- a/src/cgame/cg_view.c
 +++ b/src/cgame/cg_view.c
-@@ -331,6 +331,10 @@ void CG_OffsetThirdPersonView(void)
+@@ -35,6 +35,13 @@
+ 
+ #include "cg_local.h"
+ 
++#ifdef __EMSCRIPTEN__
++/* Dead-camera input must remain independent of the predicted player state.
++ * Otherwise orbiting the wounded player also rotates the rendered body. */
++static vec3_t   etjsDeadViewAngles;
++static qboolean etjsDeadViewValid;
++#endif
++
+ /*
+ =============================================================================
+ 
+@@ -331,15 +338,29 @@ void CG_OffsetThirdPersonView(void)
  	vec3_t        focusPoint;
  	float         focusDist;
  	float         forwardScale, sideScale;
@@ -1288,7 +1398,16 @@ index 87cd79f2e..d13853fc0 100644
  
  	cg.refdef_current->vieworg[2] += cg.predictedPlayerState.viewheight;
  
-@@ -340,6 +344,9 @@ void CG_OffsetThirdPersonView(void)
+ 	VectorCopy(cg.refdefViewAngles, focusAngles);
++#ifdef __EMSCRIPTEN__
++	if (etjsDeadFreeLook && etjsDeadViewValid)
++	{
++		VectorCopy(etjsDeadViewAngles, focusAngles);
++		VectorCopy(etjsDeadViewAngles, cg.refdefViewAngles);
++	}
++#endif
+ 
+ 	// If dead, look at medic or allow freelook if none in range
  	if (cg.predictedPlayerState.stats[STAT_HEALTH] <= 0
  	    && !(cg.predictedPlayerState.pm_flags & PMF_LIMBO))
  	{
@@ -1298,7 +1417,7 @@ index 87cd79f2e..d13853fc0 100644
  		// Force yaw to 0 if we're tracking a medic
  		if (cg.snap->ps.viewlocked != VIEWLOCK_MEDIC)
  		{
-@@ -347,9 +354,14 @@ void CG_OffsetThirdPersonView(void)
+@@ -347,9 +368,14 @@ void CG_OffsetThirdPersonView(void)
  			focusAngles[YAW]         = SHORT2ANGLE(cg.predictedPlayerState.stats[STAT_DEAD_YAW]);
  			cg.refdefViewAngles[YAW] = SHORT2ANGLE(cg.predictedPlayerState.stats[STAT_DEAD_YAW]);
  		}
@@ -1314,7 +1433,7 @@ index 87cd79f2e..d13853fc0 100644
  	{
  		focusAngles[PITCH] = 45;        // don't go too far overhead
  	}
-@@ -367,7 +379,12 @@ void CG_OffsetThirdPersonView(void)
+@@ -367,7 +393,12 @@ void CG_OffsetThirdPersonView(void)
  	VectorCopy(cg.refdef_current->vieworg, view);
  
  	view[2]                    += 8;
@@ -1328,7 +1447,7 @@ index 87cd79f2e..d13853fc0 100644
  
  	AngleVectors(cg.refdefViewAngles, forward, right, up);
  
-@@ -1227,8 +1244,16 @@ static int CG_CalcFov(void)
+@@ -1227,8 +1258,16 @@ static int CG_CalcFov(void)
  	// allow freelook when dead until we tap out into limbo
  	if (cg.snap->ps.pm_type == PM_FREEZE || (cg.snap->ps.pm_type == PM_DEAD && (cg.snap->ps.pm_flags & PMF_LIMBO)) || (cg.snap->ps.pm_flags & PMF_TIME_LOCKPLAYER))
  	{
@@ -1345,7 +1464,7 @@ index 87cd79f2e..d13853fc0 100644
  	}
  	else if (!cg.zoomedBinoc)
  	{
-@@ -2487,6 +2512,55 @@ static void CG_PlayAnnouncement()
+@@ -2487,6 +2526,55 @@ static void CG_PlayAnnouncement()
  	CG_PlayAnnouncementTickTock();
  }
  
@@ -1401,7 +1520,7 @@ index 87cd79f2e..d13853fc0 100644
  /**
   * @brief Generates and draws a game scene and status information at the given time.
   * @param[in] serverTime
-@@ -2498,6 +2572,33 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2498,6 +2586,33 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  	int dbgTime = trap_Milliseconds(), elapsed;
  	int dbgCnt = 0;
  #endif
@@ -1435,7 +1554,7 @@ index 87cd79f2e..d13853fc0 100644
  
  	cg.oldTime                  = cg.time;
  	cg.time                     = serverTime;
-@@ -2534,7 +2635,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2534,7 +2649,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  	// pacifier, don't even try to read snapshots
  	if (cg.infoScreenText[0] != 0)
  	{
@@ -1447,7 +1566,7 @@ index 87cd79f2e..d13853fc0 100644
  		return;
  	}
  
-@@ -2553,6 +2658,15 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2553,6 +2672,15 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  	// set up cg.snap and possibly cg.nextSnap
  	CG_ProcessSnapshots();
  
@@ -1463,7 +1582,7 @@ index 87cd79f2e..d13853fc0 100644
  	DEBUGTIME
  
  	// demo rewind happened, fix time based effects
-@@ -2570,7 +2684,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2570,7 +2698,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  	// we can draw is the information screen
  	if (!cg.snap || (cg.snap->snapFlags & SNAPFLAG_NOT_ACTIVE))
  	{
@@ -1480,7 +1599,7 @@ index 87cd79f2e..d13853fc0 100644
  		return;
  	}
  
-@@ -2621,6 +2744,140 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2621,6 +2758,169 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  
  	// update cg.predictedPlayerState
  	CG_PredictPlayerState();
@@ -1488,6 +1607,18 @@ index 87cd79f2e..d13853fc0 100644
 +	{
 +		int       cmdNum = trap_GetCurrentCmdNumber();
 +		usercmd_t ucmd;
++		static qboolean etjsWasDead;
++		qboolean etjsDead = cg.predictedPlayerState.stats[STAT_HEALTH] <= 0
++		                    && !(cg.predictedPlayerState.pm_flags & PMF_LIMBO);
++		qboolean etjsJustRespawned = etjsWasDead && !etjsDead;
++
++		if (etjsJustRespawned)
++		{
++			/* CL_FinishMove consumes this before encoding the next usercmd. */
++			trap_Cvar_Set("etjs_resetlook", "1");
++			etjsDeadViewValid = qfalse;
++		}
++		etjsWasDead = etjsDead;
 +
 +		if (trap_GetUserCmd(cmdNum, &ucmd)
 +		    && !(cg.snap->ps.pm_flags & PMF_FOLLOW)
@@ -1498,10 +1629,27 @@ index 87cd79f2e..d13853fc0 100644
 +			/* usercmd angles are relative to the server-provided delta_angles.
 +			 * Rendering the raw command made the camera disagree with pmove: the
 +			 * keys stayed orthogonal, but every direction was rotated on screen. */
-+			cg.predictedPlayerState.viewangles[YAW] = SHORT2ANGLE(
++			float commandYaw = SHORT2ANGLE(
 +				ucmd.angles[YAW] + cg.predictedPlayerState.delta_angles[YAW]);
-+			cg.predictedPlayerState.viewangles[PITCH] = SHORT2ANGLE(
-+				ucmd.angles[PITCH] + cg.predictedPlayerState.delta_angles[PITCH]);
++			float commandPitch = AngleNormalize180(SHORT2ANGLE(
++				ucmd.angles[PITCH] + cg.predictedPlayerState.delta_angles[PITCH]));
++
++			if (etjsDead)
++			{
++				/* Orbit the camera without changing the entity angles used to draw
++				 * the body or sent back through client prediction. */
++				VectorCopy(cg.predictedPlayerState.viewangles, etjsDeadViewAngles);
++				etjsDeadViewAngles[YAW]   = commandYaw;
++				etjsDeadViewAngles[PITCH] = commandPitch;
++				etjsDeadViewValid         = qtrue;
++			}
++			else
++			{
++				cg.predictedPlayerState.viewangles[YAW]   = commandYaw;
++				cg.predictedPlayerState.viewangles[PITCH] =
++					etjsJustRespawned ? 0.f : commandPitch;
++				etjsDeadViewValid = qfalse;
++			}
 +			trap_Cvar_Set("etjs_viewyaw", va("%d", (int)cg.predictedPlayerState.viewangles[YAW]));
 +			if (angLog < 12)
 +			{
@@ -1621,7 +1769,7 @@ index 87cd79f2e..d13853fc0 100644
  
  	DEBUGTIME
  
-@@ -2660,6 +2917,20 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2660,6 +2960,20 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  		// build cg.refdef
  		inwater = CG_CalcViewValues();
  		CG_SetupFrustum();
@@ -1642,7 +1790,7 @@ index 87cd79f2e..d13853fc0 100644
  
  		DEBUGTIME
  
-@@ -2685,7 +2956,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2685,7 +2999,11 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  #endif
  
  		// draw the skyboxportal
@@ -1654,7 +1802,7 @@ index 87cd79f2e..d13853fc0 100644
  
  		DEBUGTIME
  
-@@ -2707,8 +2982,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2707,8 +3025,16 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  		// build the render lists
  		if (!cg.hyperspace)
  		{
@@ -1671,38 +1819,17 @@ index 87cd79f2e..d13853fc0 100644
  
  			DEBUGTIME
  
-@@ -2730,8 +3013,10 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2749,7 +3075,9 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  
  			DEBUGTIME
  
-+#ifndef __EMSCRIPTEN__
- 			// particles
- 			CG_AddParticles();
-+#endif
- 
- 			if (cg_drawSpawnpoints.integer
- 			    && (cgs.gamestate == GS_WARMUP || cgs.gamestate == GS_WARMUP_COUNTDOWN || cgs.sv_cheats))
-@@ -2741,15 +3026,19 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
- 
- 			DEBUGTIME
- 
-+#ifndef __EMSCRIPTEN__
- 			CG_AddLocalEntities(qtrue);
-+#endif
- 
- 			DEBUGTIME
- 
-+#ifndef __EMSCRIPTEN__
- 			CG_AddSmokeSprites();
- 
- 			DEBUGTIME
- 
++		#ifndef __EMSCRIPTEN__
  			CG_AddAtmosphericEffects();
-+#endif
++		#endif
  		}
  
  		if (!cg.showGameView && !cgs.dbShowing)
-@@ -2757,8 +3046,17 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2757,8 +3085,17 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  			// stationary heavy weapon (e.g. misc_mg42, misc_aagun)
  			if (!cg.snap->ps.persistant[PERS_HWEAPON_USE])
  			{
@@ -1720,7 +1847,7 @@ index 87cd79f2e..d13853fc0 100644
  			else
  			{
  				if (cg.time - cg.predictedPlayerEntity.overheatTime < 3000)
-@@ -2779,6 +3077,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2779,6 +3116,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  					}
  				}
  			}
@@ -1728,23 +1855,7 @@ index 87cd79f2e..d13853fc0 100644
  		}
  
  		// play buffered voice chats
-@@ -2786,6 +3085,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
- 
- 		DEBUGTIME
- 		// trails
-+#ifndef __EMSCRIPTEN__
- 		if (!cg.hyperspace)
- 		{
- 			CG_AddFlameChunks();
-@@ -2793,6 +3093,7 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
- 			// this must come last, so the trails dropped this frame get drawn
- 			CG_AddTrails();
- 		}
-+#endif
- 
- 		DEBUGTIME
- 
-@@ -2819,7 +3120,21 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
+@@ -2819,7 +3157,21 @@ void CG_DrawActiveFrame(int serverTime, qboolean demoPlayback)
  		trap_SetClientLerpOrigin(cg.refdef.vieworg[0], cg.refdef.vieworg[1], cg.refdef.vieworg[2]);
  
  		// actually issue the rendering calls
@@ -1916,7 +2027,7 @@ index ddb8e87d2..240b246a8 100644
  }
  
 diff --git a/src/client/cl_input.c b/src/client/cl_input.c
-index 6651a0127..c8751a9f6 100644
+index 6651a0127..58f4f7dba 100644
 --- a/src/client/cl_input.c
 +++ b/src/client/cl_input.c
 @@ -34,6 +34,9 @@
@@ -2224,7 +2335,7 @@ index 6651a0127..c8751a9f6 100644
  	Cmd_AddCommand("+right", IN_RightDown);
  	Cmd_AddCommand("-right", IN_RightUp);
  	Cmd_AddCommand("+forward", IN_ForwardDown);
-@@ -1532,3 +1706,193 @@ void CL_ClearKeys(void)
+@@ -1532,3 +1706,187 @@ void CL_ClearKeys(void)
  {
  	Com_Memset(kb, 0, sizeof(kb));
  }
@@ -2287,12 +2398,6 @@ index 6651a0127..c8751a9f6 100644
 +	}
 +	if (down && cls.state == CA_DISCONNECTED)
 +	{
-+		if (Cvar_VariableIntegerValue("etjs_splash") == 1)
-+		{
-+			Cvar_Set("etjs_splash", "2");
-+			Com_DPrintf("ETJS splash skip\n");
-+			return;
-+		}
 +		/* Official parsed MAIN owns clicks. The leftover C-drawn JOIN
 +		 * hit-test must not swallow mouse1 when those menus loaded. */
 +		if (key == K_MOUSE1 && Cvar_VariableIntegerValue("etjs_menucount") <= 0)
@@ -2419,7 +2524,7 @@ index 6651a0127..c8751a9f6 100644
 +}
 +#endif
 diff --git a/src/client/cl_main.c b/src/client/cl_main.c
-index 28b4bb510..508e1be37 100644
+index 28b4bb510..c2c529ddd 100644
 --- a/src/client/cl_main.c
 +++ b/src/client/cl_main.c
 @@ -1587,6 +1587,16 @@ static void CL_CheckForResend(void)
@@ -2576,7 +2681,7 @@ index 28b4bb510..508e1be37 100644
  /**
   * @brief CL_Init
   */
-@@ -3164,6 +3244,31 @@ void CL_Init(void)
+@@ -3164,6 +3244,35 @@ void CL_Init(void)
  	Cvar_Get("etl_bUUID", ETLEGACY_VERSION_ID, CVAR_USERINFO | CVAR_ROM | CVAR_NOTABCOMPLETE);
  	#endif
  	// register our commands
@@ -2598,7 +2703,11 @@ index 28b4bb510..508e1be37 100644
 +	Cvar_Get("etjs_ox", "0", 0);
 +	Cvar_Get("etjs_oy", "0", 0);
 +	Cvar_Get("etjs_resetlook", "0", 0);
-+	Cvar_Get("etjs_splash", "0", 0);
++	/* The official Steam/Splash Damage data has no startup movie. Enter the
++	 * authentic main menu directly instead of inventing a logo reel. */
++	Cvar_Get("etjs_splash", "2", 0);
++	Cvar_Set("etjs_splash", "2");
++	Cvar_Get("etjs_containui", "1", 0);
 +	Cvar_Get("etjs_menucount", "0", 0);
 +	Cmd_AddCommand("rshook", CL_RsHook_f, "Toggle rshook.");
 +	Cmd_AddCommand("icebot", CL_RsHook_f, "Toggle rshook.");
@@ -2970,7 +3079,7 @@ index 9196a0161..bcff238a3 100644
 +#endif
  }
 diff --git a/src/client/cl_scrn.c b/src/client/cl_scrn.c
-index f26b96a08..4989d7f0f 100644
+index f26b96a08..0a513be1a 100644
 --- a/src/client/cl_scrn.c
 +++ b/src/client/cl_scrn.c
 @@ -35,6 +35,10 @@
@@ -3268,21 +3377,13 @@ index f26b96a08..4989d7f0f 100644
  /**
   * @brief Coordinates are 640*480 virtual values
   * @param[in] x
-@@ -507,10 +788,28 @@ void SCR_DrawScreenField(void)
+@@ -507,10 +788,20 @@ void SCR_DrawScreenField(void)
  			SCR_DrawCinematic();
  			break;
  		case CA_DISCONNECTED:
 +#ifdef __EMSCRIPTEN__
-+			/* Official skippable logos first (etintro.roq is not in the
-+			 * paks). Then official MAIN once. */
-+			if (Cvar_VariableIntegerValue("etjs_splash") != 2)
-+			{
-+				ETJS_DrawEngineSplash();
-+				if (Cvar_VariableIntegerValue("etjs_splash") != 2)
-+				{
-+					break;
-+				}
-+			}
++			/* The distributed game data has no intro movie. Go directly to
++			 * the official main menu and its original background track. */
 +			if (!(cls.keyCatchers & KEYCATCH_UI))
 +			{
 +				VM_Call(uivm, UI_SET_ACTIVE_MENU, UIMENU_MAIN);
@@ -3297,7 +3398,7 @@ index f26b96a08..4989d7f0f 100644
  		case CA_CONNECTING:
  		case CA_CHALLENGING:
  		case CA_CONNECTED:
-@@ -538,9 +837,14 @@ void SCR_DrawScreenField(void)
+@@ -538,9 +829,14 @@ void SCR_DrawScreenField(void)
  			VM_Call(uivm, UI_DRAW_CONNECT_SCREEN, qtrue);
  			break;
  		case CA_ACTIVE:
@@ -3312,7 +3413,7 @@ index f26b96a08..4989d7f0f 100644
  			break;
  		}
  	}
-@@ -573,6 +877,11 @@ void SCR_UpdateScreen(void)
+@@ -573,6 +869,11 @@ void SCR_UpdateScreen(void)
  	{
  		return;             // not initialized yet
  	}
@@ -3324,7 +3425,7 @@ index f26b96a08..4989d7f0f 100644
  
  	if (++recursive >= 2)
  	{
-@@ -585,6 +894,17 @@ void SCR_UpdateScreen(void)
+@@ -585,6 +886,17 @@ void SCR_UpdateScreen(void)
  
  	SCR_DrawScreenField();
  
@@ -3342,7 +3443,7 @@ index f26b96a08..4989d7f0f 100644
  	if (com_speeds->integer)
  	{
  		re.EndFrame(&time_frontend, &time_backend);
-@@ -593,6 +913,17 @@ void SCR_UpdateScreen(void)
+@@ -593,6 +905,17 @@ void SCR_UpdateScreen(void)
  	{
  		re.EndFrame(NULL, NULL);
  	}
@@ -3570,10 +3671,20 @@ index f96a346f9..2b8ef163c 100644
  
  #endif // #ifndef INCLUDE_CLIENT_H
 diff --git a/src/game/bg_pmove.c b/src/game/bg_pmove.c
-index d4164bc9e..8b0e16bcd 100644
+index d4164bc9e..be843fa22 100644
 --- a/src/game/bg_pmove.c
 +++ b/src/game/bg_pmove.c
-@@ -832,6 +832,40 @@ static qboolean PM_CheckJump(void)
+@@ -70,6 +70,9 @@ extern vmCvar_t g_pronedelay;
+ #define MAX_AIMSPREAD_TIME 1000
+ #define EXTENDEDPRONE_TIME 400
+ #define PM_JUMP_DELAY 850
++#define PM_DOUBLE_JUMP_DELAY 120
++#define PM_DOUBLE_JUMP_IMPULSE (JUMP_VELOCITY * 0.8f)
++#define PM_DOUBLE_JUMP_MAX_VELOCITY (JUMP_VELOCITY * 1.5f)
+ 
+ pmove_t * pm;
+ pml_t pml;
+@@ -832,6 +835,44 @@ static qboolean PM_CheckJump(void)
  	return qtrue;
  }
  
@@ -3592,7 +3703,7 @@ index d4164bc9e..8b0e16bcd 100644
 +	}
 +
 +	if (pm->pmext->doubleJumped || pm->ps->jumpTime <= 0 ||
-+	    pm->cmd.serverTime - pm->ps->jumpTime < PM_JUMP_DELAY)
++	    pm->cmd.serverTime - pm->ps->jumpTime < PM_DOUBLE_JUMP_DELAY)
 +	{
 +		return qfalse;
 +	}
@@ -3605,7 +3716,11 @@ index d4164bc9e..8b0e16bcd 100644
 +
 +	pm->pmext->doubleJumped = qtrue;
 +	pm->ps->pm_flags       |= PMF_JUMP_HELD;
-+	pm->ps->velocity[2]     = JUMP_VELOCITY;
++	/* A reset to ordinary JUMP_VELOCITY barely changes anything while the
++	 * first jump is still rising. Preserve that momentum and add a bounded
++	 * second impulse so the extra press feels like an actual double jump. */
++	pm->ps->velocity[2] = MIN(MAX(pm->ps->velocity[2], 0.f) + PM_DOUBLE_JUMP_IMPULSE,
++	                          PM_DOUBLE_JUMP_MAX_VELOCITY);
 +	pm->ps->jumpTime        = pm->cmd.serverTime;
 +	PM_PlayJumpAnim();
 +	return qtrue;
@@ -3614,7 +3729,7 @@ index d4164bc9e..8b0e16bcd 100644
  /**
   * @brief PM_CheckWaterJump
   * @return
-@@ -4964,6 +4998,12 @@ void PM_LadderMove(void)
+@@ -4964,6 +5005,12 @@ void PM_LadderMove(void)
   */
  void PM_Sprint(void)
  {
@@ -3627,7 +3742,7 @@ index d4164bc9e..8b0e16bcd 100644
  	if (pm->waterlevel <= 1) // no sprint & no stamina recharge under water
  	{
  		if ((pm->cmd.buttons & BUTTON_SPRINT) && (pm->cmd.forwardmove || pm->cmd.rightmove)
-@@ -5270,6 +5310,14 @@ void PmoveSingle(pmove_t *pmove)
+@@ -5270,6 +5317,14 @@ void PmoveSingle(pmove_t *pmove)
  
  	// set groundentity
  	PM_GroundTrace();
@@ -6023,10 +6138,10 @@ index 4b6e070c4..b0e3fe883 100644
  
 diff --git a/src/renderer/tr_es2.c b/src/renderer/tr_es2.c
 new file mode 100644
-index 000000000..bdbe6218e
+index 000000000..3e37e066e
 --- /dev/null
 +++ b/src/renderer/tr_es2.c
-@@ -0,0 +1,690 @@
+@@ -0,0 +1,693 @@
 +/**
 + * @file renderer/tr_es2.c
 + * @brief WebGL / GLES2 tessellator submit. Applies the stock
@@ -6330,7 +6445,7 @@ index 000000000..bdbe6218e
 +{
 +	unsigned long bits = glState.glStateBits;
 +
-+	if (backEnd.projection2D || (bits & GLS_DEPTHTEST_DISABLE))
++	if (bits & GLS_DEPTHTEST_DISABLE)
 +	{
 +		glDisable(GL_DEPTH_TEST);
 +		return;
@@ -6366,7 +6481,10 @@ index 000000000..bdbe6218e
 +	int w = glConfig.vidWidth  > 0 ? glConfig.vidWidth  : 1280;
 +	int h = glConfig.vidHeight > 0 ? glConfig.vidHeight : 800;
 +
-+	MatOrtho(s_ortho, 0.f, (float)w, (float)h, 0.f, -1.f, 1.f);
++	/* Match the native glOrtho(..., 0, 1) exactly. Some stock 2D shaders use
++	 * an alpha-tested depth-writing mask followed by depthFunc equal (the
++	 * circular compass map), so 2D cannot be forced depthless globally. */
++	MatOrtho(s_ortho, 0.f, (float)w, (float)h, 0.f, 0.f, 1.f);
 +}
 +
 +static void CurrentMvp(float *mvp)
@@ -10679,6 +10797,37 @@ index 348f1082e..36fdd1d7c 100644
  	backtrace_symbols_fd(syms, size, STDERR_FILENO);
  #endif
  	fprintf(stderr, "--- Report this to the project -  END  ---\n");
+diff --git a/src/ui/ui_atoms.c b/src/ui/ui_atoms.c
+index 763152af1..289a24734 100644
+--- a/src/ui/ui_atoms.c
++++ b/src/ui/ui_atoms.c
+@@ -217,6 +217,18 @@ qboolean UI_ConsoleCommand(int realTime)
+  */
+ void UI_AdjustFrom640(float *x, float *y, float *w, float *h)
+ {
++#ifdef __EMSCRIPTEN__
++	float scale = MIN((float)uiInfo.uiDC.glconfig.vidWidth / 640.0f,
++	                  (float)uiInfo.uiDC.glconfig.vidHeight / 480.0f);
++	float xbias = (uiInfo.uiDC.glconfig.vidWidth - 640.0f * scale) * 0.5f;
++	float ybias = (uiInfo.uiDC.glconfig.vidHeight - 480.0f * scale) * 0.5f;
++
++	*x = *x * scale + xbias;
++	*y = *y * scale + ybias;
++	*w *= scale;
++	*h *= scale;
++	return;
++#else
+ 	// expect valid pointers
+ 	*x *= uiInfo.uiDC.xscale;
+ 	*y *= uiInfo.uiDC.yscale;
+@@ -229,6 +241,7 @@ void UI_AdjustFrom640(float *x, float *y, float *w, float *h)
+ 		*x *= RATIO43 / uiInfo.uiDC.glconfig.windowAspect;
+ 		*w *= RATIO43 / uiInfo.uiDC.glconfig.windowAspect;
+ 	}
++#endif
+ }
+ 
+ /*
 diff --git a/src/ui/ui_loadpanel.c b/src/ui/ui_loadpanel.c
 index 3411587b9..c59f57a27 100644
 --- a/src/ui/ui_loadpanel.c
@@ -11102,7 +11251,7 @@ index 139a2f4b2..a33296c25 100644
  		{
  			PC_SourceError(handle, "couldn't parse menu keyword %s", token.string);
 diff --git a/src/ui/ui_shared.c b/src/ui/ui_shared.c
-index 6b4d464f7..f282d2a07 100644
+index 6b4d464f7..5f4378727 100644
 --- a/src/ui/ui_shared.c
 +++ b/src/ui/ui_shared.c
 @@ -35,6 +35,7 @@
@@ -11130,7 +11279,51 @@ index 6b4d464f7..f282d2a07 100644
  #if ARCH_X86
  #define MEM_POOL_SIZE (128 * 1024)
  #else
-@@ -124,21 +133,32 @@ float Cui_WideXoffset(void)
+@@ -85,6 +94,11 @@ static qboolean outOfMemory;
+  */
+ void Cui_WideRect(rectDef_t *rect)
+ {
++#ifdef __EMSCRIPTEN__
++	/* Browser menus remain in 640x480 space and are transformed at draw time,
++	 * so a later resize cannot leave physical coordinates baked into items. */
++	(void)rect;
++#else
+ 	rect->x *= DC->xscale;
+ 	rect->y *= DC->yscale;
+ 	rect->w *= DC->xscale;
+@@ -95,6 +109,7 @@ void Cui_WideRect(rectDef_t *rect)
+ 		rect->x *= RATIO43 / DC->glconfig.windowAspect;
+ 		rect->w *= RATIO43 / DC->glconfig.windowAspect;
+ 	}
++#endif
+ }
+ 
+ /**
+@@ -105,7 +120,11 @@ void Cui_WideRect(rectDef_t *rect)
+  */
+ float Cui_WideX(float x)
+ {
++#ifdef __EMSCRIPTEN__
++	return x;
++#else
+ 	return (DC->glconfig.windowAspect <= RATIO43) ? x : x * (DC->glconfig.windowAspect * RPRATIO43);  // aspect ratio / (4/3)
++#endif
+ }
+ 
+ /**
+@@ -113,7 +132,11 @@ float Cui_WideX(float x)
+  */
+ float Cui_WideXoffset(void)
+ {
++#ifdef __EMSCRIPTEN__
++	return 0.0f;
++#else
+ 	return (DC->glconfig.windowAspect <= RATIO43) ? 0.0f : ((640.0f * (DC->glconfig.windowAspect * RPRATIO43)) - 640.0f) * 0.5f;
++#endif
+ }
+ 
+ /**
+@@ -124,21 +147,32 @@ float Cui_WideXoffset(void)
  void *UI_Alloc(int size)
  {
  	char *p;
@@ -11168,7 +11361,33 @@ index 6b4d464f7..f282d2a07 100644
  
  	return p;
  }
-@@ -1963,6 +1983,34 @@ void C_PanelButtonsSetup(panel_button_t **buttons, float xoffset)
+@@ -614,6 +648,17 @@ qboolean FileExists(const char *filename)
+  */
+ void AdjustFrom640(float *x, float *y, float *w, float *h)
+ {
++#ifdef __EMSCRIPTEN__
++	float scale = MIN((float)DC->glconfig.vidWidth / 640.0f,
++	                  (float)DC->glconfig.vidHeight / 480.0f);
++	float xbias = (DC->glconfig.vidWidth - 640.0f * scale) * 0.5f;
++	float ybias = (DC->glconfig.vidHeight - 480.0f * scale) * 0.5f;
++
++	*x = *x * scale + xbias;
++	*y = *y * scale + ybias;
++	*w *= scale;
++	*h *= scale;
++#else
+ 	*x *= DC->xscale;
+ 	*y *= DC->yscale;
+ 	*w *= DC->xscale;
+@@ -625,6 +670,7 @@ void AdjustFrom640(float *x, float *y, float *w, float *h)
+ 		*x *= RATIO43 / DC->glconfig.windowAspect;
+ 		*w *= RATIO43 / DC->glconfig.windowAspect;
+ 	}
++#endif
+ }
+ 
+ /**
+@@ -1963,6 +2009,34 @@ void C_PanelButtonsSetup(panel_button_t **buttons, float xoffset)
  /**
   * @brief Registers fonts shared between cgame and ui to either defaults or user-defined custom fonts
   */
@@ -11203,7 +11422,7 @@ index 6b4d464f7..f282d2a07 100644
  void RegisterSharedFonts(void)
  {
  	fontTableEntry_t fontTable[FONT_TABLE_NUMFONTS] =
-@@ -1981,11 +2029,20 @@ void RegisterSharedFonts(void)
+@@ -1981,11 +2055,20 @@ void RegisterSharedFonts(void)
  	{
  		fontTableEntry_t *entry = &fontTable[i];
  		trap_Cvar_VariableStringBuffer(entry->cvarName, buf, sizeof(buf));
