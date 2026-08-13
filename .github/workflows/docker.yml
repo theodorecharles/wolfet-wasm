@@ -22,9 +22,12 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
-      - name: Credentials are not configured yet
-        if: env.DOCKERHUB_USERNAME == '' || env.DOCKERHUB_TOKEN == ''
-        run: echo "Add DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets, then run this workflow again."
+      - name: Require Docker Hub credentials
+        run: |
+          if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "::error::Add DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repository secrets, then run this workflow again."
+            exit 1
+          fi
 
       - name: Check out repository
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''

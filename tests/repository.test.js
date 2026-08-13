@@ -104,6 +104,8 @@ describe('reproducible source repository', () => {
     assert.match(workflow, /type=raw,value=latest/);
     assert.match(workflow, /DOCKERHUB_USERNAME/);
     assert.match(workflow, /DOCKERHUB_TOKEN/);
+    assert.match(workflow, /Require Docker Hub credentials/);
+    assert.match(workflow, /exit 1/);
   });
 
   it('does not ship the old shared RCON password', () => {
