@@ -94,6 +94,25 @@ Health and match information are available at `/health` and `/status`.
 
 With the default `KEEP_ALIVE=false`, the lightweight HTTP/WebSocket host stays online while the ET dedicated process and Omni-Bot sleep. Submitting the browser's initial **Play** screen wakes the match and waits for it to become ready before opening the ET main menu; **Join Game** then connects immediately. Each wake chooses a random map from the configured rotation and avoids immediately repeating the previous start map. After the last human leaves, the dedicated process stops when `IDLE_TIMEOUT` expires. Set `KEEP_ALIVE=true` for an always-running match; in that mode `IDLE_TIMEOUT` is ignored.
 
+### Optional UT2004 announcer
+
+The public image uses project-owned announcer clips and does not redistribute
+Unreal Tournament assets. If you own Unreal Tournament 2004, you may locally
+extract its original male announcer and put these files in `/data/announcer`:
+
+```text
+doublekill.wav
+multikill.wav
+megakill.wav
+ultrakill.wav
+monsterkill.wav
+```
+
+Restart the container after adding all five files. wolfet-wasm builds a private
+ETJS overlay at startup and logs `installed locally supplied UT2004 announcer`.
+The override is used only in Arcade mode because Vanilla disables multi-kill
+announcements.
+
 ## Unraid
 
 The canonical Community Applications template is [wolfet-wasm.xml](https://github.com/theodorecharles/unraid-templates/blob/master/wolfet-wasm.xml), with a synchronized copy in [templates/wolfet-wasm.xml](templates/wolfet-wasm.xml). It uses `/mnt/user/appdata/wolfet-wasm` for persistent data and exposes all normal server settings in the Unraid container form.

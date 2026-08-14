@@ -14,6 +14,7 @@
 /*.zip
 /game-data/
 /vendor/
+/local-assets/
 /runtime/etmain/*.pk3
 /runtime/legacy/*.pk3
 /web/sound/music/*

@@ -349,6 +349,9 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(ingame, /MSGID_MENU_INGAME_LIMBO_MENU/);
     assert.doesNotMatch(ingame, /CHANGELOG|FAVORITE|OPTIONS|VOTE|SERVER_INFO|DISCONNECT|EXIT|ETLEGACY_VERSION|legacy_logo|development_build_banner/);
     assert.doesNotMatch(options, /HUD_EDITOR|OPEN_HOME|open_homepath|edithud/);
+    assert.match(loading, /Awaiting connection\.\.\.%i/);
+    assert.match(loading, /Awaiting challenge\.\.\.%i/);
+    assert.match(loading, /Awaiting gamestate\.\.\./);
     assert.match(loading, /The connection state is the final line/);
     assert.match(loading, /if \(\*p2\)[\s\S]*Text_Paint_Ext/);
     const mainMenu = fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_official.menu'), 'utf8');
@@ -643,7 +646,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(newDraw, /etjs_resetlook/);
   });
 
-  it('hosts the game on 8088 with /ws and a remote-nginx snippet (no nginx on this box)', () => {
+  it('hosts the game on 8088 with a same-origin WebSocket endpoint', () => {
     const server = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
     assert.match(server, /ETJS_HTTP_PORT \|\| 8088/);
     assert.match(server, /'\.ttf': 'font\/ttf'/);
@@ -654,12 +657,6 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(client, /window\.location\.host \+ '\/ws'/);
     const pw = fs.readFileSync(path.join(ROOT, 'scripts', 'playwright-etjs.js'), 'utf8');
     assert.match(pw, /127\.0\.0\.1:8088/);
-    const nginx = fs.readFileSync(path.join(ROOT, 'deploy', 'nginx-wolfet.tedcharles.net.conf'), 'utf8');
-    assert.match(nginx, /server_name wolfet\.tedcharles\.net/);
-    assert.match(nginx, /4\.20\.69\.92:8088/);
-    assert.match(nginx, /location \/ws/);
-    assert.match(nginx, /application\/wasm wasm/);
-    assert.doesNotMatch(nginx, /apt install/);
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'sound', 'music', 'menu_server.wav')));
   });

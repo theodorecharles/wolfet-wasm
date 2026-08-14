@@ -8,3 +8,9 @@ Enemy Territory data.
 `npm run build:pak` packages the `etjs/` subtree as ignored
 `runtime/legacy/etjs.pk3`, keeping these project-owned additions separate from
 the official game archives.
+
+The public image never includes Unreal Tournament audio. An operator who owns
+UT2004 may put locally extracted `doublekill.wav`, `multikill.wav`,
+`megakill.wav`, `ultrakill.wav`, and `monsterkill.wav` files in
+`/data/announcer/`. On startup the container replaces the generated fallback
+clips in its private ETJS overlay without modifying the UT2004 installation.

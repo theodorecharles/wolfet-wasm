@@ -43,7 +43,7 @@ FROM ${ETLEGACY_IMAGE} AS runtime
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-      ca-certificates curl imagemagick libcjson1 nodejs npm tini unzip \
+      ca-certificates curl imagemagick libcjson1 nodejs npm tini unzip zip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/wolfet-wasm

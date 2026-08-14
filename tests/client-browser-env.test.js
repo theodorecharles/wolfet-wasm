@@ -34,7 +34,7 @@ describe('browser client scripts', () => {
     assert.match(html, /bind-store\.js/);
     assert.match(html, /pk3-cache\.js/);
     assert.match(html, /pk3-download\.js/);
-    assert.match(html, /client\.js/);
+    assert.match(html, /client\.js\?v=16/);
     assert.match(html, /id="et-canvas"/);
     assert.match(html, /id="load-panel"/);
     assert.match(html, /id="startup-console"/);

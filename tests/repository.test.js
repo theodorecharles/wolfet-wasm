@@ -97,6 +97,9 @@ describe('reproducible source repository', () => {
     assert.match(entrypoint, /fetch-game-data\.sh/);
     assert.match(entrypoint, /ETJS_LEGACY_PAK_SOURCE/);
     assert.match(entrypoint, /DATA_ROOT\/custom_maps/);
+    assert.match(entrypoint, /DATA_ROOT\/announcer/);
+    assert.match(entrypoint, /installed locally supplied UT2004 announcer/);
+    assert.match(dockerfile, /unzip zip/);
     assert.match(entrypoint, /DATA_OWNER_UID/);
     assert.match(entrypoint, /KEEP_ALIVE/);
     assert.match(entrypoint, /for seed_ui_file in "\$SEED_ROOT"\/legacy\/ui\/\*/);
