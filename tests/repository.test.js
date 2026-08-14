@@ -134,7 +134,8 @@ describe('reproducible source repository', () => {
     const workflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'docker.yml'), 'utf8');
     assert.match(workflow, /runs-on: \[self-hosted, macOS, ARM64, wolfet-wasm\]/);
     assert.doesNotMatch(workflow, /docker\/setup-qemu-action/);
-    assert.match(workflow, /docker --config "\$etjs_docker_config" pull docker\.io\/tonistiigi\/binfmt:latest/);
+    assert.match(workflow, /etjs_docker="\/Applications\/Docker\.app\/Contents\/Resources\/bin\/docker"/);
+    assert.match(workflow, /"\$etjs_docker" --config "\$etjs_docker_config" pull docker\.io\/tonistiigi\/binfmt:latest/);
     assert.match(workflow, /tonistiigi\/binfmt:latest --install amd64/);
     assert.match(workflow, /--platform linux\/amd64/);
     assert.match(workflow, /RUNNER_TEMP\/wolfet-wasm-docker-\$GITHUB_RUN_ID/);

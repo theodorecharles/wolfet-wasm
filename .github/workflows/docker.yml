@@ -52,23 +52,24 @@ jobs:
           esac
 
           etjs_docker_config="$RUNNER_TEMP/wolfet-wasm-docker-$GITHUB_RUN_ID"
+          etjs_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
           install -d -m 0700 "$etjs_docker_config"
           printf '{"auths":{}}\n' > "$etjs_docker_config/config.json"
 
-          docker --config "$etjs_docker_config" pull docker.io/tonistiigi/binfmt:latest
-          docker --config "$etjs_docker_config" run --privileged --rm \
+          "$etjs_docker" --config "$etjs_docker_config" pull docker.io/tonistiigi/binfmt:latest
+          "$etjs_docker" --config "$etjs_docker_config" run --privileged --rm \
             docker.io/tonistiigi/binfmt:latest --install amd64
-          printf '%s' "$DOCKERHUB_TOKEN" | docker --config "$etjs_docker_config" login \
+          printf '%s' "$DOCKERHUB_TOKEN" | "$etjs_docker" --config "$etjs_docker_config" login \
             --username "$DOCKERHUB_USERNAME" --password-stdin
 
-          if docker --config "$etjs_docker_config" buildx inspect wolfet-wasm >/dev/null 2>&1; then
-            docker --config "$etjs_docker_config" buildx use wolfet-wasm
+          if "$etjs_docker" --config "$etjs_docker_config" buildx inspect wolfet-wasm >/dev/null 2>&1; then
+            "$etjs_docker" --config "$etjs_docker_config" buildx use wolfet-wasm
           else
-            docker --config "$etjs_docker_config" buildx create \
+            "$etjs_docker" --config "$etjs_docker_config" buildx create \
               --name wolfet-wasm --driver docker-container --use
           fi
-          docker --config "$etjs_docker_config" buildx inspect --bootstrap
-          docker --config "$etjs_docker_config" buildx build \
+          "$etjs_docker" --config "$etjs_docker_config" buildx inspect --bootstrap
+          "$etjs_docker" --config "$etjs_docker_config" buildx build \
             --platform linux/amd64 \
             --push \
             --provenance=mode=max \
