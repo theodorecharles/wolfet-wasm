@@ -2,6 +2,7 @@
 /node_modules/
 /.cache/
 /tmp-etjs-shots/
+/.generated/
 /.env
 .DS_Store
 

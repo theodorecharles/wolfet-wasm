@@ -7,6 +7,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
+const FRAMEWORK_WEB = path.join(ROOT, '.generated', 'shared-shell');
 const PAK0 = path.join(ROOT, 'runtime', 'etmain', 'pak0.pk3');
 const OBJDATA = path.join(ROOT, 'etlegacy', 'etmain', 'maps', 'oasis.objdata');
 const CLASSES = path.join(ROOT, 'etlegacy', 'src', 'game', 'bg_public.h');
@@ -458,8 +459,8 @@ describe('no overlay theater in the shipped draw path', () => {
 
   it('streams real engine startup output into the loading console', () => {
     const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
-    const html = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'index.html'), 'utf8');
-    const shellCss = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'wasm-game-framework.css'), 'utf8');
+    const html = fs.readFileSync(path.join(FRAMEWORK_WEB, 'index.html'), 'utf8');
+    const shellCss = fs.readFileSync(path.join(FRAMEWORK_WEB, 'wasm-game-framework.css'), 'utf8');
     assert.match(html, /id="loading-console"[^>]*data-shell-console[^>]*role="log"/);
     assert.match(page, /function appendStartupLine/);
     assert.match(page, /print:\s*function \(text\)[\s\S]*?onEngineLine\(text, 'info'\)/);
@@ -474,7 +475,7 @@ describe('no overlay theater in the shipped draw path', () => {
     const shared = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_shared.c'), 'utf8');
     const glimp = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'sdl', 'sdl_glimp.c'), 'utf8');
     const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
-    const html = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'index.html'), 'utf8');
+    const html = fs.readFileSync(path.join(FRAMEWORK_WEB, 'index.html'), 'utf8');
     assert.match(shared, /defined\(__EMSCRIPTEN__\)[\s\S]*MEM_POOL_SIZE \(16 \* 1024 \* 1024\)/);
     assert.match(shared, /MEM_POOL_SIZE - allocPoint/);
     assert.match(glimp, /SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas"/);
@@ -603,7 +604,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(mainMenu, /etjs_joingame/);
     assert.match(mainMenu, /menu_server\.wav/);
     assert.match(mainMenu, /ui\/assets\/et_logo/);
-    const html = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'index.html'), 'utf8');
+    const html = fs.readFileSync(path.join(FRAMEWORK_WEB, 'index.html'), 'utf8');
     const gameConfig = JSON.parse(fs.readFileSync(path.join(ROOT, 'web', 'wasm-game.json'), 'utf8'));
     assert.match(html, /id="launcher"/);
     assert.equal(gameConfig.icon, '/img/et.png');

@@ -96,9 +96,8 @@ With the default `KEEP_ALIVE=false`, the lightweight HTTP/WebSocket host stays o
 
 ### Optional UT2004 announcer
 
-The public image uses project-owned announcer clips and does not redistribute
-Unreal Tournament assets. If you own Unreal Tournament 2004, you may locally
-extract its original male announcer and put these files in `/data/announcer`:
+To use the original Unreal Tournament 2004 male announcer as a local override,
+extract these files into `/data/announcer`:
 
 ```text
 doublekill.wav

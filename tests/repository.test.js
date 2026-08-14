@@ -27,6 +27,9 @@ describe('reproducible source repository', () => {
       '/web/client/*',
       '/runtime/.rcon-password'
     ].forEach((rule) => assert.match(ignore, new RegExp(rule.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))));
+    const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' });
+    assert.doesNotMatch(tracked, /^web\/shared-shell\//m,
+      'WolfET must consume the exact framework dependency without committing its HTML or CSS');
   });
 
   it('pins the Splash Damage archive and all installed game files by SHA-256', () => {

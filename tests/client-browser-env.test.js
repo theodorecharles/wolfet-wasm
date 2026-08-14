@@ -7,6 +7,7 @@ const path = require('path');
 const vm = require('vm');
 
 const WEB = path.join(__dirname, '..', 'web');
+const FRAMEWORK_WEB = path.join(__dirname, '..', '.generated', 'shared-shell');
 
 function assertNoUnguardedNode(src, file) {
   const lines = src.split('\n');
@@ -24,13 +25,13 @@ function assertNoUnguardedNode(src, file) {
 
 describe('browser client scripts', () => {
   it('uses the canonical framework document plus a game manifest and adapter', () => {
-    const html = fs.readFileSync(path.join(WEB, 'shared-shell', 'index.html'), 'utf8');
-    const framework = JSON.parse(fs.readFileSync(path.join(WEB, 'shared-shell', 'wasm-game-framework.json'), 'utf8'));
+    const html = fs.readFileSync(path.join(FRAMEWORK_WEB, 'index.html'), 'utf8');
+    const framework = JSON.parse(fs.readFileSync(path.join(FRAMEWORK_WEB, 'wasm-game-framework.json'), 'utf8'));
     const config = JSON.parse(fs.readFileSync(path.join(WEB, 'wasm-game.json'), 'utf8'));
     const adapter = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.7.0');
+    assert.equal(framework.version, '0.7.2');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);

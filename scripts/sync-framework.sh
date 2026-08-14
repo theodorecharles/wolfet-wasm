@@ -3,6 +3,17 @@ set -eu
 
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 FRAMEWORK_ROOT="${WASM_GAME_FRAMEWORK_DIR:-}"
+FRAMEWORK_LOCK="$PROJECT_ROOT/framework-lock.json"
+FRAMEWORK_TARGET="$PROJECT_ROOT/.generated/shared-shell"
+FRAMEWORK_REPOSITORY="$(node -p "require('$FRAMEWORK_LOCK').repository")"
+FRAMEWORK_VERSION="$(node -p "require('$FRAMEWORK_LOCK').version")"
+FRAMEWORK_COMMIT="$(node -p "require('$FRAMEWORK_LOCK').commit")"
+TEMP_ROOT="$(mktemp -d)"
+
+cleanup() {
+  rm -rf -- "$TEMP_ROOT"
+}
+trap cleanup EXIT HUP INT TERM
 
 if [ -z "$FRAMEWORK_ROOT" ]; then
   for candidate in \
@@ -16,10 +27,25 @@ if [ -z "$FRAMEWORK_ROOT" ]; then
   done
 fi
 
-if [ -z "$FRAMEWORK_ROOT" ] || [ ! -x "$FRAMEWORK_ROOT/scripts/install-browser-package.sh" ]; then
-  echo "Set WASM_GAME_FRAMEWORK_DIR to a wasm-game-framework checkout." >&2
+FRAMEWORK_SOURCE="$TEMP_ROOT/framework"
+mkdir -p "$FRAMEWORK_SOURCE"
+
+if [ -n "$FRAMEWORK_ROOT" ] && [ -d "$FRAMEWORK_ROOT/.git" ] &&
+   git -C "$FRAMEWORK_ROOT" cat-file -e "$FRAMEWORK_COMMIT^{commit}" 2>/dev/null
+then
+  git -C "$FRAMEWORK_ROOT" archive "$FRAMEWORK_COMMIT" | tar -x -C "$FRAMEWORK_SOURCE"
+else
+  git -C "$FRAMEWORK_SOURCE" init -q
+  git -C "$FRAMEWORK_SOURCE" remote add origin "$FRAMEWORK_REPOSITORY"
+  git -C "$FRAMEWORK_SOURCE" fetch -q --depth=1 origin "$FRAMEWORK_COMMIT"
+  git -C "$FRAMEWORK_SOURCE" checkout -q --detach FETCH_HEAD
+fi
+
+ACTUAL_VERSION="$(node -p "require('$FRAMEWORK_SOURCE/package.json').version")"
+if [ "$ACTUAL_VERSION" != "$FRAMEWORK_VERSION" ]; then
+  echo "wasm-game-framework $FRAMEWORK_COMMIT is $ACTUAL_VERSION, expected $FRAMEWORK_VERSION" >&2
   exit 1
 fi
 
-"$FRAMEWORK_ROOT/scripts/install-browser-package.sh" \
-  "$PROJECT_ROOT/web/shared-shell" copy
+rm -rf -- "$FRAMEWORK_TARGET"
+"$FRAMEWORK_SOURCE/scripts/install-browser-package.sh" "$FRAMEWORK_TARGET" copy

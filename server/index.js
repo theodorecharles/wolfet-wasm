@@ -19,9 +19,10 @@ const { queryStatus } = require('./status');
 
 const ROOT = path.join(__dirname, '..');
 const WEB_ROOT = path.join(ROOT, 'web');
-const FRAMEWORK_DOCUMENT = path.join(WEB_ROOT, 'shared-shell', 'index.html');
+const FRAMEWORK_ROOT = process.env.WASM_GAME_FRAMEWORK_WEB_ROOT || path.join(ROOT, '.generated', 'shared-shell');
+const FRAMEWORK_DOCUMENT = path.join(FRAMEWORK_ROOT, 'index.html');
 const GAME_CONFIG_PATH = path.join(WEB_ROOT, 'wasm-game.json');
-const FRAMEWORK_METADATA_PATH = path.join(WEB_ROOT, 'shared-shell', 'wasm-game-framework.json');
+const FRAMEWORK_METADATA_PATH = path.join(FRAMEWORK_ROOT, 'wasm-game-framework.json');
 const DATA_WEB_ROOT = path.join(dedicated.DATA_ROOT, 'web');
 const HTTP_PORT = Number(process.env.ETJS_HTTP_PORT || 8088);
 const DED_PORT = dedicated.HOST_UDP_PORT;
@@ -181,6 +182,13 @@ function serviceWorkerSource() {
 
 function serveStatic(req, res) {
   const urlPath = (req.url || '/').split('?')[0];
+
+  if (urlPath === '/data' || urlPath.startsWith('/data/') ||
+      urlPath === '/local-data' || urlPath.startsWith('/local-data/')) {
+    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+    res.end('not found');
+    return;
+  }
 
   if ((urlPath === '/' || urlPath === '/index.html') && (req.method === 'GET' || req.method === 'HEAD')) {
     sendFile(req, res, FRAMEWORK_DOCUMENT);
@@ -423,6 +431,7 @@ function serveStatic(req, res) {
     { prefix: '/client/', root: path.join(ROOT, 'web', 'client'), strip: '/client/' },
     { prefix: '/img/', root: path.join(DATA_WEB_ROOT, 'img'), strip: '/img/' },
     { prefix: '/sound/music/', root: path.join(DATA_WEB_ROOT, 'sound', 'music'), strip: '/sound/music/' },
+    { prefix: '/shared-shell/', root: FRAMEWORK_ROOT, strip: '/shared-shell/' },
     { prefix: '/', root: WEB_ROOT, strip: '/' }
   ];
 

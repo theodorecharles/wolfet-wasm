@@ -2,6 +2,17 @@
 
 ARG ETLEGACY_IMAGE=etlegacy/server@sha256:e8810511b59a70cd66ddf36951cbb873333c4081d236241343e19ee4a0a30d63
 
+FROM node:22-alpine AS framework-source
+ARG WASM_GAME_FRAMEWORK_COMMIT=e4b78d6a1ab9992f35c0a098d60f15d8e1c3e89b
+RUN apk add --no-cache bash coreutils git
+RUN git init -q /framework \
+    && git -C /framework remote add origin https://github.com/theodorecharles/wasm-game-framework.git \
+    && git -C /framework fetch -q --depth=1 origin "$WASM_GAME_FRAMEWORK_COMMIT" \
+    && git -C /framework checkout -q --detach FETCH_HEAD \
+    && test "$(git -C /framework rev-parse HEAD)" = "$WASM_GAME_FRAMEWORK_COMMIT" \
+    && test "$(node -p "require('/framework/package.json').version")" = "0.7.2" \
+    && /framework/scripts/install-browser-package.sh /framework-dist copy
+
 FROM debian:trixie-slim AS etlegacy-source
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git \
@@ -54,6 +65,8 @@ RUN npm ci --omit=dev \
 COPY server server
 COPY scripts scripts
 COPY web web
+COPY framework-lock.json framework-lock.json
+COPY --from=framework-source /framework-dist .generated/shared-shell
 COPY runtime seed/runtime
 COPY docker/entrypoint.sh docker/entrypoint.sh
 COPY --from=native-builder /build/tools/huffpack tools/huffpack
