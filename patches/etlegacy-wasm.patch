@@ -77,10 +77,10 @@ index ba1db291c..c38744e89 100644
  endif()
  
 diff --git a/cmake/ETLBuildMod.cmake b/cmake/ETLBuildMod.cmake
-index 075dae759..1e600a512 100644
+index 075dae759..16bfee429 100644
 --- a/cmake/ETLBuildMod.cmake
 +++ b/cmake/ETLBuildMod.cmake
-@@ -24,7 +24,15 @@ endfunction()
+@@ -24,7 +24,19 @@ endfunction()
  # cgame
  #
  if(BUILD_CLIENT_MOD)
@@ -89,14 +89,18 @@ index 075dae759..1e600a512 100644
 +		list(FILTER _ETJS_CGAME_SRC EXCLUDE REGEX ".*/q_math\\.c$|.*/q_shared\\.c$|.*/version\\.c$|.*/q_unicode\\.c$")
 +		add_library(cgame STATIC ${_ETJS_CGAME_SRC})
 +		target_compile_definitions(cgame PRIVATE vmMain=CG_vmMain dllEntry=CG_dllEntry CGAME_HARD_LINKED=1)
-+		target_compile_options(cgame PRIVATE "-include" "${CMAKE_SOURCE_DIR}/src/sys/etjs_cg_traps.h")
++		# Static cgame and UI both compile the shared menu implementation.  Keep
++		# their complete symbol sets isolated before applying the syscall shims;
++		# otherwise wasm-ld's duplicate-symbol selection mixes their menu pools.
++		target_compile_options(cgame PRIVATE
++			"SHELL:-include ${CMAKE_SOURCE_DIR}/src/sys/etjs_cg_renames.h -include ${CMAKE_SOURCE_DIR}/src/sys/etjs_cg_traps.h")
 +	else()
  	add_library(cgame MODULE ${CGAME_SRC})
 +	endif()
  	target_link_libraries(cgame cgame_libraries mod_libraries)
  	etl_enforce_linux_mod_no_undefined(cgame)
  
-@@ -45,7 +53,15 @@ endif()
+@@ -45,7 +57,16 @@ endif()
  # ui
  #
  if(BUILD_CLIENT_MOD)
@@ -105,14 +109,15 @@ index 075dae759..1e600a512 100644
 +		list(FILTER _ETJS_UI_SRC EXCLUDE REGEX ".*/q_math\\.c$|.*/q_shared\\.c$|.*/version\\.c$|.*/q_unicode\\.c$|.*/bg_classes\\.c$|.*/bg_misc\\.c$")
 +		add_library(ui STATIC ${_ETJS_UI_SRC})
 +		target_compile_definitions(ui PRIVATE vmMain=UI_vmMain dllEntry=UI_dllEntry)
-+		target_compile_options(ui PRIVATE "-include" "${CMAKE_SOURCE_DIR}/src/sys/etjs_ui_traps.h")
++		target_compile_options(ui PRIVATE
++			"SHELL:-include ${CMAKE_SOURCE_DIR}/src/sys/etjs_ui_renames.h -include ${CMAKE_SOURCE_DIR}/src/sys/etjs_ui_traps.h")
 +	else()
  	add_library(ui MODULE ${UI_SRC})
 +	endif()
  	target_link_libraries(ui ui_libraries mod_libraries)
  	etl_enforce_linux_mod_no_undefined(ui)
  
-@@ -107,6 +123,9 @@ if(BUILD_SERVER_MOD)
+@@ -107,6 +128,9 @@ if(BUILD_SERVER_MOD)
  		RUNTIME_OUTPUT_DIRECTORY_RELEASE "${MODNAME}"
  	)
  	target_compile_definitions(qagame PRIVATE GAMEDLL=1 MODLIB=1)
@@ -564,7 +569,7 @@ index fc37ed49e..9fa52bd71 100644
  extern vmCvar_t cg_weapBankCollisions;
  extern vmCvar_t cg_weapSwitchNoAmmoSounds;
 diff --git a/src/cgame/cg_draw.c b/src/cgame/cg_draw.c
-index a238bea96..a268201c4 100644
+index a238bea96..9f66ad5e1 100644
 --- a/src/cgame/cg_draw.c
 +++ b/src/cgame/cg_draw.c
 @@ -4133,6 +4133,12 @@ static void CG_DrawEnvironmentalAwareness()
@@ -580,7 +585,7 @@ index a238bea96..a268201c4 100644
  	if (!cg_drawEnvAwareness.integer)
  	{
  		return;
-@@ -4801,14 +4810,21 @@ void CG_DrawActive()
+@@ -4801,14 +4807,21 @@ void CG_DrawActive()
  	}
  
  	// clear around the rendered view if sized down
@@ -2050,7 +2055,7 @@ index ddb8e87d2..240b246a8 100644
  }
  
 diff --git a/src/client/cl_input.c b/src/client/cl_input.c
-index 6651a0127..ee3153252 100644
+index 6651a0127..bf598690a 100644
 --- a/src/client/cl_input.c
 +++ b/src/client/cl_input.c
 @@ -34,6 +34,9 @@
@@ -2358,7 +2363,7 @@ index 6651a0127..ee3153252 100644
  	Cmd_AddCommand("+right", IN_RightDown);
  	Cmd_AddCommand("-right", IN_RightUp);
  	Cmd_AddCommand("+forward", IN_ForwardDown);
-@@ -1532,3 +1706,243 @@ void CL_ClearKeys(void)
+@@ -1532,3 +1706,244 @@ void CL_ClearKeys(void)
  {
  	Com_Memset(kb, 0, sizeof(kb));
  }
@@ -2453,6 +2458,7 @@ index 6651a0127..ee3153252 100644
 +EMSCRIPTEN_KEEPALIVE
 +int ETJS_OpenCommunication(int mode)
 +{
++	const char *command;
 +	int menu;
 +	intptr_t activeMenu;
 +	int opened;
@@ -2472,30 +2478,30 @@ index 6651a0127..ee3153252 100644
 +	switch (mode)
 +	{
 +		case 1:
-+			Cvar_Set("cg_messageType", "1");
-+			Cvar_Set("cg_messageText", "");
++			command = "messagemode";
 +			menu = UIMENU_INGAME_MESSAGEMODE;
 +			break;
 +		case 2:
-+			Cvar_Set("cg_messageType", "2");
-+			Cvar_Set("cg_messageText", "");
++			command = "messagemode2";
 +			menu = UIMENU_INGAME_MESSAGEMODE;
 +			break;
 +		case 3:
++			command = "mp_quickmessage";
 +			menu = UIMENU_WM_QUICKMESSAGE;
 +			break;
 +		default: return 0;
 +	}
 +
-+	/* Open the stock UI directly. Routing through the command buffer can be
-+	 * rejected by transient cgame eventHandling state and still leave the
-+	 * browser believing chat opened. This bridge is called only from a
-+	 * captured gameplay key, so bypassing that race is both safe and exact. */
-+	VM_Call(uivm, UI_SET_ACTIVE_MENU, menu);
++	/* Execute the stock cgame command synchronously.  In particular,
++	 * CG_QuickMessage_f clears cgame event handling before it asks the UI VM to
++	 * open the voice menu.  Calling UI_SET_ACTIVE_MENU here skipped that state
++	 * transition, so the next cgame frame immediately reclaimed input and T,
++	 * Y, V and Escape all appeared to do nothing in the browser. */
++	Cmd_ExecuteString(command);
 +	activeMenu = VM_Call(uivm, UI_GET_ACTIVE_MENU);
 +	opened = (cls.keyCatchers & KEYCATCH_UI) != 0 && activeMenu == menu;
-+	Com_Printf("ETJS communication result mode=%d requested=%d active=%ld catchers=%d opened=%d\n",
-+	           mode, menu, (long)activeMenu, cls.keyCatchers, opened);
++	Com_Printf("ETJS communication result mode=%d command=%s requested=%d active=%ld catchers=%d opened=%d\n",
++	           mode, command, menu, (long)activeMenu, cls.keyCatchers, opened);
 +	return opened;
 +}
 +
@@ -2603,7 +2609,7 @@ index 6651a0127..ee3153252 100644
 +}
 +#endif
 diff --git a/src/client/cl_main.c b/src/client/cl_main.c
-index 28b4bb510..c2c529ddd 100644
+index 28b4bb510..60d0b42cf 100644
 --- a/src/client/cl_main.c
 +++ b/src/client/cl_main.c
 @@ -1587,6 +1587,16 @@ static void CL_CheckForResend(void)
@@ -2660,10 +2666,10 @@ index 28b4bb510..c2c529ddd 100644
  	}
  
 +#ifdef __EMSCRIPTEN__
-+	if (uivm && cls.state == CA_ACTIVE)
++	if (uivm && cls.state == CA_ACTIVE
++	    && VM_Call(uivm, UI_GET_ACTIVE_MENU) == UIMENU_MAIN)
 +	{
 +		VM_Call(uivm, UI_SET_ACTIVE_MENU, UIMENU_NONE);
-+		cls.keyCatchers &= ~KEYCATCH_UI;
 +	}
 +	else if (uivm && cls.state == CA_DISCONNECTED && !(cls.keyCatchers & KEYCATCH_UI)
 +	         && !com_sv_running->integer && Cvar_VariableIntegerValue("etjs_splash") == 2)
@@ -2772,7 +2778,7 @@ index 28b4bb510..c2c529ddd 100644
  /**
   * @brief CL_Init
   */
-@@ -3164,6 +3244,35 @@ void CL_Init(void)
+@@ -3164,6 +3256,35 @@ void CL_Init(void)
  	Cvar_Get("etl_bUUID", ETLEGACY_VERSION_ID, CVAR_USERINFO | CVAR_ROM | CVAR_NOTABCOMPLETE);
  	#endif
  	// register our commands
@@ -7278,7 +7284,7 @@ index 4e244a1fe..522789281 100644
  
  		if (areaDiff)
 diff --git a/src/renderer/tr_shade.c b/src/renderer/tr_shade.c
-index 93d48b7ea..26c29c4cd 100644
+index 93d48b7ea..c598748e5 100644
 --- a/src/renderer/tr_shade.c
 +++ b/src/renderer/tr_shade.c
 @@ -39,6 +39,14 @@
@@ -7345,12 +7351,19 @@ index 93d48b7ea..26c29c4cd 100644
  	glDepthRange(0, 1);
  	glDisable(GL_POLYGON_OFFSET_LINE);
  }
-@@ -314,6 +323,13 @@ void RB_BeginSurface(shader_t *shader, int fogNum)
+@@ -314,6 +323,20 @@ void RB_BeginSurface(shader_t *shader, int fogNum)
  	tess.xstages                  = state->stages;
  	tess.numPasses                = state->numUnfoggedPasses;
  	tess.currentStageIteratorFunc = state->optimalStageIteratorFunc;
 +#ifdef __EMSCRIPTEN__
-+	tess.currentStageIteratorFunc = RB_StageIteratorGeneric;
++	/* Sky surfaces must reach RB_StageIteratorSky so their visible polygons
++	 * are projected into the stock cloud mesh. The browser GLES submitter can
++	 * render that generated tessellation; forcing the generic iterator here
++	 * skipped the projection and left only the blue clear colour. */
++	if (!state->isSky)
++	{
++		tess.currentStageIteratorFunc = RB_StageIteratorGeneric;
++	}
 +	if (tess.numPasses < 1)
 +	{
 +		tess.numPasses = 1;
@@ -7359,7 +7372,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  	tess.shaderTime = backEnd.refdef.floatTime - tess.shader->timeOffset;
  	if (tess.shader->clampTime != 0.0 && tess.shaderTime >= tess.shader->clampTime)
-@@ -963,7 +979,7 @@ static void ComputeColors(shaderStage_t *pStage)
+@@ -963,7 +986,7 @@ static void ComputeColors(shaderStage_t *pStage)
  
  		for (i = 0; i < tess.numVertexes; i++)
  		{
@@ -7368,7 +7381,7 @@ index 93d48b7ea..26c29c4cd 100644
  		}
  	}
  	break;
-@@ -1358,6 +1374,9 @@ extern void R_Fog(glfog_t *curfog);
+@@ -1358,6 +1381,9 @@ extern void R_Fog(glfog_t *curfog);
   */
  void SetIteratorFog(void)
  {
@@ -7378,7 +7391,7 @@ index 93d48b7ea..26c29c4cd 100644
  	// changed for problem when you start the game with r_fastsky set to '1'
  	//  if(r_fastsky->integer || backEnd.refdef.rdflags & RDF_NOWORLDMODEL ) {
  	if (backEnd.refdef.rdflags & RDF_NOWORLDMODEL)
-@@ -1429,6 +1448,140 @@ static qboolean DebugShaderSurfaceFlags(shaderCommands_t *input)
+@@ -1429,6 +1455,140 @@ static qboolean DebugShaderSurfaceFlags(shaderCommands_t *input)
  	return qfalse;
  }
  
@@ -7519,7 +7532,7 @@ index 93d48b7ea..26c29c4cd 100644
  /**
   * @brief RB_IterateStagesGeneric
   * @param[in] input
-@@ -1441,6 +1594,9 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
+@@ -1441,6 +1601,9 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
  	for (stage = 0; stage < MAX_SHADER_STAGES; stage++)
  	{
  		qboolean skipRemainingStages = qfalse;
@@ -7529,7 +7542,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  		pStage = tess.xstages[stage];
  
-@@ -1454,25 +1610,66 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
+@@ -1454,25 +1617,66 @@ static void RB_IterateStagesGeneric(shaderCommands_t *input)
  
  		skipRemainingStages = DebugShaderSurfaceFlags(input);
  
@@ -7596,7 +7609,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  			// set state
  			R_BindAnimatedImage(&pStage->bundle[0]);
-@@ -1570,7 +1767,13 @@ void RB_StageIteratorGeneric(void)
+@@ -1570,7 +1774,13 @@ void RB_StageIteratorGeneric(void)
  	shaderCommands_t *input  = &tess;
  	shader_t         *shader = input->shader;
  
@@ -7610,7 +7623,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  	Ren_LogComment("--- RB_StageIteratorGeneric( %s ) ---\n", tess.shader->name);
  
-@@ -1594,27 +1797,27 @@ void RB_StageIteratorGeneric(void)
+@@ -1594,27 +1804,27 @@ void RB_StageIteratorGeneric(void)
  	if (tess.numPasses > 1 || shader->multitextureEnv)
  	{
  		setArraysOnce = qfalse;
@@ -7644,7 +7657,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  	// enable color and texcoord arrays after the lock if necessary
  	if (!setArraysOnce)
-@@ -1622,10 +1825,12 @@ void RB_StageIteratorGeneric(void)
+@@ -1622,10 +1832,12 @@ void RB_StageIteratorGeneric(void)
  		glEnableClientState(GL_TEXTURE_COORD_ARRAY);
  		glEnableClientState(GL_COLOR_ARRAY);
  	}
@@ -7657,7 +7670,7 @@ index 93d48b7ea..26c29c4cd 100644
  	// now do any dynamic lighting needed
  	//tess.dlightBits = 255;  // HACK!
  	//if( tess.dlightBits && tess.shader->sort <= SS_OPAQUE &&
-@@ -1647,13 +1852,10 @@ void RB_StageIteratorGeneric(void)
+@@ -1647,13 +1859,10 @@ void RB_StageIteratorGeneric(void)
  	{
  		RB_FogPass();
  	}
@@ -7673,7 +7686,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  	// reset polygon offset
  	if (shader->polygonOffset)
-@@ -1694,11 +1896,7 @@ void RB_StageIteratorVertexLitTexture(void)
+@@ -1694,11 +1903,7 @@ void RB_StageIteratorVertexLitTexture(void)
  	glTexCoordPointer(2, GL_FLOAT, 16, tess.texCoords[0][0]);
  	glVertexPointer(3, GL_FLOAT, 16, input->xyz);
  
@@ -7686,7 +7699,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  	// call special shade routine
  	R_BindAnimatedImage(&tess.xstages[0]->bundle[0]);
-@@ -1727,11 +1925,7 @@ void RB_StageIteratorVertexLitTexture(void)
+@@ -1727,11 +1932,7 @@ void RB_StageIteratorVertexLitTexture(void)
  	}
  
  	// unlock arrays
@@ -7699,7 +7712,7 @@ index 93d48b7ea..26c29c4cd 100644
  }
  
  //define    REPLACE_MODE
-@@ -1806,11 +2000,7 @@ void RB_StageIteratorLightmappedMultitexture(void)
+@@ -1806,11 +2007,7 @@ void RB_StageIteratorLightmappedMultitexture(void)
  	glTexCoordPointer(2, GL_FLOAT, 16, tess.texCoords[0][1]);
  
  	// lock arrays
@@ -7712,7 +7725,7 @@ index 93d48b7ea..26c29c4cd 100644
  
  	R_DrawElements(input->numIndexes, input->indexes);
  
-@@ -1846,11 +2036,7 @@ void RB_StageIteratorLightmappedMultitexture(void)
+@@ -1846,11 +2043,7 @@ void RB_StageIteratorLightmappedMultitexture(void)
  	}
  
  	// unlock arrays
@@ -7725,7 +7738,7 @@ index 93d48b7ea..26c29c4cd 100644
  }
  
  /**
-@@ -1895,6 +2081,7 @@ void RB_EndSurface(void)
+@@ -1895,6 +2088,7 @@ void RB_EndSurface(void)
  	// call off to shader specific tess end function
  	tess.currentStageIteratorFunc();
  
@@ -7733,7 +7746,7 @@ index 93d48b7ea..26c29c4cd 100644
  	// draw debugging stuff
  	if (r_showTris->integer)
  	{
-@@ -1904,6 +2091,7 @@ void RB_EndSurface(void)
+@@ -1904,6 +2098,7 @@ void RB_EndSurface(void)
  	{
  		DrawNormals(input);
  	}
@@ -7917,25 +7930,21 @@ index 89a1e244b..79cae673f 100644
  	}
  
 diff --git a/src/renderer/tr_world.c b/src/renderer/tr_world.c
-index d05554cfd..4053f695a 100644
+index d05554cfd..3849a58a3 100644
 --- a/src/renderer/tr_world.c
 +++ b/src/renderer/tr_world.c
-@@ -245,6 +245,14 @@ static void R_AddWorldSurface(msurface_t *surf, shader_t *shader, int dlightMap,
+@@ -245,6 +245,10 @@ static void R_AddWorldSurface(msurface_t *surf, shader_t *shader, int dlightMap,
  {
  	int frontFace;
  
 +#ifdef __EMSCRIPTEN__
-+	if (shader && shader->isSky)
-+	{
-+		return;
-+	}
 +	decalBits = 0;
 +#endif
 +
  	if (surf->viewCount == tr.viewCount)
  	{
  		return;     // already in this view
-@@ -483,6 +491,10 @@ static void R_AddLeafSurfaces(mnode_t *node, int dlightBits, int decalBits)
+@@ -483,6 +487,10 @@ static void R_AddLeafSurfaces(mnode_t *node, int dlightBits, int decalBits)
  	}
  }
  
@@ -7946,7 +7955,7 @@ index d05554cfd..4053f695a 100644
  /**
   * @brief R_RecursiveWorldNode
   * @param[in] node
-@@ -832,6 +844,12 @@ static void R_MarkLeaves(void)
+@@ -832,6 +840,12 @@ static void R_MarkLeaves(void)
   */
  void R_AddWorldSurfaces(void)
  {
@@ -7959,7 +7968,7 @@ index d05554cfd..4053f695a 100644
  	if (!r_drawWorld->integer)
  	{
  		return;
-@@ -852,7 +870,11 @@ void R_AddWorldSurfaces(void)
+@@ -852,7 +866,11 @@ void R_AddWorldSurfaces(void)
  	ClearBounds(tr.viewParms.visBounds[0], tr.viewParms.visBounds[1]);
  
  	// render sky or world?
@@ -7971,7 +7980,7 @@ index d05554cfd..4053f695a 100644
  	{
  		int     i;
  		mnode_t **node;
-@@ -863,6 +885,11 @@ void R_AddWorldSurfaces(void)
+@@ -863,6 +881,11 @@ void R_AddWorldSurfaces(void)
  	else
  	{
  		// determine which leaves are in the PVS / areamask
@@ -7983,7 +7992,7 @@ index d05554cfd..4053f695a 100644
  		R_MarkLeaves();
  
  		// perform frustum culling and add all the potentially visible surfaces
-@@ -870,6 +897,7 @@ void R_AddWorldSurfaces(void)
+@@ -870,6 +893,7 @@ void R_AddWorldSurfaces(void)
  
  		// add decal surfaces
  		R_AddDecalSurfaces(tr.world->bmodels);
@@ -10965,7 +10974,7 @@ index 763152af1..289a24734 100644
  
  /*
 diff --git a/src/ui/ui_loadpanel.c b/src/ui/ui_loadpanel.c
-index 3411587b9..cee5fda34 100644
+index 3411587b9..939bb7f07 100644
 --- a/src/ui/ui_loadpanel.c
 +++ b/src/ui/ui_loadpanel.c
 @@ -177,10 +177,10 @@ void UI_DrawLoadPanel(qboolean ownerdraw, qboolean uihack)
@@ -10981,6 +10990,21 @@ index 3411587b9..cee5fda34 100644
  		bg_loadscreeninited = qtrue;
  	}
  
+@@ -430,4 +430,14 @@ void UI_LoadPanel_RenderLoadingText(panel_button_t *button)
+ 			p1++;
+ 		}
+ 	}
++
++	/* The connection state is the final line in buff and is not followed by a
++	 * newline. Paint that tail as well; otherwise "Awaiting connection",
++	 * "Awaiting challenge", and "Awaiting gamestate" are all calculated but
++	 * never displayed. */
++	if (*p2)
++	{
++		Text_Paint_Ext(button->rect.x + 4, y, button->font->scalex, button->font->scaley,
++		               button->font->colour, p2, 0, 0, 0, button->font->font);
++	}
+ }
 diff --git a/src/ui/ui_local.h b/src/ui/ui_local.h
 index 5cecb3f56..bf8511b18 100644
 --- a/src/ui/ui_local.h
@@ -10995,7 +11019,7 @@ index 5cecb3f56..bf8511b18 100644
  int trap_FS_GetFileList(const char *path, const char *extension, char *listbuf, int bufsize);
  int trap_FS_Delete(const char *filename);
 diff --git a/src/ui/ui_main.c b/src/ui/ui_main.c
-index 31ab6710e..b6b45770c 100644
+index 31ab6710e..aa736ca86 100644
 --- a/src/ui/ui_main.c
 +++ b/src/ui/ui_main.c
 @@ -319,6 +319,10 @@ int Text_Width_Ext(const char *text, float scale, int limit, fontHelper_t *font)
@@ -11253,32 +11277,50 @@ index 31ab6710e..b6b45770c 100644
  	UI_RegisterCvarDescriptionsFromTooltips();
  
  	Menus_CloseAll();
-@@ -9028,6 +9129,24 @@ void UI_SetActiveMenu(uiMenuCommand_t menu)
+@@ -8941,6 +9042,17 @@ void UI_KeyEvent(int key, qboolean down)
+ 		menuDef_t *menu = Menu_GetFocused();
+ 		if (menu)
+ 		{
++#ifdef __EMSCRIPTEN__
++			/* The desktop credits menu treats Escape as Quit. In a browser there
++			 * is no process to quit; return to the ETJS main menu instead. */
++			if (down && key == K_ESCAPE && menu->window.name
++			    && !Q_stricmp(menu->window.name, "credits_quit"))
++			{
++				Menus_CloseByName("credits_quit");
++				Menus_ActivateByName("main", qfalse);
++				return;
++			}
++#endif
+ 			if (trap_Cvar_VariableValue("cl_bypassMouseInput") != 0.f)
+ 			{
+ 				bypassKeyClear = qtrue;
+@@ -9028,6 +9140,24 @@ void UI_SetActiveMenu(uiMenuCommand_t menu)
  	char buf[4096]; // com_errorMessage can go up to 4096
  	char *missing_files;
  
 +#ifdef __EMSCRIPTEN__
-+	if (Menu_Count() <= 0 && menu == UIMENU_MAIN)
++	/* Static WebAssembly modules survive renderer/cgame restarts.  Recover the
++	 * parsed UI whenever any stock menu is requested, not only the main menu.
++	 * A zero menu count otherwise makes UI_SetActiveMenu silently do nothing,
++	 * breaking Escape and every communication menu at once. */
++	if (Menu_Count() <= 0 && menu != UIMENU_NONE)
 +	{
-+		static int etjsMenuReload;
-+		if (etjsMenuReload < 1)
-+		{
-+			etjsMenuReload++;
-+			Com_DPrintf("ETJS SetActiveMenu count=0, reload official menus\n");
-+			UI_LoadMenus("ui/etjs_menus.txt", qtrue);
-+		}
++		Com_Printf("ETJS SetActiveMenu count=0, reloading official menus for request %d\n", (int)menu);
++		UI_LoadMenus("ui/etjs_menus.txt", qtrue);
 +	}
 +	trap_Cvar_Set("etjs_menucount", va("%d", Menu_Count()));
 +	if (menu != UIMENU_NONE)
 +	{
-+		Com_DPrintf("ETJS SetActiveMenu menu=%d count=%d\n", (int)menu, Menu_Count());
++		Com_Printf("ETJS SetActiveMenu menu=%d count=%d catchers=%d\n",
++		           (int)menu, Menu_Count(), trap_Key_GetCatcher());
 +	}
 +#endif
 +
  	// this should be the ONLY way the menu system is brought up
  	// enusure minumum menu data is cached
  	if (Menu_Count() > 0)
-@@ -9049,8 +9168,24 @@ void UI_SetActiveMenu(uiMenuCommand_t menu)
+@@ -9049,8 +9179,24 @@ void UI_SetActiveMenu(uiMenuCommand_t menu)
  		case UIMENU_MAIN:
  			trap_Key_SetCatcher(KEYCATCH_UI);
  			Menus_CloseAll();

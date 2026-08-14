@@ -33,6 +33,14 @@ install -m 0755 "$SEED_ROOT/legacy/qagame.mp.x86_64.so" \
   "$DATA_ROOT/runtime/legacy/qagame.mp.x86_64.so"
 install -m 0644 "$SEED_ROOT/legacy/etjs.pk3" \
   "$DATA_ROOT/runtime/legacy/etjs.pk3"
+# Browser UI files are application code, not operator configuration. Refresh
+# them on every image start so a persistent /data volume cannot pin an older
+# menu layout after the container is upgraded.
+mkdir -p "$DATA_ROOT/runtime/legacy/ui"
+for seed_ui_file in "$SEED_ROOT"/legacy/ui/*; do
+  [ -f "$seed_ui_file" ] || continue
+  install -m 0644 "$seed_ui_file" "$DATA_ROOT/runtime/legacy/ui/$(basename "$seed_ui_file")"
+done
 install -m 0644 "$SEED_ROOT/omni-bot-user/omni-bot.cfg" \
   "$DATA_ROOT/runtime/omni-bot-user/omni-bot.cfg"
 

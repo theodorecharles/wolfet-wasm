@@ -99,6 +99,8 @@ describe('reproducible source repository', () => {
     assert.match(entrypoint, /DATA_ROOT\/custom_maps/);
     assert.match(entrypoint, /DATA_OWNER_UID/);
     assert.match(entrypoint, /KEEP_ALIVE/);
+    assert.match(entrypoint, /for seed_ui_file in "\$SEED_ROOT"\/legacy\/ui\/\*/);
+    assert.match(entrypoint, /runtime\/legacy\/ui\/\$\(basename "\$seed_ui_file"\)/);
     assert.match(workflow, /platforms: linux\/amd64/);
     assert.match(workflow, /type=raw,value=dev/);
     assert.match(workflow, /type=raw,value=latest/);
@@ -106,6 +108,17 @@ describe('reproducible source repository', () => {
     assert.match(workflow, /DOCKERHUB_TOKEN/);
     assert.match(workflow, /Require Docker Hub credentials/);
     assert.match(workflow, /exit 1/);
+  });
+
+  it('publishes Docker images only on the dedicated Mac mini runner', () => {
+    const workflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'docker.yml'), 'utf8');
+    assert.match(workflow, /runs-on: \[self-hosted, macOS, ARM64, wolfet-wasm\]/);
+    assert.match(workflow, /docker\/setup-qemu-action@v4/);
+    assert.match(workflow, /platforms: amd64/);
+    assert.match(workflow, /platforms: linux\/amd64/);
+    assert.match(workflow, /keep-state: true/);
+    assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
+    assert.doesNotMatch(workflow, /type=gha/);
   });
 
   it('does not ship the old shared RCON password', () => {

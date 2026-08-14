@@ -130,6 +130,15 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.doesNotMatch(fn, /ETJS_RB_DrawWorld/);
   });
 
+  it('keeps browser sky surfaces and routes them through the stock sky projection', () => {
+    const addSurface = extractFn(world, 'R_AddWorldSurface');
+    const shade = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_shade.c'), 'utf8');
+    const begin = extractFn(shade, 'RB_BeginSurface');
+    assert.doesNotMatch(addSurface, /shader\s*&&\s*shader->isSky[\s\S]*?return/);
+    assert.match(begin, /if \(!state->isSky\)[\s\S]*?RB_StageIteratorGeneric/);
+    assert.match(shade, /tess\.currentStageIteratorFunc\s*=\s*state->optimalStageIteratorFunc/);
+  });
+
   it('RB_BeginDrawingView does not stay in 2D ortho and return', () => {
     const fn = extractFn(backend, 'RB_BeginDrawingView');
     assert.doesNotMatch(fn, /ETJS_RB_DrawWorld/);
@@ -309,6 +318,33 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(hud, /CG_DrawDemoMessage[\s\S]*?#ifdef __EMSCRIPTEN__[\s\S]*?return;[\s\S]*?#endif/);
   });
 
+  it('ships a browser-safe menu set and paints the final connection-status line', () => {
+    const menus = fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_menus.txt'), 'utf8');
+    const ingame = fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_ingame.menu'), 'utf8');
+    const options = fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_options.menu'), 'utf8');
+    const loading = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_loadpanel.c'), 'utf8');
+
+    assert.match(menus, /ui\/etjs_ingame\.menu/);
+    assert.match(menus, /ui\/etjs_options\.menu/);
+    assert.doesNotMatch(menus, /ui\/ingame_disconnect\.menu/);
+    assert.doesNotMatch(menus, /ui\/quit\.menu/);
+    assert.doesNotMatch(menus, /options_customise_hudeditor_fui/);
+    assert.match(ingame, /RETURN TO GAME/);
+    assert.match(ingame, /MSGID_MENU_INGAME_LIMBO_MENU/);
+    assert.doesNotMatch(ingame, /CHANGELOG|FAVORITE|OPTIONS|VOTE|SERVER_INFO|DISCONNECT|EXIT|ETLEGACY_VERSION|legacy_logo|development_build_banner/);
+    assert.doesNotMatch(options, /HUD_EDITOR|OPEN_HOME|open_homepath|edithud/);
+    assert.match(loading, /The connection state is the final line/);
+    assert.match(loading, /if \(\*p2\)[\s\S]*Text_Paint_Ext/);
+    const mainMenu = fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_official.menu'), 'utf8');
+    const uiMain = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_main.c'), 'utf8');
+    assert.match(mainMenu, /name "main"[\s\S]*?rect 16 16 128 104/);
+    assert.match(mainMenu, /name "window"[\s\S]*?rect 0 0 128 104/);
+    assert.match(mainMenu, /bttnOPTIONS[\s\S]*?mouseEnter[\s\S]*?mouseExit/);
+    assert.match(mainMenu, /bttnCREDITS[\s\S]*?mouseEnter[\s\S]*?mouseExit/);
+    assert.doesNotMatch(mainMenu, /bttnEXIT GAME|text "EXIT GAME"/);
+    assert.match(uiMain, /credits_quit[\s\S]*?Menus_CloseByName\("credits_quit"\)[\s\S]*?Menus_ActivateByName\("main", qfalse\)/);
+  });
+
   it('draws the stock ET compass minimap in the browser HUD', () => {
     const hud = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw_hud.c'), 'utf8');
     const fn = extractFn(hud, 'CG_DrawNewCompass');
@@ -455,7 +491,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(favs, /no server browser/);
   });
 
-  it('follow look is not applied to the followed player and join uses the in-game command', () => {
+  it('follow look is isolated and communication keys use the normal bound-key path', () => {
     const input = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_input.c'), 'utf8');
     assert.match(input, /pm_flags & 4096/);
     const main = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_main.c'), 'utf8');
@@ -471,12 +507,10 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(page, /Game server is ready/);
     assert.match(page, /wasDead\s*&&\s*!dead/);
     assert.match(page, /set etjs_resetlook 1/);
-    assert.match(page, /toggleInGameMenu\('escape-key'\)/);
     assert.match(page, /showInGameMenuWhenUncaptured\('pointer-lock-lost'\)/);
     assert.match(page, /showInGameMenuWhenUncaptured\('window-blur'\)/);
     assert.match(page, /typingMode = 'chat'/);
-    assert.match(page, /_ETJS_OpenCommunication/);
-    assert.match(page, /openCommunication\(code === 'KeyT' \? 1 : 2\)/);
+    assert.match(page, /T\/Y\/V[\s\S]*same native CL_KeyEvent route/);
     assert.match(page, /intermissionOpen\(\) && !engineUiOpen\(\)[\s\S]*sendChar\(ev\.key\.codePointAt\(0\)\)/);
     assert.match(page, /Voice chat is opened by[\s\S]*QUICK CHAT button/);
     const debriefInput = page.split('if (intermissionOpen() && !engineUiOpen())')[1].split('if (uiOpen())')[0];
@@ -486,12 +520,21 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(debriefInput, /sendChar\(8\)/);
     const keyDown = page.split('function onKeyDown(ev)')[1].split('function onKeyUp(ev)')[0];
     assert.ok(keyDown.indexOf('if (typingMode)') < keyDown.indexOf('if (uiOpen())'));
+    assert.doesNotMatch(keyDown, /handleCommunicationKey\(code\)/);
+    assert.doesNotMatch(keyDown, /toggleInGameMenu\('escape-key'\)/);
+    assert.match(keyDown, /var keySent = sendKey\(key, 1\)/);
+    assert.match(keyDown, /code === 'KeyT'[\s\S]*code === 'KeyY'[\s\S]*code === 'KeyU'/);
     assert.match(input, /int ETJS_OpenCommunication\(int mode\)/);
-    assert.match(input, /VM_Call\(uivm, UI_SET_ACTIVE_MENU, menu\)/);
+    assert.match(input, /Cmd_ExecuteString\(command\)/);
+    assert.match(input, /command = "messagemode"/);
+    assert.match(input, /command = "messagemode2"/);
+    assert.match(input, /command = "mp_quickmessage"/);
     assert.match(input, /UIMENU_INGAME_MESSAGEMODE/);
     assert.match(input, /UIMENU_WM_QUICKMESSAGE/);
     assert.doesNotMatch(input, /Cbuf_ExecuteText\(EXEC_NOW, command\)/);
-    assert.match(page, /communicationInput/);
+    assert.match(main, /UI_GET_ACTIVE_MENU\) == UIMENU_MAIN/);
+    assert.doesNotMatch(main, /cls\.state == CA_ACTIVE\)[\s\S]{0,160}cls\.keyCatchers &= ~KEYCATCH_UI/);
+    assert.match(page, /communicationInput = true/);
     assert.match(page, /engineCmd\(TAP_KEYS\[code\]\)/);
     assert.match(page, /con_fontName', 'courbd'/);
     assert.match(page, /Enter: 13/);

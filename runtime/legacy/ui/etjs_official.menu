@@ -50,7 +50,7 @@ menuDef {
 	name "main_opener"
 	visible 0
 	fullscreen 0
-	rect 16 16 128 176
+	rect 16 16 128 104
 	onOpen {
 		open background_1 ;
 		open main ;
@@ -62,7 +62,7 @@ menuDef {
 	name "main"
 	visible 0
 	fullscreen 0
-	rect 16 16 128 176
+	rect 16 16 128 104
 	style 1
 
 	onOpen {
@@ -115,7 +115,7 @@ menuDef {
 	itemDef {
 		name "window"
 		group "grpMain"
-		rect 0 0 128 176
+		rect 0 0 128 104
 		style 1
 		backcolor 0 0 0 .2
 		border 1
@@ -208,6 +208,14 @@ menuDef {
 		border 1
 		bordercolor .1 .1 .1 .5
 		visible 1
+		mouseEnter {
+			setitemcolor "bttnOPTIONS" forecolor .9 .9 .9 1 ;
+			setitemcolor "bttnOPTIONS" backcolor .5 .5 .5 .4
+		}
+		mouseExit {
+			setitemcolor "bttnOPTIONS" forecolor .6 .6 .6 1 ;
+			setitemcolor "bttnOPTIONS" backcolor .3 .3 .3 .4
+		}
 		action {
 			play "sound/menu/select.wav" ;
 			close main ;
@@ -232,34 +240,18 @@ menuDef {
 		border 1
 		bordercolor .1 .1 .1 .5
 		visible 1
+		mouseEnter {
+			setitemcolor "bttnCREDITS" forecolor .9 .9 .9 1 ;
+			setitemcolor "bttnCREDITS" backcolor .5 .5 .5 .4
+		}
+		mouseExit {
+			setitemcolor "bttnCREDITS" forecolor .6 .6 .6 1 ;
+			setitemcolor "bttnCREDITS" backcolor .3 .3 .3 .4
+		}
 		action {
 			play "sound/menu/select.wav" ;
 			close main ;
 			open credits_quit
-		}
-	}
-
-	itemDef {
-		name "bttnEXIT GAME"
-		group "grpMain"
-		rect 6 104 116 18
-		type 1
-		text "EXIT GAME"
-		textfont 3
-		textscale .3
-		textalign 1
-		textalignx 58
-		textaligny 14
-		style 1
-		backcolor .3 .3 .3 .4
-		forecolor .6 .6 .6 1
-		border 1
-		bordercolor .1 .1 .1 .5
-		visible 1
-		action {
-			play "sound/menu/select.wav" ;
-			close main ;
-			open quit
 		}
 	}
 }

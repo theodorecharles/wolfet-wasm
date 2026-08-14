@@ -708,7 +708,9 @@
       fetch('/legacy/ui/etjs_official.menu').then(function (r) { return r.ok ? r.text() : ''; }),
       fetch('/legacy/ui/main.menu').then(function (r) { return r.ok ? r.text() : ''; }),
       fetch('/legacy/ui/etjs_main.menu').then(function (r) { return r.ok ? r.text() : ''; }),
-      fetch('/legacy/ui/etjs_bare.menu').then(function (r) { return r.ok ? r.text() : ''; })
+      fetch('/legacy/ui/etjs_bare.menu').then(function (r) { return r.ok ? r.text() : ''; }),
+      fetch('/legacy/ui/etjs_ingame.menu').then(function (r) { return r.ok ? r.text() : ''; }),
+      fetch('/legacy/ui/etjs_options.menu').then(function (r) { return r.ok ? r.text() : ''; })
     ]).then(function (texts) {
       ['/legacy/ui', '/home/legacy/ui'].forEach(function (dir) {
         if (texts[0]) { try { FS.writeFile(dir + '/etjs_menus.txt', texts[0]); } catch (e) { /* ignore */ } }
@@ -716,6 +718,8 @@
         if (texts[2]) { try { FS.writeFile(dir + '/main.menu', texts[2]); } catch (e) { /* ignore */ } }
         if (texts[3]) { try { FS.writeFile(dir + '/etjs_main.menu', texts[3]); } catch (e) { /* ignore */ } }
         if (texts[4]) { try { FS.writeFile(dir + '/etjs_bare.menu', texts[4]); } catch (e) { /* ignore */ } }
+        if (texts[5]) { try { FS.writeFile(dir + '/etjs_ingame.menu', texts[5]); } catch (e) { /* ignore */ } }
+        if (texts[6]) { try { FS.writeFile(dir + '/etjs_options.menu', texts[6]); } catch (e) { /* ignore */ } }
       });
     }).catch(function () { /* menus still served from pak overlay on next run */ });
   }
@@ -1247,29 +1251,9 @@
         sendKey(menuKey, 1);
         return;
       }
-      /* These default gameplay actions open a catcher/menu immediately. Send
-       * the command directly so the ensuing pointer-lock release cannot eat
-       * the corresponding key-up event. Once open, Escape and voice-menu
-       * navigation continue through normal ET key events above. */
-      if (code === 'Escape' || code === 'KeyT' || code === 'KeyY' ||
-          code === 'KeyU' || code === 'KeyV') {
-        ev.preventDefault();
-        ev.stopImmediatePropagation();
-        if (ev.repeat) {
-          return;
-        }
-        if (code === 'Escape') {
-          toggleInGameMenu('escape-key');
-        } else if (code === 'KeyT' || code === 'KeyY' || code === 'KeyV') {
-          handleCommunicationKey(code);
-        } else {
-          engineCmd(TAP_KEYS[code]);
-          if (code === 'KeyU') {
-            typingMode = 'chat';
-          }
-        }
-        return;
-      }
+      /* Gameplay bindings all take the same native CL_KeyEvent route.  T/Y/V
+       * and Escape are not browser commands: treating them specially bypassed
+       * ET's binding/cgame transitions while Ctrl and Tab continued to work. */
       var key = CODE_TO_KEY[code];
       if (!key && ev.key && ev.key.length === 1) {
         key = ev.key.toLowerCase().charCodeAt(0);
@@ -1293,7 +1277,12 @@
       else if (code === 'Space') { moveU = 1; }
       else if (code === 'KeyC') { moveU = -1; }
       sendMove();
-      if (!sendKey(key, 1)) {
+      var keySent = sendKey(key, 1);
+      if (keySent && (code === 'KeyT' || code === 'KeyY' || code === 'KeyU')) {
+        typingMode = 'chat';
+        communicationInput = true;
+      }
+      if (!keySent) {
         if (code === 'KeyL') {
           engineCmd('openlimbomenu');
         } else if (HOLD_KEYS[code]) {

@@ -11,23 +11,22 @@
 	loadMenu { "ui/wm_ftquickmessage.menu" }
 	loadMenu { "ui/wm_ftquickmessageAlt.menu" }
 
-	// chat, class/team selection, tapout, and Escape menu
+	// chat, class/team selection, tapout, and browser-safe Escape menu
 	loadMenu { "ui/ingame_messagemode.menu" }
 	loadMenu { "ui/wm_class.menu" }
 	loadMenu { "ui/wm_classAlt.menu" }
 	loadMenu { "ui/wm_team.menu" }
 	loadMenu { "ui/wm_teamAlt.menu" }
-	loadMenu { "ui/ingame_main.menu" }
-	loadMenu { "ui/ingame_disconnect.menu" }
+	loadMenu { "ui/etjs_ingame.menu" }
 	loadMenu { "ui/ingame_tapout.menu" }
 	loadMenu { "ui/ingame_tapoutlms.menu" }
 
-	// complete options tree used from both MAIN and the in-game menu
-	loadMenu { "ui/options.menu" }
+	// Browser-safe options tree. The desktop-only HUD editor and filesystem
+	// opener are intentionally absent from the ETJS options page.
+	loadMenu { "ui/etjs_options.menu" }
 	loadMenu { "ui/options_customise_game.menu" }
 	loadMenu { "ui/options_customise_hud.menu" }
 	loadMenu { "ui/options_customise_hud_extended.menu" }
-	loadMenu { "ui/options_customise_hudeditor_fui.menu" }
 	loadMenu { "ui/options_controls.menu" }
 	loadMenu { "ui/options_controls_advanced.menu" }
 	loadMenu { "ui/options_controls_default.menu" }
@@ -35,6 +34,5 @@
 	loadMenu { "ui/options_system_extended.menu" }
 	loadMenu { "ui/options_system_gamma.menu" }
 
-	loadMenu { "ui/quit.menu" }
 	loadMenu { "ui/credits_quit.menu" }
 }
