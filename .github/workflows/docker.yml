@@ -51,7 +51,7 @@ jobs:
             *) echo "unsupported publish ref: $GITHUB_REF" >&2; exit 1 ;;
           esac
 
-          etjs_docker_config="$RUNNER_TEMP/wolfet-wasm-docker-$GITHUB_RUN_ID"
+          etjs_docker_config="$(mktemp -d)"
           etjs_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
           install -d -m 0700 "$etjs_docker_config"
           printf '{"auths":{}}\n' > "$etjs_docker_config/config.json"

@@ -138,7 +138,7 @@ describe('reproducible source repository', () => {
     assert.match(workflow, /"\$etjs_docker" --config "\$etjs_docker_config" pull docker\.io\/tonistiigi\/binfmt:latest/);
     assert.match(workflow, /tonistiigi\/binfmt:latest --install amd64/);
     assert.match(workflow, /--platform linux\/amd64/);
-    assert.match(workflow, /RUNNER_TEMP\/wolfet-wasm-docker-\$GITHUB_RUN_ID/);
+    assert.match(workflow, /etjs_docker_config="\$\(mktemp -d\)"/);
     assert.match(workflow, /--password-stdin/);
     assert.match(workflow, /buildx build/);
     assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
