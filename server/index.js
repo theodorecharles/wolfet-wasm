@@ -169,8 +169,8 @@ function pwaManifest() {
 function serviceWorkerSource() {
   const metadata = JSON.parse(fs.readFileSync(FRAMEWORK_METADATA_PATH, 'utf8'));
   const cache = 'wasm-game-shell-' + metadata.version;
-  const shell = ['/', '/shared-shell/wolfwasm-shell.css', '/shared-shell/wolfwasm-shell.js',
-    '/shared-shell/wolfwasm-bootstrap.js', '/wasm-game.json', '/game-adapter.js'];
+  const shell = ['/', '/shared-shell/wasm-game-framework.css', '/shared-shell/wasm-game-framework.js',
+    '/shared-shell/wasm-game-bootstrap.js', '/wasm-game.json', '/game-adapter.js'];
   return `'use strict';\n` +
     `const CACHE = ${JSON.stringify(cache)};\n` +
     `const SHELL = ${JSON.stringify(shell)};\n` +

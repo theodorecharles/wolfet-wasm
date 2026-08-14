@@ -459,7 +459,7 @@ describe('no overlay theater in the shipped draw path', () => {
   it('streams real engine startup output into the loading console', () => {
     const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
     const html = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'index.html'), 'utf8');
-    const shellCss = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'wolfwasm-shell.css'), 'utf8');
+    const shellCss = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'wasm-game-framework.css'), 'utf8');
     assert.match(html, /id="loading-console"[^>]*data-shell-console[^>]*role="log"/);
     assert.match(page, /function appendStartupLine/);
     assert.match(page, /print:\s*function \(text\)[\s\S]*?onEngineLine\(text, 'info'\)/);

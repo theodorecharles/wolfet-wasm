@@ -30,7 +30,7 @@ describe('browser client scripts', () => {
     const adapter = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.6.1');
+    assert.equal(framework.version, '0.7.0');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
@@ -48,9 +48,10 @@ describe('browser client scripts', () => {
     assert.match(adapter, /pk3-cache\.js/);
     assert.match(adapter, /pk3-download\.js/);
     assert.match(adapter, /client\.js\?v=18/);
-    assert.match(html, /shared-shell\/wolfwasm-shell\.js/);
-    assert.match(html, /shared-shell\/wolfwasm-shell\.css/);
-    assert.match(html, /shared-shell\/wolfwasm-bootstrap\.js/);
+    assert.match(html, /shared-shell\/wasm-game-framework\.js/);
+    assert.match(html, /shared-shell\/wasm-game-framework\.css/);
+    assert.match(html, /shared-shell\/wasm-game-bootstrap\.js/);
+    assert.doesNotMatch(html, /WolfWasm|wolfwasm/);
     assert.match(html, /data-shell-launcher/);
     assert.match(html, /data-shell-runtime/);
     assert.match(html, /data-shell-canvas/);

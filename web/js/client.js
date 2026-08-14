@@ -1929,8 +1929,8 @@
     if (canonicalContext && canonicalContext.shell) {
       wasmShell = canonicalContext.shell;
       frameworkEngineState = wasmShell.engineState();
-    } else if (window.WolfWasmShell) {
-      wasmShell = window.WolfWasmShell.configure({
+    } else if (window.WasmGameFramework) {
+      wasmShell = window.WasmGameFramework.configure({
         launcher: nameGate,
         card: nameForm,
         loading: loadPanel,
