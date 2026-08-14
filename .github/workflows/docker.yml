@@ -51,12 +51,17 @@ jobs:
             *) echo "unsupported publish ref: $GITHUB_REF" >&2; exit 1 ;;
           esac
 
-          etjs_docker_config="$(mktemp -d)"
+          etjs_action_home="$(mktemp -d)"
+          export HOME="$etjs_action_home"
+          etjs_docker_config="$HOME/.docker"
           etjs_docker="/Applications/Docker.app/Contents/Resources/bin/docker"
           install -d -m 0700 "$etjs_docker_config"
-          printf '{"auths":{}}\n' > "$etjs_docker_config/config.json"
+          printf '%s\n' \
+            '{"auths":{},"cliPluginsExtraDirs":["/Applications/Docker.app/Contents/Resources/cli-plugins"]}' \
+            > "$etjs_docker_config/config.json"
 
-          "$etjs_docker" --config "$etjs_docker_config" pull docker.io/tonistiigi/binfmt:latest
+          "$etjs_docker" --config "$etjs_docker_config" image inspect \
+            docker.io/tonistiigi/binfmt:latest >/dev/null
           "$etjs_docker" --config "$etjs_docker_config" run --privileged --rm \
             docker.io/tonistiigi/binfmt:latest --install amd64
           printf '%s' "$DOCKERHUB_TOKEN" | "$etjs_docker" --config "$etjs_docker_config" login \

@@ -135,10 +135,12 @@ describe('reproducible source repository', () => {
     assert.match(workflow, /runs-on: \[self-hosted, macOS, ARM64, wolfet-wasm\]/);
     assert.doesNotMatch(workflow, /docker\/setup-qemu-action/);
     assert.match(workflow, /etjs_docker="\/Applications\/Docker\.app\/Contents\/Resources\/bin\/docker"/);
-    assert.match(workflow, /"\$etjs_docker" --config "\$etjs_docker_config" pull docker\.io\/tonistiigi\/binfmt:latest/);
+    assert.match(workflow, /export HOME="\$etjs_action_home"/);
+    assert.match(workflow, /cliPluginsExtraDirs/);
+    assert.match(workflow, /"\$etjs_docker" --config "\$etjs_docker_config" image inspect/);
     assert.match(workflow, /tonistiigi\/binfmt:latest --install amd64/);
     assert.match(workflow, /--platform linux\/amd64/);
-    assert.match(workflow, /etjs_docker_config="\$\(mktemp -d\)"/);
+    assert.match(workflow, /etjs_action_home="\$\(mktemp -d\)"/);
     assert.match(workflow, /--password-stdin/);
     assert.match(workflow, /buildx build/);
     assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
