@@ -116,7 +116,7 @@ describe('reproducible source repository', () => {
     const icon = fs.readFileSync(path.join(ROOT, 'icon.svg'), 'utf8');
 
     assert.match(template, /<Container version="2">/);
-    assert.match(template, /<Repository>theodorecharles\/wolfet-wasm:latest<\/Repository>/);
+    assert.match(template, /<Repository>tedcharles\/wolfet-wasm:latest<\/Repository>/);
     assert.match(template, /<WebUI>http:\/\/\[IP\]:\[PORT:8088\]\/<\/WebUI>/);
     assert.match(template, /Target="\/data"[^>]*\/mnt\/user\/appdata\/wolfet-wasm/);
     assert.match(template, /Target="8088"[^>]*Mode="tcp"/);

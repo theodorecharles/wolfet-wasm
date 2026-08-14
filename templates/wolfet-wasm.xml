@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Container version="2">
   <Name>wolfet-wasm</Name>
-  <Repository>theodorecharles/wolfet-wasm:latest</Repository>
-  <Registry>https://hub.docker.com/r/theodorecharles/wolfet-wasm</Registry>
+  <Repository>tedcharles/wolfet-wasm:latest</Repository>
+  <Registry>https://hub.docker.com/r/tedcharles/wolfet-wasm</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>bash</Shell>
