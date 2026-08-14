@@ -141,7 +141,9 @@ describe('reproducible source repository', () => {
     assert.match(workflow, /tonistiigi\/binfmt:latest --install amd64/);
     assert.match(workflow, /--platform linux\/amd64/);
     assert.match(workflow, /etjs_action_home="\$\(mktemp -d\)"/);
-    assert.match(workflow, /--password-stdin/);
+    assert.doesNotMatch(workflow, /docker[^\n]*login/);
+    assert.match(workflow, /index\.docker\.io\/v1\//);
+    assert.match(workflow, /unset etjs_docker_auth/);
     assert.match(workflow, /buildx build/);
     assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
     assert.doesNotMatch(workflow, /type=gha/);
