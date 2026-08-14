@@ -283,6 +283,22 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.doesNotMatch(fn, /#ifdef\s+__EMSCRIPTEN__\s+return\s*;/);
   });
 
+  it('renders static lamp models and their coronas in WebGL', () => {
+    const draw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw.c'), 'utf8');
+    const active = extractFn(draw, 'CG_DrawActive');
+    assert.match(active, /CG_DrawMiscGamemodels\(\)/);
+    assert.match(active, /CG_DrawClientCoronas\(\)/);
+    assert.match(active, /#ifndef __EMSCRIPTEN__[\s\S]*CG_ShakeCamera\(\);[\s\S]*#endif\s*CG_DrawMiscGamemodels\(\);\s*CG_DrawClientCoronas\(\);/);
+
+    const backend = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_backend.c'), 'utf8');
+    const drawSurfs = extractFn(backend, 'RB_RenderDrawSurfList');
+    assert.match(drawSurfs, /#endif[\s\S]*RB_RenderFlares\(\)/);
+    const flares = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_flares.c'), 'utf8');
+    const renderFlares = extractFn(flares, 'RB_RenderFlares');
+    assert.match(renderFlares, /R_ES2_SetFlare2D\(\)/);
+    assert.match(renderFlares, /backEnd\.projection2D\s*=\s*qtrue/);
+  });
+
   it('RE_RenderScene calls R_RenderView and has no levelshot collage', () => {
     const scene = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_scene.c'), 'utf8');
     const fn = extractFn(scene, 'RE_RenderScene');
@@ -502,7 +518,14 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(page, /etjs_connect/);
     assert.match(page, /ETJS_ASSET_VER/);
     assert.match(page, /etjs\.js\?v=/);
-    assert.match(page, /loadHidden = false;[\s\S]*Starting game server/);
+    const wake = page.split('function wakeDedicatedServer')[1].split('function sizeCanvas')[0];
+    const join = page.split('etjsWakeAndJoin: function')[1].split('etjsAdminCommand: function')[0];
+    assert.match(wake, /Starting game server/);
+    assert.match(wake, /fetch\('\/wake', \{ method: 'POST' \}\)/);
+    assert.match(wake, /MAIN menu can[\s\S]*never appear[\s\S]*server is still booting/);
+    assert.doesNotMatch(join, /fetch\('\/wake'/);
+    assert.match(join, /Connecting to game server/);
+    assert.match(join, /engineCmd\('connect ' \+ connectAddress\)/);
     assert.match(page, /requestAnimationFrame\(resolve\)/);
     assert.match(page, /Game server is ready/);
     assert.match(page, /wasDead\s*&&\s*!dead/);
@@ -586,6 +609,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(page, /playMenuMusic/);
     const beginForm = page.split('function beginFromForm')[1] || '';
     assert.doesNotMatch(beginForm.slice(0, 900), /playMenuMusic/);
+    assert.match(beginForm, /wakeDedicatedServer\(\)\.then\(function \(\) \{[\s\S]*return startEngine\(name\)/);
     assert.match(main, /etjs_joingame/);
   });
 

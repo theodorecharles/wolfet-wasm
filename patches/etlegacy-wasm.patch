@@ -569,7 +569,7 @@ index fc37ed49e..9fa52bd71 100644
  extern vmCvar_t cg_weapBankCollisions;
  extern vmCvar_t cg_weapSwitchNoAmmoSounds;
 diff --git a/src/cgame/cg_draw.c b/src/cgame/cg_draw.c
-index a238bea96..9f66ad5e1 100644
+index a238bea96..6493b32c5 100644
 --- a/src/cgame/cg_draw.c
 +++ b/src/cgame/cg_draw.c
 @@ -4133,6 +4133,12 @@ static void CG_DrawEnvironmentalAwareness()
@@ -585,7 +585,7 @@ index a238bea96..9f66ad5e1 100644
  	if (!cg_drawEnvAwareness.integer)
  	{
  		return;
-@@ -4801,14 +4807,21 @@ void CG_DrawActive()
+@@ -4801,14 +4807,25 @@ void CG_DrawActive()
  	}
  
  	// clear around the rendered view if sized down
@@ -595,12 +595,16 @@ index a238bea96..9f66ad5e1 100644
  
  	cg.refdef_current->glfog.registered = qfalse;    // make sure it doesn't use fog from another scene
  
++	/* Static map models include fixtures such as the street and wall lamps.
++	 * They use the normal refEntity path now supported by the WebGL renderer,
++	 * so suppressing this entire pass leaves real map geometry missing. Client
++	 * coronas supply the visible bulbs/glow for those fixtures. */
 +#ifndef __EMSCRIPTEN__
  	CG_ShakeCamera();
 -	CG_PB_RenderPolyBuffers();
++#endif
  	CG_DrawMiscGamemodels();
  	CG_DrawClientCoronas();
-+#endif
 +	/* Flame sprites are batched in cgame polybuffers. The browser used to
 +	 * suppress the entire batch with other expensive native-only effects,
 +	 * which made a working flamethrower completely invisible. */
@@ -5607,7 +5611,7 @@ index 1f0c37f53..e65b7b3db 100644
  		tess.numIndexes += indexes;
  	}
 diff --git a/src/renderer/tr_backend.c b/src/renderer/tr_backend.c
-index 54efa40ab..3a6aac363 100644
+index 54efa40ab..db8549b25 100644
 --- a/src/renderer/tr_backend.c
 +++ b/src/renderer/tr_backend.c
 @@ -33,6 +33,12 @@
@@ -5839,14 +5843,14 @@ index 54efa40ab..3a6aac363 100644
  	R_TransformDlights(backEnd.refdef.num_dlights, backEnd.refdef.dlights, &backEnd.orientation);
  
  	glLoadMatrixf(backEnd.viewParms.world.modelMatrix);
-@@ -796,6 +908,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+@@ -793,6 +905,7 @@ void RB_RenderDrawSurfList(drawSurf_t *drawSurfs, int numDrawSurfs)
+ 
+ 	// darken down any stencil shadows
+ 	RB_ShadowFinish();
++#endif
  
  	// add light flares on lights that aren't obscured
  	RB_RenderFlares();
-+#endif
- }
- 
- /*
 @@ -809,24 +922,34 @@ RENDER BACK END FUNCTIONS
   */
  void RB_SetGL2D(void)
@@ -6280,10 +6284,10 @@ index 4b6e070c4..63287278a 100644
  
 diff --git a/src/renderer/tr_es2.c b/src/renderer/tr_es2.c
 new file mode 100644
-index 000000000..3e37e066e
+index 000000000..ac0d65a27
 --- /dev/null
 +++ b/src/renderer/tr_es2.c
-@@ -0,0 +1,693 @@
+@@ -0,0 +1,704 @@
 +/**
 + * @file renderer/tr_es2.c
 + * @brief WebGL / GLES2 tessellator submit. Applies the stock
@@ -6627,6 +6631,17 @@ index 000000000..3e37e066e
 +	 * an alpha-tested depth-writing mask followed by depthFunc equal (the
 +	 * circular compass map), so 2D cannot be forced depthless globally. */
 +	MatOrtho(s_ortho, 0.f, (float)w, (float)h, 0.f, 0.f, 1.f);
++}
++
++void R_ES2_SetFlare2D(void)
++{
++	int w = glConfig.vidWidth  > 0 ? glConfig.vidWidth  : 1280;
++	int h = glConfig.vidHeight > 0 ? glConfig.vidHeight : 800;
++
++	/* Flare coordinates are produced in OpenGL's bottom-left window space,
++	 * unlike the regular top-left HUD coordinates. Keep a dedicated ortho so
++	 * lamp coronas land on their fixtures instead of being mirrored vertically. */
++	MatOrtho(s_ortho, 0.f, (float)w, 0.f, (float)h, -99999.f, 99999.f);
 +}
 +
 +static void CurrentMvp(float *mvp)
@@ -6977,6 +6992,54 @@ index 000000000..3e37e066e
 +}
 +
 +#endif /* __EMSCRIPTEN__ */
+diff --git a/src/renderer/tr_flares.c b/src/renderer/tr_flares.c
+index f279c1626..dc32c07fb 100644
+--- a/src/renderer/tr_flares.c
++++ b/src/renderer/tr_flares.c
+@@ -482,6 +482,9 @@ void RB_RenderFlares(void)
+ 	flare_t  *f;
+ 	flare_t  **prev;
+ 	qboolean draw;
++#ifdef __EMSCRIPTEN__
++	qboolean oldProjection2D;
++#endif
+ 
+ 	if (!r_flares->integer)
+ 	{
+@@ -539,6 +542,13 @@ void RB_RenderFlares(void)
+ 		glDisable(GL_CLIP_PLANE0);
+ 	}
+ 
++#ifdef __EMSCRIPTEN__
++	/* WebGL has no fixed-function matrix stack. The ES2 tessellator consumes
++	 * this explicit bottom-left ortho while the flare quads are submitted. */
++	oldProjection2D       = backEnd.projection2D;
++	backEnd.projection2D = qtrue;
++	R_ES2_SetFlare2D();
++#else
+ 	glPushMatrix();
+ 	glLoadIdentity();
+ 	glMatrixMode(GL_PROJECTION);
+@@ -547,6 +557,7 @@ void RB_RenderFlares(void)
+ 	glOrtho(backEnd.viewParms.viewportX, backEnd.viewParms.viewportX + backEnd.viewParms.viewportWidth,
+ 	        backEnd.viewParms.viewportY, backEnd.viewParms.viewportY + backEnd.viewParms.viewportHeight,
+ 	        -99999, 99999);
++#endif
+ 
+ 	for (f = r_activeFlares ; f ; f = f->next)
+ 	{
+@@ -556,7 +567,11 @@ void RB_RenderFlares(void)
+ 		}
+ 	}
+ 
++#ifdef __EMSCRIPTEN__
++	backEnd.projection2D = oldProjection2D;
++#else
+ 	glPopMatrix();
+ 	glMatrixMode(GL_MODELVIEW);
+ 	glPopMatrix();
++#endif
+ }
 diff --git a/src/renderer/tr_image.c b/src/renderer/tr_image.c
 index 670f2b351..1a89f29dd 100644
 --- a/src/renderer/tr_image.c
@@ -7125,10 +7188,10 @@ index 6b132ed5d..b7804a814 100644
  	glDisable(GL_DEPTH_TEST);
  	glEnable(GL_SCISSOR_TEST);
 diff --git a/src/renderer/tr_local.h b/src/renderer/tr_local.h
-index 5b76938d5..68e2542ea 100644
+index 5b76938d5..1a510f097 100644
 --- a/src/renderer/tr_local.h
 +++ b/src/renderer/tr_local.h
-@@ -1710,6 +1710,16 @@ WORLD MAP
+@@ -1710,6 +1710,17 @@ WORLD MAP
  
  void R_AddBrushModelSurfaces(trRefEntity_t *ent);
  void R_AddWorldSurfaces(void);
@@ -7137,6 +7200,7 @@ index 5b76938d5..68e2542ea 100644
 +void R_ES2_BeginView(void);
 +void R_ES2_BeginFrame(void);
 +void R_ES2_Set2D(void);
++void R_ES2_SetFlare2D(void);
 +void R_ES2_DrawQuad(const float *xyz12, const float *uv8, const byte *rgba);
 +void R_ES2_DrawTess(int numIndexes, const glIndex_t *indexes);
 +void R_ES2_DrawTessLightmap(int numIndexes, const glIndex_t *indexes, int addNotModulate);

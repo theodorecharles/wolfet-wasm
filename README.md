@@ -15,7 +15,7 @@ The default server is a 12-player Arcade match. Omni-Bot fills empty places and 
 - Server-side download and checksum verification of the official free game data. Browsers receive assets only from your wolfet-wasm server and cache them locally.
 - Custom PK3 and map rotation support through `/data/custom_maps`.
 - Two server modes: stock-style Vanilla and the faster Arcade ruleset.
-- Idle sleep by default, with automatic wake when a player selects **Join Game**.
+- Idle sleep by default, with automatic wake during the browser's initial **Play** loading phase.
 - Automatic local-host administration for kicking or banning players and changing maps.
 
 ## Vanilla and Arcade modes
@@ -69,7 +69,7 @@ Follow startup and open the game:
 docker logs -f wolfet-wasm
 ```
 
-Visit <http://127.0.0.1:8088/> when the website reports that it is listening. With the default idle settings, **Join Game** starts the dedicated match automatically.
+Visit <http://127.0.0.1:8088/> when the website reports that it is listening. With the default idle settings, submitting the initial player-name screen starts the dedicated match before the ET main menu appears.
 
 On its first start, the server downloads the official Enemy Territory archive from Splash Damage, verifies pinned SHA-256 checksums, and extracts the required files into `/data`. Keep that directory or volume mounted. Later starts verify and reuse the existing data instead of downloading it again.
 
@@ -92,7 +92,7 @@ On its first start, the server downloads the official Enemy Territory archive fr
 
 Health and match information are available at `/health` and `/status`.
 
-With the default `KEEP_ALIVE=false`, the lightweight HTTP/WebSocket host stays online while the ET dedicated process and Omni-Bot sleep. Selecting **Join Game** wakes the match, waits for it to become ready, and then connects the browser. Each wake chooses a random map from the configured rotation and avoids immediately repeating the previous start map. After the last human leaves, the dedicated process stops when `IDLE_TIMEOUT` expires. Set `KEEP_ALIVE=true` for an always-running match; in that mode `IDLE_TIMEOUT` is ignored.
+With the default `KEEP_ALIVE=false`, the lightweight HTTP/WebSocket host stays online while the ET dedicated process and Omni-Bot sleep. Submitting the browser's initial **Play** screen wakes the match and waits for it to become ready before opening the ET main menu; **Join Game** then connects immediately. Each wake chooses a random map from the configured rotation and avoids immediately repeating the previous start map. After the last human leaves, the dedicated process stops when `IDLE_TIMEOUT` expires. Set `KEEP_ALIVE=true` for an always-running match; in that mode `IDLE_TIMEOUT` is ignored.
 
 ## Local server administration
 

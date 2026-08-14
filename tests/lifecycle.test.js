@@ -7,6 +7,7 @@ const os = require('os');
 const path = require('path');
 
 const dedicated = require('../server/dedicated');
+const host = require('../server/index');
 const {
   createLifecycle,
   parseBoolean,
@@ -115,5 +116,30 @@ describe('random rotation starts', () => {
     assert.equal(args[vstrIndex + 1], 'd3');
     assert.ok(execIndex < vstrIndex);
     assert.ok(vstrIndex < postModeIndex);
+  });
+});
+
+describe('map startup fallback', () => {
+  it('rejects a broken custom map and starts the next available map', async () => {
+    const events = [];
+    const rejected = [];
+    const result = await host.startDedicatedWithFallback({
+      maps: ['broken_custom', 'oasis'],
+      choose: async (maps) => maps[0],
+      start: async (map) => {
+        events.push('start:' + map);
+        if (map === 'broken_custom') {
+          throw new Error('map script parse failed');
+        }
+        return { map: map, gametype: 2, players: [] };
+      },
+      stop: async () => { events.push('stop'); },
+      reject: async (map) => { rejected.push(map); }
+    });
+
+    assert.equal(result.map, 'oasis');
+    assert.equal(result.status.map, 'oasis');
+    assert.deepEqual(events, ['start:broken_custom', 'stop', 'start:oasis']);
+    assert.deepEqual(rejected, ['broken_custom']);
   });
 });

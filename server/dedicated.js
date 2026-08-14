@@ -175,10 +175,10 @@ function mapsInPk3(pk3Path) {
   return maps;
 }
 
-function objectiveRotation(customMaps) {
+function rotationForMaps(mapNames) {
   const seen = new Set();
   const maps = [];
-  BASE_OBJECTIVE_MAPS.concat(customMaps || []).forEach((mapName) => {
+  (mapNames || []).forEach((mapName) => {
     const map = String(mapName || '').trim();
     const key = map.toLowerCase();
     if (/^[A-Za-z0-9_-]+$/.test(map) && !seen.has(key)) {
@@ -195,6 +195,10 @@ function objectiveRotation(customMaps) {
   /* This fallback is replaced by the selected dN command at server start. */
   lines.push('set nextmap "vstr d' + (maps.length > 1 ? 2 : 1) + '"');
   return { maps: maps, text: lines.join('\n') + '\n' };
+}
+
+function objectiveRotation(customMaps) {
+  return rotationForMaps(BASE_OBJECTIVE_MAPS.concat(customMaps || []));
 }
 
 function writeFileIfChanged(filePath, contents) {
@@ -309,6 +313,22 @@ function customGameAssets() {
 
 function objectiveMaps() {
   return activeObjectiveMaps.slice();
+}
+
+/** Remove a custom map that made the dedicated process fail during startup. */
+function disableObjectiveMap(mapName) {
+  const key = String(mapName || '').toLowerCase();
+  if (!key || BASE_OBJECTIVE_MAPS.some((name) => name.toLowerCase() === key)) {
+    return false;
+  }
+  const remaining = activeObjectiveMaps.filter((name) => name.toLowerCase() !== key);
+  if (remaining.length === activeObjectiveMaps.length || !remaining.length) {
+    return false;
+  }
+  const rotation = rotationForMaps(remaining);
+  writeFileIfChanged(OBJECTIVE_ROTATION_FILE, rotation.text);
+  activeObjectiveMaps = rotation.maps;
+  return true;
 }
 
 /** Pick a rotation map without immediately repeating the previous start. */
@@ -562,6 +582,7 @@ module.exports = {
   prepareCustomMaps: prepareCustomMaps,
   customGameAssets: customGameAssets,
   objectiveMaps: objectiveMaps,
+  disableObjectiveMap: disableObjectiveMap,
   chooseStartMap: chooseStartMap,
   launchArgs: launchArgs,
   assertServerMod: assertServerMod,

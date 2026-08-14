@@ -215,7 +215,7 @@ function serveStatic(req, res) {
       res.end(JSON.stringify({ ok: false, error: 'dedicated server lifecycle is unavailable' }));
       return;
     }
-    RUNTIME_LIFECYCLE.wake('browser Connect button').then((status) => {
+    RUNTIME_LIFECYCLE.wake('browser Play button').then((status) => {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify(Object.assign({ ok: true }, status)));
     }).catch((err) => {
@@ -347,10 +347,13 @@ function startHttp(port) {
   });
 }
 
-async function waitForDedicated(timeoutMs) {
+async function waitForDedicated(timeoutMs, isRunning) {
   const deadline = Date.now() + (timeoutMs || 60000);
   let lastErr = null;
   while (Date.now() < deadline) {
+    if (isRunning && !isRunning()) {
+      throw new Error('dedicated server process exited during startup');
+    }
     try {
       const st = await queryStatus({ host: '127.0.0.1', port: DED_PORT, timeoutMs: 1500 });
       return st;
@@ -360,6 +363,33 @@ async function waitForDedicated(timeoutMs) {
     }
   }
   throw new Error('dedicated server did not become ready: ' + (lastErr && lastErr.message));
+}
+
+async function startDedicatedWithFallback(options) {
+  const opts = options || {};
+  let remaining = (opts.maps || []).slice();
+  let lastError = null;
+
+  while (remaining.length) {
+    const selected = await opts.choose(remaining.slice());
+    const key = String(selected || '').toLowerCase();
+    remaining = remaining.filter((name) => String(name).toLowerCase() !== key);
+    try {
+      return { map: selected, status: await opts.start(selected) };
+    } catch (err) {
+      lastError = err;
+      if (opts.log) {
+        opts.log('map startup failed map=' + selected + ': ' + err.message);
+      }
+      if (opts.stop) {
+        await opts.stop();
+      }
+      if (opts.reject) {
+        await opts.reject(selected, err);
+      }
+    }
+  }
+  throw lastError || new Error('no Objective maps are available');
 }
 
 async function main() {
@@ -415,11 +445,28 @@ async function main() {
           dedicated.stopDedicated();
           await dedicated.waitForDedicatedStopped(15000);
         }
-        const startMap = dedicated.chooseStartMap();
-        log((dedicated.EMBEDDED ? 'starting embedded ET: Legacy server' : 'starting dedicated server') +
-          ' on udp/' + DED_PORT + ' map=' + startMap);
-        dedicated.startDedicated({ map: startMap });
-        const st = await waitForDedicated(90000);
+        const started = await startDedicatedWithFallback({
+          maps: dedicated.objectiveMaps(),
+          choose: (maps) => dedicated.chooseStartMap({ maps: maps }),
+          start: async (startMap) => {
+            log((dedicated.EMBEDDED ? 'starting embedded ET: Legacy server' : 'starting dedicated server') +
+              ' on udp/' + DED_PORT + ' map=' + startMap);
+            dedicated.startDedicated({ map: startMap });
+            return waitForDedicated(30000, dedicated.containerRunning);
+          },
+          stop: async () => {
+            dedicated.stopDedicated();
+            await dedicated.waitForDedicatedStopped(15000);
+          },
+          reject: (startMap) => {
+            if (dedicated.disableObjectiveMap(startMap)) {
+              log('disabled incompatible custom map for this host run: ' + startMap);
+            }
+          },
+          log: log
+        });
+        const startMap = started.map;
+        const st = started.status;
         log('dedicated ready map=' + st.map + ' gametype=' + st.gametype + ' players=' + st.players.length);
         startGameSupervisor();
         return { map: st.map || startMap };
@@ -439,7 +486,7 @@ async function main() {
     if (lifecycleConfig.KEEP_ALIVE) {
       await RUNTIME_LIFECYCLE.wake('KEEP_ALIVE=true startup');
     } else {
-      log('dedicated server sleeping until Connect; idle timeout=' +
+      log('dedicated server sleeping until browser Play; idle timeout=' +
         lifecycleConfig.IDLE_TIMEOUT_SECONDS + 's');
     }
   }
@@ -480,5 +527,6 @@ module.exports = {
   serveStatic: serveStatic,
   startHttp: startHttp,
   waitForDedicated: waitForDedicated,
+  startDedicatedWithFallback: startDedicatedWithFallback,
   setLifecycleForTests: function (lifecycle) { RUNTIME_LIFECYCLE = lifecycle; }
 };

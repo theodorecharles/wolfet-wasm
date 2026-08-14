@@ -1,7 +1,7 @@
 /**
  * Browser ET client bootstrap. Runs only in a window (no Node require).
- * name → download (silent) → official menu+music → Join Game →
- * loading+music → game.
+ * name → wake server → download (silent) → official menu+music →
+ * Join Game → connect → game.
  */
 (function () {
   if (typeof window === 'undefined') {
@@ -47,7 +47,7 @@
   var selectedQualityLevel = 3;
   var selectedFpsTarget = 60;
   var adaptiveQuality = true;
-  var wakeJoinPromise = null;
+  var serverReadyPromise = null;
   var communicationInput = false;
   var communicationInputGraceUntil = 0;
   var communicationLogSequence = 0;
@@ -405,6 +405,55 @@
     if (loadBar) {
       loadBar.setAttribute('aria-valuenow', String(pct));
     }
+  }
+
+  function wakeDedicatedServer() {
+    var wakeStarted;
+    var wakeTicker;
+
+    if (serverReadyPromise) {
+      return serverReadyPromise;
+    }
+    wakeStarted = Date.now();
+    setLoadProgress(0.02, 'Starting game server…',
+      'Waking the dedicated server · 0.0s');
+    wakeTicker = setInterval(function () {
+      setLoadProgress(0.02, 'Starting game server…',
+        'Waking the dedicated server · ' +
+        ((Date.now() - wakeStarted) / 1000).toFixed(1) + 's');
+    }, 250);
+    /* Let the loading panel paint before server startup begins. The ET engine
+     * is deliberately not started until this resolves, so its MAIN menu can
+     * never appear while the dedicated server is still booting. */
+    serverReadyPromise = new Promise(function (resolve) {
+      if (typeof requestAnimationFrame === 'function') {
+        requestAnimationFrame(resolve);
+      } else {
+        setTimeout(resolve, 0);
+      }
+    }).then(function () {
+      return fetch('/wake', { method: 'POST' });
+    }).then(function (response) {
+      return response.json().then(function (body) {
+        if (!response.ok || !body.ok) {
+          throw new Error(body.error || ('HTTP ' + response.status));
+        }
+        return body;
+      });
+    }).then(function (body) {
+      var map = String(body.map || 'rotation map').replace(/[^A-Za-z0-9_.-]/g, '');
+      setLoadProgress(0.08, 'Game server is ready…', 'Loading ' + map);
+      appendStartupLine('Game server ready on ' + map);
+      return body;
+    }).catch(function (err) {
+      serverReadyPromise = null;
+      throw err;
+    }).finally(function () {
+      if (wakeTicker) {
+        clearInterval(wakeTicker);
+      }
+    });
+    return serverReadyPromise;
   }
 
   var engineReady = false;
@@ -1525,16 +1574,10 @@
   }
 
   function startEngine(playerName) {
-    if (startupConsole) {
-      startupConsole.textContent = '';
-    }
-    lastLoadStatus = '';
-    appendStartupLine('Wolfenstein: Enemy Territory browser runtime');
-    appendStartupLine('Player: ' + playerName);
     if (loadPanel) {
       loadPanel.classList.remove('hidden');
     }
-    setLoadProgress(0.02, 'Preparing official game data…', '');
+    setLoadProgress(0.10, 'Preparing official game data…', '');
     sizeCanvas();
     window.addEventListener('resize', sizeCanvas);
 
@@ -1567,11 +1610,8 @@
         etjsWakeAndJoin: function (address) {
           var connectAddress = String(address || cfg.connect || '127.0.0.1:27961')
             .replace(/[^A-Za-z0-9.:[\]_-]/g, '');
-          var wakeStarted = Date.now();
-          var wakeTicker;
-          /* The engine has already hidden this overlay after reaching MAIN.
-           * Reset that one-shot state synchronously so the Join click gives
-           * visual feedback before any server wake/network work begins. */
+          /* Server startup belongs to the web Play/loading phase. By the time
+           * MAIN is visible, JOIN GAME only has to begin the ET connection. */
           loadHidden = false;
           if (loadPanel) {
             loadPanel.classList.remove('hidden');
@@ -1580,52 +1620,9 @@
             frame.classList.remove('hidden');
           }
           stopMenuMusic();
-          setLoadProgress(0.08, 'Starting game server…',
-            'Waking the dedicated server · 0.0s');
-          if (wakeJoinPromise) {
-            return wakeJoinPromise;
-          }
-          engineCmd('echo "^3Waking game server…^7"');
-          wakeTicker = setInterval(function () {
-            setLoadProgress(0.08, 'Starting game server…',
-              'Waking the dedicated server · ' +
-              ((Date.now() - wakeStarted) / 1000).toFixed(1) + 's');
-          }, 250);
-          /* Yield one animation frame so the loading panel is painted before
-           * the wake request starts doing work. */
-          wakeJoinPromise = new Promise(function (resolve) {
-            if (typeof requestAnimationFrame === 'function') {
-              requestAnimationFrame(resolve);
-            } else {
-              setTimeout(resolve, 0);
-            }
-          }).then(function () {
-            return fetch('/wake', { method: 'POST' });
-          }).then(function (response) {
-            return response.json().then(function (body) {
-              if (!response.ok || !body.ok) {
-                throw new Error(body.error || ('HTTP ' + response.status));
-              }
-              return body;
-            });
-          }).then(function (body) {
-            setLoadProgress(0.28, 'Game server is ready…',
-              'Loading ' + String(body.map || 'rotation map').replace(/[^A-Za-z0-9_.-]/g, ''));
-            engineCmd('echo "^2Game server ready on ' +
-              String(body.map || 'rotation map').replace(/[^A-Za-z0-9_.-]/g, '') + '^7"');
-            engineCmd('connect ' + connectAddress);
-            return body;
-          }).catch(function (err) {
-            engineCmd('echo "^1Could not wake game server: ' +
-              String(err.message || err).replace(/[";\r\n]/g, '') + '^7"');
-            throw err;
-          }).finally(function () {
-            if (wakeTicker) {
-              clearInterval(wakeTicker);
-            }
-            wakeJoinPromise = null;
-          });
-          return wakeJoinPromise;
+          setLoadProgress(0.28, 'Connecting to game server…', connectAddress);
+          engineCmd('connect ' + connectAddress);
+          return Promise.resolve();
         },
         etjsAdminCommand: function (command) {
           fetch('/admin', {
@@ -1883,7 +1880,15 @@
       if (loadPanel) {
         loadPanel.classList.remove('hidden');
       }
-      startEngine(name).catch(function (err) {
+      if (startupConsole) {
+        startupConsole.textContent = '';
+      }
+      lastLoadStatus = '';
+      appendStartupLine('Wolfenstein: Enemy Territory browser runtime');
+      appendStartupLine('Player: ' + name);
+      wakeDedicatedServer().then(function () {
+        return startEngine(name);
+      }).catch(function (err) {
         showError(err.message || String(err));
       });
     }
