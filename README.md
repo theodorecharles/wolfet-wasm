@@ -94,6 +94,20 @@ Health and match information are available at `/health` and `/status`.
 
 With the default `KEEP_ALIVE=false`, the lightweight HTTP/WebSocket host stays online while the ET dedicated process and Omni-Bot sleep. Submitting the browser's initial **Play** screen wakes the match and waits for it to become ready before opening the ET main menu; **Join Game** then connects immediately. Each wake chooses a random map from the configured rotation and avoids immediately repeating the previous start map. After the last human leaves, the dedicated process stops when `IDLE_TIMEOUT` expires. Set `KEEP_ALIVE=true` for an always-running match; in that mode `IDLE_TIMEOUT` is ignored.
 
+## Unraid
+
+The Community Applications template is [templates/wolfet-wasm.xml](templates/wolfet-wasm.xml). It uses `/mnt/user/appdata/wolfet-wasm` for persistent data and exposes all normal server settings in the Unraid container form.
+
+Until the app is listed in Community Applications, install the template manually from an Unraid terminal:
+
+```bash
+curl --fail --location \
+  --output /boot/config/plugins/dockerMan/templates-user/my-wolfet-wasm.xml \
+  https://raw.githubusercontent.com/theodorecharles/wolfet-wasm/master/templates/wolfet-wasm.xml
+```
+
+Then open **Docker → Add Container**, select `wolfet-wasm` from the template list, review the settings, and apply it. The persistent data share contains `custom_maps`; restart the container after adding or removing PK3 files.
+
 ## Local server administration
 
 A browser whose source address matches the server is marked as a local administrator. Direct access through `127.0.0.1`, `::1`, a server interface address, and Docker's published localhost bridge is detected automatically. The RCON password remains on the server and is never returned to the browser.
