@@ -42,6 +42,14 @@ jobs:
           echo "/Applications/Docker.app/Contents/Resources/bin" >> "$GITHUB_PATH"
           /Applications/Docker.app/Contents/Resources/bin/docker version
 
+      - name: Isolate Docker credentials from the Mac keychain
+        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
+        run: |
+          etjs_docker_config="$RUNNER_TEMP/wolfet-wasm-docker"
+          install -d -m 0700 "$etjs_docker_config"
+          printf '{"auths":{}}\n' > "$etjs_docker_config/config.json"
+          echo "DOCKER_CONFIG=$etjs_docker_config" >> "$GITHUB_ENV"
+
       - name: Set up amd64 emulation
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
         uses: docker/setup-qemu-action@v4

@@ -137,6 +137,8 @@ describe('reproducible source repository', () => {
     assert.match(workflow, /platforms: amd64/);
     assert.match(workflow, /platforms: linux\/amd64/);
     assert.match(workflow, /keep-state: true/);
+    assert.match(workflow, /DOCKER_CONFIG=\$etjs_docker_config/);
+    assert.match(workflow, /RUNNER_TEMP\/wolfet-wasm-docker/);
     assert.doesNotMatch(workflow, /runs-on: ubuntu-latest/);
     assert.doesNotMatch(workflow, /type=gha/);
   });
