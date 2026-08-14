@@ -29,15 +29,17 @@ describe('browser client scripts', () => {
     const framework = JSON.parse(fs.readFileSync(path.join(FRAMEWORK_WEB, 'wasm-game-framework.json'), 'utf8'));
     const config = JSON.parse(fs.readFileSync(path.join(WEB, 'wasm-game.json'), 'utf8'));
     const adapter = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
+    const client = fs.readFileSync(path.join(WEB, 'js', 'client.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.7.2');
+    assert.equal(framework.version, '0.7.3');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
     assert.equal(config.icon, '/img/et.png');
     assert.equal(config.displayMode, 'dynamic');
     assert.equal(config.nativeManaged, true);
+    assert.equal(config.resizeTransition, 'immediate');
     assert.equal(config.adapter, '/game-adapter.js');
     assert.equal(config.fullscreen, true);
     assert.equal(config.pwa.icons.length, 2);
@@ -49,6 +51,16 @@ describe('browser client scripts', () => {
     assert.match(adapter, /pk3-cache\.js/);
     assert.match(adapter, /pk3-download\.js/);
     assert.match(adapter, /client\.js\?v=18/);
+    assert.match(adapter, /readCaptureIntent/);
+    assert.match(adapter, /captureLost/);
+    assert.match(client, /frameworkCaptureIntent = true;\s*setFrameworkEngineState\('loading'\)/,
+      'JOIN must publish trusted capture intent while honestly reporting loading');
+    assert.match(client, /frameworkCaptureIntent \? 'loading'/,
+      'the native state pump must retain loading until the first active game state');
+    assert.match(client, /hideLoadPanel\('gameplay'\);\s*frameworkCaptureIntent = false;/,
+      'the first active cgame signal must transition capture intent into gameplay');
+    assert.match(client, /if \(!canonicalContext\) \{\s*showInGameMenuWhenUncaptured\('pointer-lock-lost'\)/,
+      'the legacy pointer-lock listener must not inject a second Escape under the framework');
     assert.match(html, /shared-shell\/wasm-game-framework\.js/);
     assert.match(html, /shared-shell\/wasm-game-framework\.css/);
     assert.match(html, /shared-shell\/wasm-game-bootstrap\.js/);

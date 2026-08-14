@@ -41,8 +41,14 @@
     readEngineState: function () {
       return window.ETJSGameAdapter ? inner().readEngineState() : 'launcher';
     },
+    readCaptureIntent: function () {
+      return window.ETJSGameAdapter ? inner().readCaptureIntent() : false;
+    },
     resize: function (detail, context) {
       if (window.ETJSGameAdapter) { return inner().resize(detail, context); }
+    },
+    captureLost: function (detail, context) {
+      if (window.ETJSGameAdapter) { return inner().captureLost(detail, context); }
     }
   };
 })();

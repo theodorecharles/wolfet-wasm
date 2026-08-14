@@ -17,6 +17,7 @@
   "displayMode": "dynamic",
   "nativeManaged": true,
   "syncBackbuffer": false,
+  "resizeTransition": "immediate",
   "maxDpr": 1,
   "pointerLock": true,
   "fullscreen": true,

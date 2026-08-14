@@ -61,8 +61,10 @@
   var communicationLogSequence = 0;
   var wasmShell = null;
   var frameworkEngineState = 'launcher';
+  var frameworkCaptureIntent = false;
   var canonicalContext = null;
   var canonicalStart = null;
+  var canonicalCaptureLost = null;
 
   function setFrameworkEngineState(next, options) {
     frameworkEngineState = next;
@@ -372,6 +374,7 @@
 
   function showError(msg) {
     if (msg) {
+      frameworkCaptureIntent = false;
       playReady = false;
       appendStartupLine('ERROR: ' + msg, 'error');
       if (loadStatus) {
@@ -633,8 +636,8 @@
       sizeCanvas();
     }
     if (text.indexOf('Connecting to') !== -1 || text.indexOf('resolved to') !== -1) {
-      hideLoadPanel();
-      playMenuMusic();
+      setFrameworkEngineState('loading');
+      setLoadProgress(0.38, 'Connecting to game server…', text);
     } else if (text.indexOf('ETJS splash start') !== -1 ||
                text.indexOf('ETJS UIMENU_MAIN') !== -1 ||
                text.indexOf('ETJS menus loaded count=') !== -1 ||
@@ -642,17 +645,19 @@
                text.indexOf('ETJS menu ready') !== -1 ||
                text.indexOf('ETJS menu music start') !== -1) {
       engineReady = true;
+      frameworkCaptureIntent = false;
       hideLoadPanel();
       playMenuMusic();
     } else if (text.indexOf('ETJS view team=') !== -1 ||
                text.indexOf('ETJS CGameRendering vm') !== -1) {
-      hideLoadPanel();
+      hideLoadPanel('gameplay');
+      frameworkCaptureIntent = false;
       setFrameworkEngineState('gameplay');
       stopMenuMusic();
     }
   }
 
-  function hideLoadPanel() {
+  function hideLoadPanel(nextState) {
     if (loadHidden) {
       return;
     }
@@ -660,7 +665,7 @@
     setLoadProgress(1, 'Entering the match…', '');
     if (wasmShell) {
       wasmShell.showRuntime();
-      setFrameworkEngineState('menu');
+      setFrameworkEngineState(nextState || 'menu');
     } else {
       if (loadPanel) {
         loadPanel.hidden = true;
@@ -1052,6 +1057,11 @@
       }
       return toggleInGameMenu(reason);
     }
+
+    canonicalCaptureLost = function (reason) {
+      releaseInputHolds();
+      return showInGameMenuWhenUncaptured(reason || 'framework-capture-lost');
+    };
 
     function releaseInputHolds() {
       Object.keys(held).forEach(function (code) {
@@ -1637,7 +1647,11 @@
       } else {
         releaseInputHolds();
         window.__etjsInputCaptured = false;
-        showInGameMenuWhenUncaptured('pointer-lock-lost');
+        /* The canonical framework invokes captureLost() exactly once. Retain
+         * this direct fallback only for the old standalone bootstrap path. */
+        if (!canonicalContext) {
+          showInGameMenuWhenUncaptured('pointer-lock-lost');
+        }
       }
     });
     canvas.addEventListener('click', onCanvasClick, true);
@@ -1657,8 +1671,12 @@
         ignoreLookUntil = Date.now() + 100;
       }
       wasDead = dead;
-      var nextFrameworkState = intermissionOpen() ? 'debrief' :
-        (!inWorld() ? 'menu' : ((engineUiOpen() || limboOpen()) ? 'paused' : 'gameplay'));
+      var nextFrameworkState = frameworkCaptureIntent ? 'loading' :
+        (intermissionOpen() ? 'debrief' :
+          (!inWorld() ? 'menu' : ((engineUiOpen() || limboOpen()) ? 'paused' : 'gameplay')));
+      if (nextFrameworkState !== 'loading') {
+        frameworkCaptureIntent = false;
+      }
       setFrameworkEngineState(nextFrameworkState);
       /* Intermission is entered by a snapshot rather than a DOM event. Polling
        * here releases pointer lock immediately even if the mouse is stationary. */
@@ -1717,6 +1735,7 @@
           /* Server startup belongs to the web Play/loading phase. By the time
            * MAIN is visible, JOIN GAME only has to begin the ET connection. */
           loadHidden = false;
+          frameworkCaptureIntent = true;
           setFrameworkEngineState('loading');
           if (wasmShell) {
             wasmShell.showLoading();
@@ -2118,8 +2137,16 @@
     readEngineState: function () {
       return frameworkEngineState;
     },
+    readCaptureIntent: function () {
+      return frameworkCaptureIntent;
+    },
     resize: function (detail) {
       applyNativeResolution(detail.requestedWidth, detail.requestedHeight);
+    },
+    captureLost: function () {
+      if (canonicalCaptureLost) {
+        return canonicalCaptureLost('framework-capture-lost');
+      }
     }
   };
 

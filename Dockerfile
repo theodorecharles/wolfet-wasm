@@ -3,14 +3,17 @@
 ARG ETLEGACY_IMAGE=etlegacy/server@sha256:e8810511b59a70cd66ddf36951cbb873333c4081d236241343e19ee4a0a30d63
 
 FROM node:22-alpine AS framework-source
-ARG WASM_GAME_FRAMEWORK_COMMIT=e4b78d6a1ab9992f35c0a098d60f15d8e1c3e89b
 RUN apk add --no-cache bash coreutils git
-RUN git init -q /framework \
-    && git -C /framework remote add origin https://github.com/theodorecharles/wasm-game-framework.git \
-    && git -C /framework fetch -q --depth=1 origin "$WASM_GAME_FRAMEWORK_COMMIT" \
+COPY framework-lock.json /tmp/framework-lock.json
+RUN FRAMEWORK_REPOSITORY="$(node -p "require('/tmp/framework-lock.json').repository")" \
+    && FRAMEWORK_COMMIT="$(node -p "require('/tmp/framework-lock.json').commit")" \
+    && FRAMEWORK_VERSION="$(node -p "require('/tmp/framework-lock.json').version")" \
+    && git init -q /framework \
+    && git -C /framework remote add origin "$FRAMEWORK_REPOSITORY" \
+    && git -C /framework fetch -q --depth=1 origin "$FRAMEWORK_COMMIT" \
     && git -C /framework checkout -q --detach FETCH_HEAD \
-    && test "$(git -C /framework rev-parse HEAD)" = "$WASM_GAME_FRAMEWORK_COMMIT" \
-    && test "$(node -p "require('/framework/package.json').version")" = "0.7.2" \
+    && test "$(git -C /framework rev-parse HEAD)" = "$FRAMEWORK_COMMIT" \
+    && test "$(node -p "require('/framework/package.json').version")" = "$FRAMEWORK_VERSION" \
     && /framework/scripts/install-browser-package.sh /framework-dist copy
 
 FROM debian:trixie-slim AS etlegacy-source
