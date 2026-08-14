@@ -133,8 +133,9 @@ describe('reproducible source repository', () => {
   it('publishes Docker images only on the dedicated Mac mini runner', () => {
     const workflow = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'docker.yml'), 'utf8');
     assert.match(workflow, /runs-on: \[self-hosted, macOS, ARM64, wolfet-wasm\]/);
-    assert.match(workflow, /docker\/setup-qemu-action@v4/);
-    assert.match(workflow, /platforms: amd64/);
+    assert.doesNotMatch(workflow, /docker\/setup-qemu-action/);
+    assert.match(workflow, /docker --config "\$DOCKER_CONFIG" pull docker\.io\/tonistiigi\/binfmt:latest/);
+    assert.match(workflow, /tonistiigi\/binfmt:latest --install amd64/);
     assert.match(workflow, /platforms: linux\/amd64/);
     assert.match(workflow, /keep-state: true/);
     assert.match(workflow, /DOCKER_CONFIG=\$etjs_docker_config/);

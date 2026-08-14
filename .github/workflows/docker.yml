@@ -52,9 +52,10 @@ jobs:
 
       - name: Set up amd64 emulation
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: amd64
+        run: |
+          docker --config "$DOCKER_CONFIG" pull docker.io/tonistiigi/binfmt:latest
+          docker --config "$DOCKER_CONFIG" run --privileged --rm \
+            docker.io/tonistiigi/binfmt:latest --install amd64
 
       - name: Set up Docker Buildx
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
