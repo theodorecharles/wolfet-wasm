@@ -42,54 +42,38 @@ jobs:
           echo "/Applications/Docker.app/Contents/Resources/bin" >> "$GITHUB_PATH"
           /Applications/Docker.app/Contents/Resources/bin/docker version
 
-      - name: Isolate Docker credentials from the Mac keychain
+      - name: Build and push amd64 image without the Mac keychain
         if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
         run: |
-          etjs_docker_config="$RUNNER_TEMP/wolfet-wasm-docker"
+          case "$GITHUB_REF" in
+            refs/heads/devel) etjs_image_tag="dev" ;;
+            refs/heads/master) etjs_image_tag="latest" ;;
+            *) echo "unsupported publish ref: $GITHUB_REF" >&2; exit 1 ;;
+          esac
+
+          etjs_docker_config="$RUNNER_TEMP/wolfet-wasm-docker-$GITHUB_RUN_ID"
           install -d -m 0700 "$etjs_docker_config"
           printf '{"auths":{}}\n' > "$etjs_docker_config/config.json"
-          echo "DOCKER_CONFIG=$etjs_docker_config" >> "$GITHUB_ENV"
 
-      - name: Set up amd64 emulation
-        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        run: |
-          docker --config "$DOCKER_CONFIG" pull docker.io/tonistiigi/binfmt:latest
-          docker --config "$DOCKER_CONFIG" run --privileged --rm \
+          docker --config "$etjs_docker_config" pull docker.io/tonistiigi/binfmt:latest
+          docker --config "$etjs_docker_config" run --privileged --rm \
             docker.io/tonistiigi/binfmt:latest --install amd64
+          printf '%s' "$DOCKERHUB_TOKEN" | docker --config "$etjs_docker_config" login \
+            --username "$DOCKERHUB_USERNAME" --password-stdin
 
-      - name: Set up Docker Buildx
-        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/setup-buildx-action@v4
-        with:
-          name: wolfet-wasm
-          keep-state: true
-          cache-binary: false
-
-      - name: Log in to Docker Hub
-        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/login-action@v4
-        with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
-
-      - name: Generate image metadata
-        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.DOCKERHUB_USERNAME }}/wolfet-wasm
-          tags: |
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/devel' }}
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-
-      - name: Build and push amd64 image
-        if: env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != ''
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max
-          sbom: true
+          if docker --config "$etjs_docker_config" buildx inspect wolfet-wasm >/dev/null 2>&1; then
+            docker --config "$etjs_docker_config" buildx use wolfet-wasm
+          else
+            docker --config "$etjs_docker_config" buildx create \
+              --name wolfet-wasm --driver docker-container --use
+          fi
+          docker --config "$etjs_docker_config" buildx inspect --bootstrap
+          docker --config "$etjs_docker_config" buildx build \
+            --platform linux/amd64 \
+            --push \
+            --provenance=mode=max \
+            --sbom=true \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --tag "$DOCKERHUB_USERNAME/wolfet-wasm:$etjs_image_tag" \
+            .
