@@ -1,0 +1,32 @@
+{
+  "id": "wolfet",
+  "title": "Enemy Territory",
+  "kicker": "Wolfenstein",
+  "description": "Wolfenstein: Enemy Territory in your browser.",
+  "icon": "/img/et.png",
+  "iconPixelated": true,
+  "displayMode": "dynamic",
+  "nativeManaged": true,
+  "syncBackbuffer": false,
+  "maxDpr": 1,
+  "pointerLock": true,
+  "identity": true,
+  "graphics": true,
+  "profiles": [
+    { "value": "3", "label": "Maximum" },
+    { "value": "2", "label": "Balanced" },
+    { "value": "1", "label": "Performance" },
+    { "value": "0", "label": "Minimum" }
+  ],
+  "defaultProfile": "3",
+  "fpsTargets": [30, 60, 120],
+  "defaultFps": 60,
+  "defaultDynamicQuality": true,
+  "defaultPlayerName": "Player",
+  "adapter": "/game-adapter.js",
+  "theme": {
+    "accent": "#c4a35a",
+    "accent-strong": "#f0d48a",
+    "border": "#6b542c"
+  }
+}

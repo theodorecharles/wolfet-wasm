@@ -72,4 +72,27 @@ describe('same-origin content-addressed game assets', () => {
     assert.equal(invalid.status, 416);
     assert.equal(invalid.headers['content-range'], 'bytes */228138631');
   });
+
+  it('exposes the framework game-data contract without an upload gate', async () => {
+    const statusResponse = await request(port, '/game-data/status');
+    assert.equal(statusResponse.status, 200);
+    const status = JSON.parse(statusResponse.body.toString('utf8'));
+    assert.equal(status.configured, true);
+    assert.equal(status.ready, true);
+    assert.equal(status.files.length, 6);
+    const pak0 = status.files.find((file) => file.key === 'etmain-pak0.pk3');
+    assert.equal(pak0.path, 'etmain/pak0.pk3');
+    assert.equal(pak0.size, 228138631);
+    assert.match(pak0.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(pak0.valid, true);
+
+    const fileResponse = await request(port, '/game-data/files/etmain-pak0.pk3', {
+      headers: { Range: 'bytes=0-3' }
+    });
+    assert.equal(fileResponse.status, 206);
+    assert.deepEqual(Array.from(fileResponse.body), [80, 75, 3, 4]);
+
+    const upload = await request(port, '/game-data/setup/etmain-pak0.pk3', { method: 'PUT' });
+    assert.equal(upload.status, 405);
+  });
 });

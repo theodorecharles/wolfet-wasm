@@ -19,6 +19,7 @@ const { queryStatus } = require('./status');
 
 const ROOT = path.join(__dirname, '..');
 const WEB_ROOT = path.join(ROOT, 'web');
+const FRAMEWORK_DOCUMENT = path.join(WEB_ROOT, 'shared-shell', 'index.html');
 const DATA_WEB_ROOT = path.join(dedicated.DATA_ROOT, 'web');
 const HTTP_PORT = Number(process.env.ETJS_HTTP_PORT || 8088);
 const DED_PORT = dedicated.HOST_UDP_PORT;
@@ -86,6 +87,7 @@ function gameAssets() {
     const filePath = def.filePath || path.join(base, def.name);
     const bytes = def.bytes || fs.statSync(filePath).size;
     return {
+      key: (def.parent.slice(1) + '-' + def.name).toLowerCase(),
       parent: def.parent,
       name: def.name,
       url: def.parent + '/' + def.name + '?v=' + def.hash.slice(0, 16),
@@ -140,6 +142,70 @@ function sendFile(req, res, filePath) {
 
 function serveStatic(req, res) {
   const urlPath = (req.url || '/').split('?')[0];
+
+  if ((urlPath === '/' || urlPath === '/index.html') && (req.method === 'GET' || req.method === 'HEAD')) {
+    sendFile(req, res, FRAMEWORK_DOCUMENT);
+    return;
+  }
+
+  if (urlPath === '/wasm-game-config.js' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const body = Buffer.from('globalThis.WASM_GAME_VARIANT = "wolfet";\n');
+    res.writeHead(200, {
+      'content-type': 'text/javascript; charset=utf-8',
+      'content-length': String(body.length),
+      'cache-control': 'no-store'
+    });
+    if (req.method === 'HEAD') { res.end(); } else { res.end(body); }
+    return;
+  }
+
+  if (urlPath === '/game-data/status' && req.method === 'GET') {
+    const files = gameAssets().map((file) => ({
+      key: file.key,
+      path: file.parent.slice(1) + '/' + file.name,
+      name: file.name,
+      names: [file.name],
+      size: file.bytes,
+      sha256: file.sha256,
+      required: true,
+      valid: true
+    }));
+    const body = Buffer.from(JSON.stringify({
+      configured: true,
+      namespace: 'wolfet-official',
+      version: files.map((file) => file.sha256).join(':'),
+      ready: true,
+      files: files,
+      setupTokenRequired: false
+    }));
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-length': String(body.length),
+      'cache-control': 'no-store'
+    });
+    res.end(body);
+    return;
+  }
+
+  const gameDataFile = /^\/game-data\/files\/([a-z0-9._-]+)$/.exec(urlPath);
+  if (gameDataFile && (req.method === 'GET' || req.method === 'HEAD')) {
+    const asset = gameAssets().find((file) => file.key === gameDataFile[1]);
+    if (!asset) {
+      res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ error: 'Unknown game-data file.' }));
+      return;
+    }
+    const base = asset.parent === '/etmain'
+      ? path.join(dedicated.RUNTIME_ROOT, 'etmain')
+      : path.join(dedicated.RUNTIME_ROOT, 'legacy');
+    sendFile(req, res, asset.filePath || path.join(base, asset.name));
+    return;
+  }
+  if (urlPath.startsWith('/game-data/setup/')) {
+    res.writeHead(405, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ error: 'Official WolfET data is provisioned by the server.' }));
+    return;
+  }
 
   if (urlPath === '/client-log') {
     if (req.method !== 'POST') {
@@ -314,10 +380,9 @@ function serveStatic(req, res) {
     }
   }
 
-  // SPA fallback: name gate lives on index.html
-  const index = path.join(WEB_ROOT, 'index.html');
-  if (fs.existsSync(index)) {
-    sendFile(req, res, index);
+  // Canonical framework document owns every browser route.
+  if (fs.existsSync(FRAMEWORK_DOCUMENT)) {
+    sendFile(req, res, FRAMEWORK_DOCUMENT);
     return;
   }
   res.writeHead(404, { 'content-type': 'text/plain' });

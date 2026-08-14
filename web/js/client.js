@@ -11,14 +11,22 @@
   /* One stamp for etjs.js + etjs.wasm so EM_ASM addresses match. */
   window.ETJS_ASSET_VER = window.ETJS_ASSET_VER || String(Date.now());
 
-  var frame = document.getElementById('viewport-frame');
-  var canvas = document.getElementById('et-canvas');
-  var loadPanel = document.getElementById('load-panel');
-  var loadStatus = document.getElementById('load-status');
-  var loadDetail = document.getElementById('load-detail');
+  function firstElement() {
+    for (var i = 0; i < arguments.length; i++) {
+      var found = document.getElementById(arguments[i]);
+      if (found) { return found; }
+    }
+    return null;
+  }
+
+  var frame = firstElement('viewport-frame', 'runtime');
+  var canvas = firstElement('et-canvas', 'game-canvas');
+  var loadPanel = firstElement('load-panel', 'loading');
+  var loadStatus = firstElement('load-status', 'loading-status');
+  var loadDetail = firstElement('load-detail', 'loading-detail');
   var loadFill = document.getElementById('load-bar-fill');
-  var loadBar = loadFill && loadFill.parentElement;
-  var startupConsole = document.getElementById('startup-console');
+  var loadBar = (loadFill && loadFill.parentElement) || document.getElementById('loading-progress');
+  var startupConsole = firstElement('startup-console', 'loading-console');
   var pk3Downloader = window.ETJSPk3Download;
   var pk3Cache = window.ETJSPk3
     ? window.ETJSPk3.createPk3Cache({
@@ -34,13 +42,13 @@
   var loadHidden = false;
   var menuAudio = document.getElementById('menu-music');
   var menuMusicWanted = false;
-  var nameGate = document.getElementById('name-gate');
-  var nameForm = document.getElementById('name-form');
+  var nameGate = firstElement('name-gate', 'launcher');
+  var nameForm = firstElement('name-form', 'launcher-form');
   var nameInput = document.getElementById('player-name');
-  var nameError = document.getElementById('name-error');
+  var nameError = firstElement('name-error', 'error');
   var graphicsProfile = document.getElementById('graphics-profile');
   var dynamicQuality = document.getElementById('dynamic-quality');
-  var dynamicFps = document.getElementById('dynamic-fps');
+  var dynamicFps = firstElement('dynamic-fps', 'fps-target');
   var lastLoadStatus = '';
   var MAX_STARTUP_LINES = 180;
   var GRAPHICS_STORAGE_KEY = 'etjs.graphics';
@@ -51,6 +59,17 @@
   var communicationInput = false;
   var communicationInputGraceUntil = 0;
   var communicationLogSequence = 0;
+  var wasmShell = null;
+  var frameworkEngineState = 'launcher';
+  var canonicalContext = null;
+  var canonicalStart = null;
+
+  function setFrameworkEngineState(next, options) {
+    frameworkEngineState = next;
+    if (wasmShell && wasmShell.engineState() !== next) {
+      wasmShell.setEngineState(next, options);
+    }
+  }
 
   function communicationLog(event, detail) {
     var entry = Object.assign({
@@ -329,6 +348,9 @@
   function playMenuMusic() {
     menuMusicWanted = true;
     resumeAudio();
+    if (!menuAudio && typeof Audio === 'function') {
+      menuAudio = new Audio('/sound/music/menu_server.wav');
+    }
     if (!menuAudio) {
       return;
     }
@@ -355,7 +377,11 @@
       if (loadStatus) {
         loadStatus.textContent = msg;
       }
-      if (loadPanel) {
+      if (wasmShell) {
+        wasmShell.showLoading();
+        setFrameworkEngineState('crashed');
+      } else if (loadPanel) {
+        loadPanel.hidden = false;
         loadPanel.classList.remove('hidden');
       }
     }
@@ -404,6 +430,9 @@
     }
     if (loadBar) {
       loadBar.setAttribute('aria-valuenow', String(pct));
+      if (String(loadBar.tagName || '').toLowerCase() === 'progress') {
+        loadBar.value = pct;
+      }
     }
   }
 
@@ -458,11 +487,7 @@
 
   var engineReady = false;
 
-  function sizeCanvas() {
-    /* QuakeJS resizeViewport: backbuffer = viewport-frame size. */
-    var host = frame || (canvas && canvas.parentElement);
-    var w = (host && host.offsetWidth) || window.innerWidth || 1024;
-    var h = (host && host.offsetHeight) || window.innerHeight || 768;
+  function applyNativeResolution(w, h) {
     if (w < 2) {
       w = window.innerWidth || 1024;
     }
@@ -473,7 +498,7 @@
       canvas.width = w;
       canvas.height = h;
     }
-    if (canvas.style) {
+    if (canvas.style && !wasmShell) {
       canvas.style.width = '100%';
       canvas.style.height = '100%';
     }
@@ -487,6 +512,17 @@
     if (window.Module && typeof window.Module._ETJS_SetResolution === 'function') {
       try { window.Module._ETJS_SetResolution(w, h); } catch (e) { /* not ready */ }
     }
+  }
+
+  function sizeCanvas() {
+    if (wasmShell) {
+      return wasmShell.resize();
+    }
+    /* QuakeJS resizeViewport: backbuffer = viewport-frame size. */
+    var host = frame || (canvas && canvas.parentElement);
+    var w = (host && host.offsetWidth) || window.innerWidth || 1024;
+    var h = (host && host.offsetHeight) || window.innerHeight || 768;
+    applyNativeResolution(w, h);
   }
 
   function ensureWebGL() {
@@ -586,7 +622,7 @@
       return;
     }
     appendStartupLine(text, level);
-    if (text.indexOf('ETJS join name=') !== -1) {
+    if (!canonicalContext && text.indexOf('ETJS join name=') !== -1) {
       var joined = text.replace(/^.*ETJS join name=/, '').split(' ')[0];
       if (window.ETJSName && joined) {
         try { window.ETJSName.savePlayerName(joined); } catch (e) { /* ignore */ }
@@ -611,6 +647,7 @@
     } else if (text.indexOf('ETJS view team=') !== -1 ||
                text.indexOf('ETJS CGameRendering vm') !== -1) {
       hideLoadPanel();
+      setFrameworkEngineState('gameplay');
       stopMenuMusic();
     }
   }
@@ -621,11 +658,18 @@
     }
     loadHidden = true;
     setLoadProgress(1, 'Entering the match…', '');
-    if (loadPanel) {
-      loadPanel.classList.add('hidden');
-    }
-    if (frame) {
-      frame.classList.remove('hidden');
+    if (wasmShell) {
+      wasmShell.showRuntime();
+      setFrameworkEngineState('menu');
+    } else {
+      if (loadPanel) {
+        loadPanel.hidden = true;
+        loadPanel.classList.add('hidden');
+      }
+      if (frame) {
+        frame.hidden = false;
+        frame.classList.remove('hidden');
+      }
     }
     sizeCanvas();
     playReady = true;
@@ -701,6 +745,59 @@
     return Promise.resolve(done).then(function (buf) {
       var data = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
       Module.FS.writeFile(file.parent + '/' + file.name, data, { canOwn: true });
+    });
+  }
+
+  function preloadGameFiles(Module, files, onProgress) {
+    if (!canonicalContext || !canonicalContext.framework || !canonicalContext.dataClient) {
+      return Promise.all(files.map(function (file, idx) {
+        return preloadIntoFS(Module, file, function (got, total, fromCache) {
+          onProgress(idx, got, total, fromCache ? 'cache' : 'network');
+        });
+      }));
+    }
+    var framework = canonicalContext.framework;
+    var version = files.map(function (file) { return file.cacheKey || file.name; }).join('|');
+    var ownerData = framework.createOwnerDataSet({
+      namespace: 'wolfet-pk3',
+      version: version,
+      files: files.map(function (file) {
+        return {
+          key: (file.parent.slice(1) + '-' + file.name).toLowerCase(),
+          name: file.name,
+          size: file.bytes,
+          magic: [80, 75, 3, 4],
+          mountName: file.name,
+          validateCached: false
+        };
+      })
+    });
+    var keyIndex = {};
+    files.forEach(function (file, index) {
+      keyIndex[(file.parent.slice(1) + '-' + file.name).toLowerCase()] = index;
+    });
+    return canonicalContext.dataClient.load(ownerData, {
+      onProgress: function (detail) {
+        var idx = keyIndex[String(detail.key || '').toLowerCase()];
+        if (idx === undefined) { return; }
+        var total = files[idx].bytes || 1;
+        var got = detail.received || detail.bytes ||
+          (detail.phase === 'restored' || detail.phase === 'cached' || detail.phase === 'validated' ? total : 0);
+        var source = detail.phase === 'restored' ? 'cache' :
+          (detail.phase === 'downloading' ? 'network' : null);
+        onProgress(idx, Math.min(got, total), total, source);
+      }
+    }).then(function (dataSet) {
+      var etmain = [];
+      var legacy = [];
+      dataSet.entries.forEach(function (entry) {
+        var idx = keyIndex[entry.policy.key];
+        (files[idx].parent === '/etmain' ? etmain : legacy).push(entry);
+      });
+      return Promise.all([
+        framework.mountOwnerFiles(Module, etmain, { root: '/etmain', mode: 'memfs' }),
+        framework.mountOwnerFiles(Module, legacy, { root: '/legacy', mode: 'memfs' })
+      ]);
     });
   }
 
@@ -1560,6 +1657,9 @@
         ignoreLookUntil = Date.now() + 100;
       }
       wasDead = dead;
+      var nextFrameworkState = intermissionOpen() ? 'debrief' :
+        (!inWorld() ? 'menu' : ((engineUiOpen() || limboOpen()) ? 'paused' : 'gameplay'));
+      setFrameworkEngineState(nextFrameworkState);
       /* Intermission is entered by a snapshot rather than a DOM event. Polling
        * here releases pointer lock immediately even if the mouse is stationary. */
       syncCursor();
@@ -1574,7 +1674,11 @@
   }
 
   function startEngine(playerName) {
-    if (loadPanel) {
+    setFrameworkEngineState('loading');
+    if (wasmShell) {
+      wasmShell.showLoading();
+    } else if (loadPanel) {
+      loadPanel.hidden = false;
       loadPanel.classList.remove('hidden');
     }
     setLoadProgress(0.10, 'Preparing official game data…', '');
@@ -1613,11 +1717,18 @@
           /* Server startup belongs to the web Play/loading phase. By the time
            * MAIN is visible, JOIN GAME only has to begin the ET connection. */
           loadHidden = false;
-          if (loadPanel) {
-            loadPanel.classList.remove('hidden');
-          }
-          if (frame) {
-            frame.classList.remove('hidden');
+          setFrameworkEngineState('loading');
+          if (wasmShell) {
+            wasmShell.showLoading();
+          } else {
+            if (loadPanel) {
+              loadPanel.hidden = false;
+              loadPanel.classList.remove('hidden');
+            }
+            if (frame) {
+              frame.hidden = false;
+              frame.classList.remove('hidden');
+            }
           }
           stopMenuMusic();
           setLoadProgress(0.28, 'Connecting to game server…', connectAddress);
@@ -1704,16 +1815,19 @@
                 ' MB · ' + cached + ' of ' + files.length + ' files cached');
           }
           report();
-          window.Module.etjsReady = Promise.all(files.map(function (file, idx) {
-            return preloadIntoFS(window.Module, file, function (got, total, fromCache) {
+          window.Module.etjsReady = Promise.all([
+            preloadGameFiles(window.Module, files, function (idx, got, total, source) {
               loaded[idx] = got;
               if (total) {
                 totals[idx] = total;
               }
-              sources[idx] = fromCache ? 'cache' : 'network';
+              if (source) {
+                sources[idx] = source;
+              }
               report();
-            });
-          }).concat([window.Module.etjsMenus || Promise.resolve()]));
+            }),
+            window.Module.etjsMenus || Promise.resolve()
+          ]);
         }],
         onRuntimeInitialized: function () {
           if (started) {
@@ -1726,7 +1840,8 @@
             }
             started = true;
             setLoadProgress(0.96, 'Starting Wolfenstein: Enemy Territory…', 'Opening the main menu');
-            if (frame) {
+            if (!wasmShell && frame) {
+              frame.hidden = false;
               frame.classList.remove('hidden');
             }
             canvas.width = window.innerWidth || 1024;
@@ -1806,23 +1921,73 @@
     });
   }
 
-  function boot() {
+  function boot(externalContext) {
     if (typeof fetch !== 'function') {
       return;
     }
-    var existing = window.ETJSName.loadPlayerName() || '';
-    try {
-      var savedGraphics = JSON.parse(localStorage.getItem(GRAPHICS_STORAGE_KEY) || '{}');
-      if (/^[0-3]$/.test(String(savedGraphics.level))) {
-        selectedQualityLevel = Number(savedGraphics.level);
-      }
-      if (/^(30|60|120)$/.test(String(savedGraphics.targetFps))) {
-        selectedFpsTarget = Number(savedGraphics.targetFps);
-      }
-      if (typeof savedGraphics.adaptive === 'boolean') {
-        adaptiveQuality = savedGraphics.adaptive;
-      }
-    } catch (e) { /* use maximum, adaptive 60 FPS defaults */ }
+    canonicalContext = externalContext || null;
+    if (canonicalContext && canonicalContext.shell) {
+      wasmShell = canonicalContext.shell;
+      frameworkEngineState = wasmShell.engineState();
+    } else if (window.WolfWasmShell) {
+      wasmShell = window.WolfWasmShell.configure({
+        launcher: nameGate,
+        card: nameForm,
+        loading: loadPanel,
+        runtime: frame,
+        canvas: canvas,
+        displayMode: 'dynamic',
+        nativeManaged: true,
+        syncBackbuffer: false,
+        maxDpr: 1,
+        pointerLock: true,
+        graphics: true,
+        identity: true,
+        advanced: true,
+        engineState: 'launcher',
+        readEngineState: function () { return frameworkEngineState; },
+        onNativeResizeRequest: function (detail) {
+          applyNativeResolution(detail.requestedWidth, detail.requestedHeight);
+        },
+        preferences: {
+          namespace: 'wolfet',
+          playerName: nameInput,
+          qualityProfile: graphicsProfile,
+          targetFps: dynamicFps,
+          dynamicQuality: dynamicQuality,
+          defaults: {
+            playerName: 'Player',
+            qualityProfile: '3',
+            targetFps: 60,
+            dynamicQuality: true
+          }
+        }
+      });
+      wasmShell.showLauncher();
+    }
+    var existing = canonicalContext && canonicalContext.preferences
+      ? canonicalContext.preferences.values().playerName
+      : (window.ETJSName.loadPlayerName() ||
+        (wasmShell && wasmShell.preferences ? wasmShell.preferences.values().playerName : ''));
+    if (canonicalContext && canonicalContext.preferences) {
+      var frameworkPreferences = canonicalContext.preferences.values();
+      selectedQualityLevel = Number(frameworkPreferences.qualityProfile);
+      selectedFpsTarget = Number(frameworkPreferences.targetFps);
+      adaptiveQuality = !!frameworkPreferences.dynamicQuality;
+    } else {
+      try {
+        var savedGraphics = JSON.parse(localStorage.getItem(GRAPHICS_STORAGE_KEY) || '{}');
+        if (/^[0-3]$/.test(String(savedGraphics.level))) {
+          selectedQualityLevel = Number(savedGraphics.level);
+        }
+        if (/^(30|60|120)$/.test(String(savedGraphics.targetFps))) {
+          selectedFpsTarget = Number(savedGraphics.targetFps);
+        }
+        if (typeof savedGraphics.adaptive === 'boolean') {
+          adaptiveQuality = savedGraphics.adaptive;
+        }
+      } catch (e) { /* use maximum, adaptive 60 FPS defaults */ }
+    }
     if (graphicsProfile) {
       graphicsProfile.value = String(selectedQualityLevel);
     }
@@ -1851,7 +2016,12 @@
       var raw = nameInput ? nameInput.value : existing;
       var name;
       try {
-        name = window.ETJSName.savePlayerName(raw);
+        name = canonicalContext
+          ? window.ETJSName.normalizeName(raw)
+          : window.ETJSName.savePlayerName(raw);
+        if (!name) {
+          throw new Error('A player name is required');
+        }
       } catch (err) {
         if (nameError) {
           nameError.textContent = 'Enter a player name.';
@@ -1867,18 +2037,30 @@
         selectedFpsTarget = 60;
       }
       adaptiveQuality = dynamicQuality ? !!dynamicQuality.checked : true;
-      try {
-        localStorage.setItem(GRAPHICS_STORAGE_KEY, JSON.stringify({
-          level: selectedQualityLevel,
-          targetFps: selectedFpsTarget,
-          adaptive: adaptiveQuality
-        }));
-      } catch (e) { /* storage is optional */ }
-      if (nameGate) {
-        nameGate.classList.add('hidden');
+      if (!canonicalContext) {
+        try {
+          localStorage.setItem(GRAPHICS_STORAGE_KEY, JSON.stringify({
+            level: selectedQualityLevel,
+            targetFps: selectedFpsTarget,
+            adaptive: adaptiveQuality
+          }));
+        } catch (e) { /* storage is optional */ }
       }
-      if (loadPanel) {
-        loadPanel.classList.remove('hidden');
+      if (wasmShell && wasmShell.preferences) {
+        wasmShell.preferences.save();
+      }
+      setFrameworkEngineState('loading');
+      if (wasmShell) {
+        wasmShell.showLoading();
+      } else {
+        if (nameGate) {
+          nameGate.hidden = true;
+          nameGate.classList.add('hidden');
+        }
+        if (loadPanel) {
+          loadPanel.hidden = false;
+          loadPanel.classList.remove('hidden');
+        }
       }
       if (startupConsole) {
         startupConsole.textContent = '';
@@ -1886,15 +2068,17 @@
       lastLoadStatus = '';
       appendStartupLine('Wolfenstein: Enemy Territory browser runtime');
       appendStartupLine('Player: ' + name);
-      wakeDedicatedServer().then(function () {
+      return wakeDedicatedServer().then(function () {
         return startEngine(name);
       }).catch(function (err) {
         showError(err.message || String(err));
+        throw err;
       });
     }
-    if (nameForm) {
+    canonicalStart = beginFromForm;
+    if (!canonicalContext && nameForm) {
       nameForm.addEventListener('submit', beginFromForm);
-    } else {
+    } else if (!canonicalContext) {
       beginFromForm();
     }
     window.addEventListener('error', function (ev) {
@@ -1921,9 +2105,29 @@
     }, true);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    boot();
+  window.ETJSGameAdapter = {
+    init: function (context) {
+      boot(context);
+    },
+    start: function () {
+      if (!canonicalStart) {
+        return Promise.reject(new Error('The Enemy Territory adapter is not initialized.'));
+      }
+      return canonicalStart();
+    },
+    readEngineState: function () {
+      return frameworkEngineState;
+    },
+    resize: function (detail) {
+      applyNativeResolution(detail.requestedWidth, detail.requestedHeight);
+    }
+  };
+
+  if (!document.getElementById('game-canvas')) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { boot(); });
+    } else {
+      boot();
+    }
   }
 })();

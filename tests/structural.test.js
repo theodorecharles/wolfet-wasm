@@ -458,29 +458,27 @@ describe('no overlay theater in the shipped draw path', () => {
 
   it('streams real engine startup output into the loading console', () => {
     const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
-    const html = fs.readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8');
-    assert.match(html, /id="startup-console"[^>]*role="log"/);
+    const html = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'index.html'), 'utf8');
+    const shellCss = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'wolfwasm-shell.css'), 'utf8');
+    assert.match(html, /id="loading-console"[^>]*data-shell-console[^>]*role="log"/);
     assert.match(page, /function appendStartupLine/);
     assert.match(page, /print:\s*function \(text\)[\s\S]*?onEngineLine\(text, 'info'\)/);
     assert.match(page, /printErr:\s*function \(text\)[\s\S]*?onEngineLine\(s,/);
     assert.match(page, /MAX_STARTUP_LINES\s*=\s*180/);
     assert.match(page, /\\u001b\\\[/);
-    assert.match(html, /rel="preload"[^>]*ModernDOS8x16\.ttf/);
-    assert.match(fs.readFileSync(path.join(ROOT, 'web', 'css', 'etjs.css'), 'utf8'),
-      /font:\s*400 16px\/16px "Modern DOS 8x16"/);
-    assert.match(fs.readFileSync(path.join(ROOT, 'web', 'css', 'etjs.css'), 'utf8'),
-      /user-select:\s*text/);
+    assert.match(shellCss, /font:\s*400 16px\/16px "Modern DOS 8x16"/);
+    assert.match(shellCss, /user-select:\s*text/);
   });
 
   it('gives the browser UI enough bounded menu memory and preserves refresh shortcuts', () => {
     const shared = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'ui', 'ui_shared.c'), 'utf8');
     const glimp = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'sdl', 'sdl_glimp.c'), 'utf8');
     const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
-    const html = fs.readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8');
+    const html = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'index.html'), 'utf8');
     assert.match(shared, /defined\(__EMSCRIPTEN__\)[\s\S]*MEM_POOL_SIZE \(16 \* 1024 \* 1024\)/);
     assert.match(shared, /MEM_POOL_SIZE - allocPoint/);
     assert.match(glimp, /SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas"/);
-    assert.match(html, /id="et-canvas"[^>]*tabindex="0"/);
+    assert.match(html, /id="game-canvas"[^>]*tabindex="0"/);
     assert.match(page, /function inputCaptured/);
     assert.match(page, /function bareControl/);
     assert.match(page, /document\.activeElement === canvas/);
@@ -605,9 +603,10 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(mainMenu, /etjs_joingame/);
     assert.match(mainMenu, /menu_server\.wav/);
     assert.match(mainMenu, /ui\/assets\/et_logo/);
-    const html = fs.readFileSync(path.join(ROOT, 'web', 'index.html'), 'utf8');
-    assert.match(html, /id="name-gate"/);
-    assert.match(html, /img\/et\.(png|ico)/);
+    const html = fs.readFileSync(path.join(ROOT, 'web', 'shared-shell', 'index.html'), 'utf8');
+    const gameConfig = JSON.parse(fs.readFileSync(path.join(ROOT, 'web', 'wasm-game.json'), 'utf8'));
+    assert.match(html, /id="launcher"/);
+    assert.equal(gameConfig.icon, '/img/et.png');
     assert.match(page, /ETJS UIMENU_MAIN/);
     assert.match(page, /playMenuMusic/);
     const beginForm = page.split('function beginFromForm')[1] || '';

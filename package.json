@@ -13,6 +13,7 @@
     "setup:data": "sh scripts/fetch-game-data.sh",
     "setup:engine": "sh scripts/setup-etlegacy.sh",
     "reference:quakejs": "sh scripts/setup-quakejs-reference.sh",
+    "sync:framework": "sh scripts/sync-framework.sh",
     "build": "npm run build:tools && npm run build:pak && npm run build:server-mod && npm run build:web",
     "build:tools": "sh scripts/build-tools.sh",
     "build:pak": "sh scripts/build-etjs-pak.sh",

@@ -23,25 +23,40 @@ function assertNoUnguardedNode(src, file) {
 }
 
 describe('browser client scripts', () => {
-  it('ships a web name form then the game canvas', () => {
-    const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
-    assert.match(html, /id="name-form"/);
-    assert.match(html, /id="name-gate"/);
+  it('uses the canonical framework document plus a game manifest and adapter', () => {
+    const html = fs.readFileSync(path.join(WEB, 'shared-shell', 'index.html'), 'utf8');
+    const framework = JSON.parse(fs.readFileSync(path.join(WEB, 'shared-shell', 'wasm-game-framework.json'), 'utf8'));
+    const config = JSON.parse(fs.readFileSync(path.join(WEB, 'wasm-game.json'), 'utf8'));
+    const adapter = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
+    assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
+    assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
+    assert.equal(framework.version, '0.5.2');
+    assert.match(html, /id="launcher-form"/);
+    assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
-    assert.match(html, /img\/et\.(png|ico)/);
-    assert.match(html, /player-name\.js/);
-    assert.match(html, /etjs-input\.js/);
-    assert.match(html, /bind-store\.js/);
-    assert.match(html, /pk3-cache\.js/);
-    assert.match(html, /pk3-download\.js/);
-    assert.match(html, /client\.js\?v=16/);
-    assert.match(html, /id="et-canvas"/);
-    assert.match(html, /id="load-panel"/);
-    assert.match(html, /id="startup-console"/);
+    assert.equal(config.icon, '/img/et.png');
+    assert.equal(config.displayMode, 'dynamic');
+    assert.equal(config.nativeManaged, true);
+    assert.equal(config.adapter, '/game-adapter.js');
+    assert.match(adapter, /player-name\.js/);
+    assert.match(adapter, /etjs-input\.js/);
+    assert.match(adapter, /bind-store\.js/);
+    assert.match(adapter, /pk3-cache\.js/);
+    assert.match(adapter, /pk3-download\.js/);
+    assert.match(adapter, /client\.js\?v=18/);
+    assert.match(html, /shared-shell\/wolfwasm-shell\.js/);
+    assert.match(html, /shared-shell\/wolfwasm-shell\.css/);
+    assert.match(html, /shared-shell\/wolfwasm-bootstrap\.js/);
+    assert.match(html, /data-shell-launcher/);
+    assert.match(html, /data-shell-runtime/);
+    assert.match(html, /data-shell-canvas/);
+    assert.match(html, /id="game-canvas"/);
+    assert.match(html, /id="loading"/);
+    assert.match(html, /id="loading-console"/);
     assert.match(html, /role="log"/);
     assert.match(html, /id="graphics-profile"/);
     assert.match(html, /id="dynamic-quality"/);
-    assert.match(html, /id="dynamic-fps"/);
+    assert.match(html, /id="fps-target"/);
   });
 
   it('evaluates player-name.js in a browser-like environment', () => {
