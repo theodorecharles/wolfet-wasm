@@ -13,14 +13,17 @@
   <Description>Open the WebUI after installation, enter a player name, and press Play. On first start the container downloads the official free Enemy Territory game data from Splash Damage, verifies its pinned checksums, and stores it under /data. Add custom maps by placing compatible PK3 files in /data/custom_maps, then restart the container. The image supports amd64 hosts only.</Description>
   <Category>GameServers:</Category>
   <WebUI>http://[IP]:[PORT:8088]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/theodorecharles/wolfet-wasm/master/templates/wolfet-wasm.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/theodorecharles/wolfet-wasm/master/icon.svg</Icon>
+  <TemplateURL>https://raw.githubusercontent.com/theodorecharles/unraid-templates/master/wolfet-wasm.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/theodorecharles/unraid-templates/master/wolfet-wasm.png</Icon>
   <ExtraSearchTerms>Wolfenstein Enemy Territory ET Legacy browser WebAssembly WebGL game server</ExtraSearchTerms>
   <License>GPL-3.0-or-later</License>
   <Requires>An amd64/x86_64 Unraid host and outbound internet access on first start to obtain the official game data.</Requires>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
+  <DateInstalled/>
+  <DonateText>Support the developer</DonateText>
+  <DonateLink>https://github.com/sponsors/theodorecharles</DonateLink>
 
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/wolfet-wasm" Mode="rw" Description="Persistent official game data, generated configuration, bans, and custom_maps PK3 drop folder." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/wolfet-wasm</Config>
   <Config Name="Web UI" Target="8088" Default="8088" Mode="tcp" Description="Browser game, WebSocket proxy, health, and status HTTP port." Type="Port" Display="always" Required="true" Mask="false">8088</Config>

@@ -96,14 +96,14 @@ With the default `KEEP_ALIVE=false`, the lightweight HTTP/WebSocket host stays o
 
 ## Unraid
 
-The Community Applications template is [templates/wolfet-wasm.xml](templates/wolfet-wasm.xml). It uses `/mnt/user/appdata/wolfet-wasm` for persistent data and exposes all normal server settings in the Unraid container form.
+The canonical Community Applications template is [wolfet-wasm.xml](https://github.com/theodorecharles/unraid-templates/blob/master/wolfet-wasm.xml), with a synchronized copy in [templates/wolfet-wasm.xml](templates/wolfet-wasm.xml). It uses `/mnt/user/appdata/wolfet-wasm` for persistent data and exposes all normal server settings in the Unraid container form.
 
 Until the app is listed in Community Applications, install the template manually from an Unraid terminal:
 
 ```bash
 curl --fail --location \
   --output /boot/config/plugins/dockerMan/templates-user/my-wolfet-wasm.xml \
-  https://raw.githubusercontent.com/theodorecharles/wolfet-wasm/master/templates/wolfet-wasm.xml
+  https://raw.githubusercontent.com/theodorecharles/unraid-templates/master/wolfet-wasm.xml
 ```
 
 Then open **Docker → Add Container**, select `wolfet-wasm` from the template list, review the settings, and apply it. The persistent data share contains `custom_maps`; restart the container after adding or removing PK3 files.

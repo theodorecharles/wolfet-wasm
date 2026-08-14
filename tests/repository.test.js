@@ -113,7 +113,6 @@ describe('reproducible source repository', () => {
   it('ships a Community Applications-ready Unraid template', () => {
     const template = fs.readFileSync(path.join(ROOT, 'templates', 'wolfet-wasm.xml'), 'utf8');
     const profile = fs.readFileSync(path.join(ROOT, 'ca_profile.xml'), 'utf8');
-    const icon = fs.readFileSync(path.join(ROOT, 'icon.svg'), 'utf8');
 
     assert.match(template, /<Container version="2">/);
     assert.match(template, /<Repository>tedcharles\/wolfet-wasm:latest<\/Repository>/);
@@ -124,10 +123,11 @@ describe('reproducible source repository', () => {
     ['ETJS_MODE', 'ETJS_SLOTS', 'KEEP_ALIVE', 'IDLE_TIMEOUT', 'ETJS_OMNIBOT']
       .forEach((name) => assert.match(template, new RegExp('Target="' + name + '"')));
     assert.match(template, /amd64\/x86_64/);
+    assert.match(template, /unraid-templates\/master\/wolfet-wasm\.xml/);
+    assert.match(template, /unraid-templates\/master\/wolfet-wasm\.png/);
     assert.match(profile, /<CommunityApplications>/);
     assert.match(profile, /<Profile>[^<]+<\/Profile>/);
-    assert.match(profile, /raw\.githubusercontent\.com\/theodorecharles\/wolfet-wasm\/master\/icon\.svg/);
-    assert.match(icon, /<svg[^>]+viewBox="0 0 512 512"/);
+    assert.match(profile, /unraid-templates\/master\/wolfet-wasm\.png/);
   });
 
   it('publishes Docker images only on the dedicated Mac mini runner', () => {
