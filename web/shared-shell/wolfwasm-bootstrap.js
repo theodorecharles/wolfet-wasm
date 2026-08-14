@@ -195,6 +195,7 @@
       syncBackbuffer: config.syncBackbuffer === true, nativeManaged: config.nativeManaged === true,
       maxDpr: config.maxDpr || 1, pointerLock: config.pointerLock !== false,
       pointerWidth: config.pointerWidth, pointerHeight: config.pointerHeight,
+      pointerFit: config.pointerFit,
       resizeTransition: config.resizeTransition,
       graphics: config.graphics !== false, identity: config.identity !== false,
       advanced: config.advanced !== false, engineState: 'launcher',

@@ -30,7 +30,7 @@ describe('browser client scripts', () => {
     const adapter = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.5.2');
+    assert.equal(framework.version, '0.5.3');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);

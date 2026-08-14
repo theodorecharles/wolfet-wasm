@@ -31,9 +31,15 @@
     if (!width || !height) throw new Error('The game surface has no visible pointer area.');
     const outputWidth = positive(targetWidth, positive(surface.width, width));
     const outputHeight = positive(targetHeight, positive(surface.height, height));
-    const rawX = (Number(clientX) - Number(rect.left || 0)) / width;
-    const rawY = (Number(clientY) - Number(rect.top || 0)) / height;
-    const clamp = !options || options.clamp !== false;
+    const pointer = options || {};
+    const content = pointer.fit === 'contain'
+      ? fitRect(width, height, outputWidth / outputHeight, 'contain')
+      : { width, height };
+    const contentLeft = Number(rect.left || 0) + (width - content.width) / 2;
+    const contentTop = Number(rect.top || 0) + (height - content.height) / 2;
+    const rawX = (Number(clientX) - contentLeft) / content.width;
+    const rawY = (Number(clientY) - contentTop) / content.height;
+    const clamp = pointer.clamp !== false;
     const normalizedX = clamp ? Math.max(0, Math.min(1, rawX)) : rawX;
     const normalizedY = clamp ? Math.max(0, Math.min(1, rawY)) : rawY;
     return Object.freeze({
@@ -44,9 +50,8 @@
       inside: rawX >= 0 && rawX <= 1 && rawY >= 0 && rawY <= 1,
       targetWidth: outputWidth,
       targetHeight: outputHeight,
-      clientRect: Object.freeze({
-        left: Number(rect.left || 0), top: Number(rect.top || 0), width, height
-      })
+      clientRect: Object.freeze({ left: contentLeft, top: contentTop, width: content.width, height: content.height }),
+      surfaceRect: Object.freeze({ left: Number(rect.left || 0), top: Number(rect.top || 0), width, height })
     });
   }
 
@@ -1010,7 +1015,7 @@
         event ? event.clientY : clientY,
         pointer.width || config.pointerWidth || canvas?.width,
         pointer.height || config.pointerHeight || canvas?.height,
-        pointer
+        { fit: pointer.fit || config.pointerFit, clamp: pointer.clamp }
       );
     }
 
@@ -1266,7 +1271,7 @@
   }
 
   const api = Object.freeze({
-    version: '0.5.2',
+    version: '0.5.3',
     DISPLAY_MODES,
     ENGINE_STATES,
     configure,
