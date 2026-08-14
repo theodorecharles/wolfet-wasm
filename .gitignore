@@ -21,6 +21,8 @@
 !/web/sound/music/.gitkeep
 /web/img/et.png
 /web/img/et.ico
+/web/img/et-192.png
+/web/img/et-512.png
 
 # Generated WebAssembly client
 /web/client/*

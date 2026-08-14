@@ -95,4 +95,27 @@ describe('same-origin content-addressed game assets', () => {
     const upload = await request(port, '/game-data/setup/etmain-pak0.pk3', { method: 'PUT' });
     assert.equal(upload.status, 405);
   });
+
+  it('serves installable WolfET PWA metadata and the versioned framework worker', async () => {
+    const manifestResponse = await request(port, '/app.webmanifest');
+    assert.equal(manifestResponse.status, 200);
+    assert.equal(manifestResponse.headers['content-type'], 'application/manifest+json');
+    const manifest = JSON.parse(manifestResponse.body.toString('utf8'));
+    assert.equal(manifest.name, 'Enemy Territory');
+    assert.equal(manifest.short_name, 'WolfET');
+    assert.equal(manifest.display, 'standalone');
+    assert.equal(manifest.orientation, 'landscape');
+    assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ['192x192', '512x512']);
+
+    const workerResponse = await request(port, '/service-worker.js');
+    assert.equal(workerResponse.status, 200);
+    assert.equal(workerResponse.headers['service-worker-allowed'], '/');
+    const worker = workerResponse.body.toString('utf8');
+    assert.match(worker, /wasm-game-shell-0\.6\.1/);
+    assert.match(worker, /fetch\(event\.request\)/);
+    assert.doesNotMatch(worker, /game-data/, 'PWA shell cache must not duplicate owner PK3 caching');
+
+    assert.equal((await request(port, '/img/et-192.png')).status, 200);
+    assert.equal((await request(port, '/img/et-512.png')).status, 200);
+  });
 });

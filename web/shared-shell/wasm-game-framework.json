@@ -1,8 +1,8 @@
 {
   "package": "@wasm-game-framework/browser",
-  "version": "0.5.3",
-  "javascriptSha256": "b87bbcfb6c079b1df2842b68e6cd75e4894d7deb5b585a836eff0fa55ac2a907",
+  "version": "0.6.1",
+  "javascriptSha256": "6ae7e432ec187e89f78a1c382e9812280b28cea98746235b28bfdff25023b678",
   "stylesheetSha256": "6582d63d12a770ecdd579bdd9926cbcd2ce8e0bbf895c02d4a936d881b43a09c",
-  "bootstrapSha256": "d417a5570ea466385c72a5ec971ae3cb2561100f6ab46ae45028463431dfa5da",
-  "documentSha256": "558e26e227f25b441e501eef4c0aa047079ff298270d608af9850da020f7ae6e"
+  "bootstrapSha256": "27313350d04adb1fe84860ecdc37549c9625cda6c2b1728c2a4cae761b89ec3c",
+  "documentSha256": "d3163dae42a42814d52f6fbf49b068d0978a5fac606dd057d8b860ec73b9b56d"
 }

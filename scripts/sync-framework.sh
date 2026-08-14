@@ -21,5 +21,5 @@ if [ -z "$FRAMEWORK_ROOT" ] || [ ! -x "$FRAMEWORK_ROOT/scripts/install-browser-p
   exit 1
 fi
 
-exec "$FRAMEWORK_ROOT/scripts/install-browser-package.sh" \
+"$FRAMEWORK_ROOT/scripts/install-browser-package.sh" \
   "$PROJECT_ROOT/web/shared-shell" copy

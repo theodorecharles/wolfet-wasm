@@ -12,6 +12,7 @@
     playerName: byId('player-name'), advanced: byId('advanced-settings'), graphicsRow: byId('graphics-row'),
     graphicsProfile: byId('graphics-profile'), fpsRow: byId('fps-row'), fpsTarget: byId('fps-target'),
     dynamicRow: byId('dynamic-row'), dynamicQuality: byId('dynamic-quality'), play: byId('play'),
+    fullscreenRow: byId('fullscreen-row'), launchFullscreen: byId('launch-fullscreen'),
     status: byId('status'), error: byId('error'), loading: byId('loading'), loadingKicker: byId('loading-kicker'),
     loadingTitle: byId('loading-title'), loadingStatus: byId('loading-status'),
     loadingProgress: byId('loading-progress'), loadingDetail: byId('loading-detail'),
@@ -71,6 +72,16 @@
     document.documentElement.dataset.wasmGameVariant = variant;
     document.documentElement.dataset.wasmGameMode = selection.locked ? 'single' : 'suite';
     document.title = config.title || 'WASM Game';
+    const manifestLink = document.querySelector('link[rel="manifest"]');
+    if (manifestLink) manifestLink.href = `/app.webmanifest?variant=${encodeURIComponent(variant)}`;
+    const themeColor = config.pwa?.themeColor || config.theme?.accent || '#111827';
+    let themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (!themeMeta) {
+      themeMeta = document.createElement('meta');
+      themeMeta.name = 'theme-color';
+      document.head.appendChild(themeMeta);
+    }
+    themeMeta.content = String(themeColor);
     text(elements.kicker, config.kicker || config.engine);
     text(elements.title, config.title || variant);
     text(elements.description, config.description);
@@ -95,6 +106,7 @@
     elements.graphicsRow.hidden = config.graphics === false;
     elements.fpsRow.hidden = config.graphics === false || config.fps === false;
     elements.dynamicRow.hidden = config.graphics === false || config.dynamicQuality === false;
+    elements.fullscreenRow.hidden = config.fullscreen === false || !document.documentElement.requestFullscreen;
     options(elements.graphicsProfile, config.profiles || [{ value: 'default', label: 'Default' }], config.defaultProfile || 'default');
     options(elements.fpsTarget, (config.fpsTargets || [60]).map(value => ({ value, label: `${value} FPS` })), config.defaultFps || 60);
     elements.dynamicQuality.checked = config.defaultDynamicQuality !== false;
@@ -210,10 +222,11 @@
       preferences: {
         namespace: rootConfig.preferencesNamespace || rootConfig.id || 'wasm-game',
         playerName: elements.playerName, qualityProfile: elements.graphicsProfile,
-        targetFps: elements.fpsTarget, dynamicQuality: elements.dynamicQuality,
+        targetFps: elements.fpsTarget, dynamicQuality: elements.dynamicQuality, fullscreen: elements.launchFullscreen,
         defaults: {
           playerName: config.defaultPlayerName || 'Player', qualityProfile: config.defaultProfile || 'default',
-          targetFps: config.defaultFps || 60, dynamicQuality: config.defaultDynamicQuality !== false
+          targetFps: config.defaultFps || 60, dynamicQuality: config.defaultDynamicQuality !== false,
+          fullscreen: config.defaultFullscreen === true
         },
         onChange: values => adapter?.preferencesChanged?.(values, context())
       }
@@ -223,6 +236,11 @@
     shell.resize();
     initialized = true;
     await refreshDataGate();
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(error => {
+        console.warn('[wasm-game-framework] PWA service worker registration failed:', error);
+      });
+    }
   }
 
   elements.chooseDirectory.addEventListener('click', () => elements.directoryInput.click());
@@ -237,7 +255,12 @@
   elements.form.addEventListener('submit', event => {
     event.preventDefault();
     if (!initialized || elements.play.disabled) return;
-    shell.preferences?.save();
+    const preferences = shell.preferences?.save();
+    if (preferences?.fullscreen && !document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(error => {
+        console.warn('[wasm-game-framework] Fullscreen request was declined:', error);
+      });
+    }
     shell.showLoading();
     setLoading(`Starting ${config.title || variant}…`, '', 0);
     Promise.resolve(adapter.start(context())).catch(error => {

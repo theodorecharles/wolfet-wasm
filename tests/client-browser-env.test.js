@@ -30,7 +30,7 @@ describe('browser client scripts', () => {
     const adapter = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.5.3');
+    assert.equal(framework.version, '0.6.1');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
@@ -38,6 +38,10 @@ describe('browser client scripts', () => {
     assert.equal(config.displayMode, 'dynamic');
     assert.equal(config.nativeManaged, true);
     assert.equal(config.adapter, '/game-adapter.js');
+    assert.equal(config.fullscreen, true);
+    assert.equal(config.pwa.icons.length, 2);
+    assert.match(html, /rel="manifest" href="\/app\.webmanifest"/);
+    assert.match(html, /data-shell-launch-fullscreen/);
     assert.match(adapter, /player-name\.js/);
     assert.match(adapter, /etjs-input\.js/);
     assert.match(adapter, /bind-store\.js/);

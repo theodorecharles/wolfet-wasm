@@ -117,6 +117,20 @@ else
   echo "official game data already matches the pinned checksums"
 fi
 
+# PWA sizes are deterministic nearest-neighbor derivatives of the authentic
+# Windows icon extracted from the pinned official installer. They stay with
+# the private runtime data and are never committed or bundled in the image.
+if command -v magick >/dev/null 2>&1; then
+  magick "$ROOT/web/img/et.png" -filter point -resize 192x192 "$ROOT/web/img/et-192.png"
+  magick "$ROOT/web/img/et.png" -filter point -resize 512x512 "$ROOT/web/img/et-512.png"
+elif command -v convert >/dev/null 2>&1; then
+  convert "$ROOT/web/img/et.png" -filter point -resize 192x192 "$ROOT/web/img/et-192.png"
+  convert "$ROOT/web/img/et.png" -filter point -resize 512x512 "$ROOT/web/img/et-512.png"
+else
+  echo "ImageMagick (magick or convert) is required to create the PWA icons" >&2
+  exit 1
+fi
+
 LEGACY_PAK="$ROOT/runtime/legacy/legacy_v2.84.0.pk3"
 if ! file_matches "$LEGACY_PAK_SHA256" "$LEGACY_PAK"; then
   if [ -n "$LEGACY_PAK_SOURCE" ]; then

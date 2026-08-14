@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#111827">
   <title>WASM Game</title>
+  <link rel="manifest" href="/app.webmanifest">
   <link rel="stylesheet" href="/shared-shell/wolfwasm-shell.css">
 </head>
 <body>
@@ -50,6 +52,10 @@
           <span><input id="dynamic-quality" data-shell-dynamic-quality type="checkbox"> Dynamic quality</span>
         </label>
       </details>
+
+      <label id="fullscreen-row" data-shell-fullscreen>
+        <span><input id="launch-fullscreen" data-shell-launch-fullscreen type="checkbox"> Launch fullscreen</span>
+      </label>
 
       <button id="play" type="submit" data-shell-data-ready hidden disabled>Play</button>
       <p id="status" data-shell-status role="status" hidden></p>

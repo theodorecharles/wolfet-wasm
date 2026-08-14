@@ -184,7 +184,8 @@
       playerName: element(config.playerName, '[data-shell-player-name]'),
       qualityProfile: element(config.qualityProfile, '[data-shell-quality-profile]'),
       targetFps: element(config.targetFps, '[data-shell-target-fps]'),
-      dynamicQuality: element(config.dynamicQuality, '[data-shell-dynamic-quality]')
+      dynamicQuality: element(config.dynamicQuality, '[data-shell-dynamic-quality]'),
+      fullscreen: element(config.fullscreen, '[data-shell-launch-fullscreen]')
     };
 
     function values() {
@@ -192,7 +193,8 @@
         playerName: String(fields.playerName?.value || config.defaults?.playerName || 'Player').trim().slice(0, 32) || 'Player',
         qualityProfile: String(fields.qualityProfile?.value || config.defaults?.qualityProfile || 'default'),
         targetFps: Number(fields.targetFps?.value || config.defaults?.targetFps || 60),
-        dynamicQuality: fields.dynamicQuality ? Boolean(fields.dynamicQuality.checked) : Boolean(config.defaults?.dynamicQuality)
+        dynamicQuality: fields.dynamicQuality ? Boolean(fields.dynamicQuality.checked) : Boolean(config.defaults?.dynamicQuality),
+        fullscreen: fields.fullscreen ? Boolean(fields.fullscreen.checked) : Boolean(config.defaults?.fullscreen)
       });
     }
 
@@ -211,6 +213,7 @@
       if (fields.qualityProfile && merged.qualityProfile) fields.qualityProfile.value = String(merged.qualityProfile);
       if (fields.targetFps && merged.targetFps) fields.targetFps.value = String(merged.targetFps);
       if (fields.dynamicQuality && merged.dynamicQuality !== undefined) fields.dynamicQuality.checked = Boolean(merged.dynamicQuality);
+      if (fields.fullscreen && merged.fullscreen !== undefined) fields.fullscreen.checked = Boolean(merged.fullscreen);
       return values();
     }
 

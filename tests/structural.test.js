@@ -607,6 +607,8 @@ describe('no overlay theater in the shipped draw path', () => {
     const gameConfig = JSON.parse(fs.readFileSync(path.join(ROOT, 'web', 'wasm-game.json'), 'utf8'));
     assert.match(html, /id="launcher"/);
     assert.equal(gameConfig.icon, '/img/et.png');
+    assert.equal(gameConfig.fullscreen, true);
+    assert.equal(gameConfig.pwa.icons.length, 2);
     assert.match(page, /ETJS UIMENU_MAIN/);
     assert.match(page, /playMenuMusic/);
     const beginForm = page.split('function beginFromForm')[1] || '';
@@ -650,6 +652,8 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(server, /ETJS_HTTP_PORT \|\| 8088/);
     assert.match(server, /'\.ttf': 'font\/ttf'/);
     assert.match(server, /wsPath: '\/ws'/);
+    assert.match(server, /urlPath === '\/app\.webmanifest'/);
+    assert.match(server, /urlPath === '\/service-worker\.js'/);
     assert.match(server, /connect: '127\.0\.0\.1:' \+ DED_PORT/);
     const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
     assert.match(client, /window\.location\.protocol === 'https:' \? 'wss:\/\/' : 'ws:\/\/'/);

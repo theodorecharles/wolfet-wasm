@@ -20,6 +20,8 @@ const { queryStatus } = require('./status');
 const ROOT = path.join(__dirname, '..');
 const WEB_ROOT = path.join(ROOT, 'web');
 const FRAMEWORK_DOCUMENT = path.join(WEB_ROOT, 'shared-shell', 'index.html');
+const GAME_CONFIG_PATH = path.join(WEB_ROOT, 'wasm-game.json');
+const FRAMEWORK_METADATA_PATH = path.join(WEB_ROOT, 'shared-shell', 'wasm-game-framework.json');
 const DATA_WEB_ROOT = path.join(dedicated.DATA_ROOT, 'web');
 const HTTP_PORT = Number(process.env.ETJS_HTTP_PORT || 8088);
 const DED_PORT = dedicated.HOST_UDP_PORT;
@@ -61,6 +63,7 @@ const MIME = {
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
   '.ttf': 'font/ttf'
 };
 
@@ -140,6 +143,42 @@ function sendFile(req, res, filePath) {
   }
 }
 
+function pwaManifest() {
+  const config = JSON.parse(fs.readFileSync(GAME_CONFIG_PATH, 'utf8'));
+  const pwa = config.pwa || {};
+  return {
+    id: String(pwa.id || '/'),
+    name: String(pwa.name || config.title || 'WASM Game'),
+    short_name: String(pwa.shortName || config.title || 'WASM Game').slice(0, 30),
+    description: String(pwa.description || config.description || ''),
+    start_url: String(pwa.startUrl || '/'),
+    scope: String(pwa.scope || '/'),
+    display: String(pwa.display || 'standalone'),
+    background_color: String(pwa.backgroundColor || '#000000'),
+    theme_color: String(pwa.themeColor || config.theme?.accent || '#111827'),
+    orientation: String(pwa.orientation || 'landscape'),
+    icons: (pwa.icons || []).map((icon) => ({
+      src: String(icon.src),
+      sizes: String(icon.sizes || 'any'),
+      ...(icon.type ? { type: String(icon.type) } : {}),
+      ...(icon.purpose ? { purpose: String(icon.purpose) } : {})
+    }))
+  };
+}
+
+function serviceWorkerSource() {
+  const metadata = JSON.parse(fs.readFileSync(FRAMEWORK_METADATA_PATH, 'utf8'));
+  const cache = 'wasm-game-shell-' + metadata.version;
+  const shell = ['/', '/shared-shell/wolfwasm-shell.css', '/shared-shell/wolfwasm-shell.js',
+    '/shared-shell/wolfwasm-bootstrap.js', '/wasm-game.json', '/game-adapter.js'];
+  return `'use strict';\n` +
+    `const CACHE = ${JSON.stringify(cache)};\n` +
+    `const SHELL = ${JSON.stringify(shell)};\n` +
+    `self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => Promise.all(SHELL.map(path => fetch(path, { cache: 'no-cache' }).then(response => { if (response.ok) return cache.put(path, response); }).catch(() => undefined)))).then(() => self.skipWaiting())); });\n` +
+    `self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('wasm-game-shell-') && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())); });\n` +
+    `self.addEventListener('fetch', event => { const url = new URL(event.request.url); if (event.request.method !== 'GET' || url.origin !== self.location.origin || !SHELL.includes(url.pathname)) return; event.respondWith(fetch(event.request).then(response => { if (response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(url.pathname, copy)); } return response; }).catch(() => caches.match(url.pathname).then(response => response || Response.error()))); });\n`;
+}
+
 function serveStatic(req, res) {
   const urlPath = (req.url || '/').split('?')[0];
 
@@ -154,6 +193,29 @@ function serveStatic(req, res) {
       'content-type': 'text/javascript; charset=utf-8',
       'content-length': String(body.length),
       'cache-control': 'no-store'
+    });
+    if (req.method === 'HEAD') { res.end(); } else { res.end(body); }
+    return;
+  }
+
+  if (urlPath === '/app.webmanifest' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const body = Buffer.from(JSON.stringify(pwaManifest()));
+    res.writeHead(200, {
+      'content-type': 'application/manifest+json',
+      'content-length': String(body.length),
+      'cache-control': 'no-cache'
+    });
+    if (req.method === 'HEAD') { res.end(); } else { res.end(body); }
+    return;
+  }
+
+  if (urlPath === '/service-worker.js' && (req.method === 'GET' || req.method === 'HEAD')) {
+    const body = Buffer.from(serviceWorkerSource());
+    res.writeHead(200, {
+      'content-type': 'text/javascript; charset=utf-8',
+      'content-length': String(body.length),
+      'cache-control': 'no-cache',
+      'service-worker-allowed': '/'
     });
     if (req.method === 'HEAD') { res.end(); } else { res.end(body); }
     return;
