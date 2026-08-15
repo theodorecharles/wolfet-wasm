@@ -6,7 +6,7 @@ FROM node:22-alpine AS framework-source
 RUN apk add --no-cache bash coreutils git
 COPY framework-lock.json /tmp/framework-lock.json
 COPY web/wasm-game.json web/wasm-game-data.json web/game-adapter.js /game-site/
-COPY web/img/etl.svg /game-site/img/etl.svg
+COPY web/img/et-192.png web/img/et-512.png /game-site/img/
 COPY scripts/stage-framework-runtime.js /tmp/stage-framework-runtime.js
 RUN FRAMEWORK_REPOSITORY="$(node -p "require('/tmp/framework-lock.json').repository")" \
     && FRAMEWORK_COMMIT="$(node -p "require('/tmp/framework-lock.json').commit")" \

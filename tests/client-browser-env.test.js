@@ -39,7 +39,7 @@ describe('browser client scripts', () => {
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
-    assert.equal(config.icon, '/img/etl.svg');
+    assert.equal(config.icon, '/img/et-512.png');
     assert.equal(config.displayMode, 'dynamic');
     assert.equal(config.nativeManaged, true);
     assert.equal(config.resizeTransition, 'immediate');
@@ -48,8 +48,8 @@ describe('browser client scripts', () => {
     assert.equal(config.pointerFit, 'contain');
     assert.equal(config.adapter, '/game-adapter.js');
     assert.equal(config.fullscreen, true);
-    assert.equal(config.pwa.icons.length, 1);
-    assert.equal(config.pwa.icons[0].src, '/img/etl.svg');
+    assert.equal(config.pwa.icons.length, 2);
+    assert.deepEqual(config.pwa.icons.map((icon) => icon.src), ['/img/et-192.png', '/img/et-512.png']);
     assert.match(html, /rel="manifest" href="\/app\.webmanifest"/);
     assert.match(html, /data-shell-launch-fullscreen/);
     assert.match(adapter, /player-name\.js/);

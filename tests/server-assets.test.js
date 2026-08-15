@@ -111,8 +111,8 @@ describe('same-origin content-addressed game assets', () => {
     assert.equal(manifest.short_name, 'WolfET');
     assert.equal(manifest.display, 'standalone');
     assert.equal(manifest.orientation, 'landscape');
-    assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ['any']);
-    assert.equal(manifest.icons[0].src, '/img/etl.svg');
+    assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ['192x192', '512x512']);
+    assert.deepEqual(manifest.icons.map((icon) => icon.src), ['/img/et-192.png', '/img/et-512.png']);
     assert.deepEqual(manifestResponse.body,
       fs.readFileSync(path.join(ROOT, '.generated', 'framework-runtime', 'app.webmanifest')),
       'the application server must serve the framework-staged manifest byte for byte');
@@ -128,9 +128,9 @@ describe('same-origin content-addressed game assets', () => {
       fs.readFileSync(path.join(ROOT, '.generated', 'framework-runtime', 'service-worker.js')),
       'the application server must serve the framework-staged worker byte for byte');
 
-    const iconResponse = await request(port, '/img/etl.svg');
+    const iconResponse = await request(port, '/img/et-512.png');
     assert.equal(iconResponse.status, 200);
-    assert.equal(iconResponse.headers['content-type'], 'image/svg+xml');
+    assert.equal(iconResponse.headers['content-type'], 'image/png');
     assert.equal(iconResponse.headers['cross-origin-opener-policy'], 'same-origin');
     assert.equal(iconResponse.headers['cross-origin-embedder-policy'], 'require-corp');
     assert.equal(iconResponse.headers['x-content-type-options'], 'nosniff');

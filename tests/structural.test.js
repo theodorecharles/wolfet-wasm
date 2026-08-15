@@ -609,9 +609,9 @@ describe('no overlay theater in the shipped draw path', () => {
     const html = fs.readFileSync(path.join(FRAMEWORK_WEB, 'index.html'), 'utf8');
     const gameConfig = JSON.parse(fs.readFileSync(path.join(ROOT, 'web', 'wasm-game.json'), 'utf8'));
     assert.match(html, /id="launcher"/);
-    assert.equal(gameConfig.icon, '/img/etl.svg');
+    assert.equal(gameConfig.icon, '/img/et-512.png');
     assert.equal(gameConfig.fullscreen, true);
-    assert.equal(gameConfig.pwa.icons.length, 1);
+    assert.equal(gameConfig.pwa.icons.length, 2);
     assert.match(page, /ETJS UIMENU_MAIN/);
     assert.match(page, /playMenuMusic/);
     const beginForm = page.split('function beginFromForm')[1] || '';
@@ -663,7 +663,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(client, /window\.location\.host \+ '\/ws'/);
     const pw = fs.readFileSync(path.join(ROOT, 'scripts', 'playwright-etjs.js'), 'utf8');
     assert.match(pw, /127\.0\.0\.1:8088/);
-    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'etl.svg')));
+    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-512.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'sound', 'music', 'menu_server.wav')));
   });
 });

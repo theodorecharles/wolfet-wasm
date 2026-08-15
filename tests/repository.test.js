@@ -46,10 +46,10 @@ describe('reproducible source repository', () => {
     const dockerfile = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
     const server = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
     const entrypoint = fs.readFileSync(path.join(ROOT, 'docker', 'entrypoint.sh'), 'utf8');
-    assert.equal(game.icon, '/img/etl.svg');
-    assert.equal(game.iconPixelated, false);
-    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'etl.svg')));
-    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'NOTICE')));
+    assert.equal(game.icon, '/img/et-512.png');
+    assert.equal(game.iconPixelated, true);
+    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-192.png')));
+    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-512.png')));
     assert.equal(data.namespace, 'wolfet');
     assert.equal(data.files.length, 6);
     assert.equal(data.files.find((file) => file.key === 'etmain-pak0.pk3').size, 228138631);
