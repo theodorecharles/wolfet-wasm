@@ -9,8 +9,7 @@ Enemy Territory data.
 `runtime/legacy/etjs.pk3`, keeping these project-owned additions separate from
 the official game archives.
 
-The public image never includes Unreal Tournament audio. An operator who owns
-UT2004 may put locally extracted `doublekill.wav`, `multikill.wav`,
-`megakill.wav`, `ultrakill.wav`, and `monsterkill.wav` files in
-`/data/announcer/`. On startup the container replaces the generated fallback
-clips in its private ETJS overlay without modifying the UT2004 installation.
+The public image never includes Unreal Tournament audio. Optional replacement
+clips named `doublekill.wav`, `multikill.wav`, `megakill.wav`, `ultrakill.wav`,
+and `monsterkill.wav` can be placed in `/data/announcer/`. On startup the
+container replaces the generated fallback clips in its private ETJS overlay.

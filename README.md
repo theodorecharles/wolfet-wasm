@@ -258,9 +258,3 @@ npm run build:web
 Rendering, input, and UI changes should also be tested manually from the name screen through joining, spawning, live play, map loading, and the debrief screen. Do not commit original game PK3s, downloaded archives, generated WebAssembly output, runtime data, or credentials.
 
 The `devel` branch publishes the Docker `dev` tag and `master` publishes `latest` after the repository has `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` Actions secrets configured.
-
-## Data and licensing
-
-Wolfenstein: Enemy Territory was released as a free download, but its original game assets are not stored in this repository or baked into the Docker image. The server obtains them from Splash Damage and verifies the exact supported files before use. Running an instance means accepting the terms that accompany those files.
-
-ET: Legacy-derived code and this project's modifications are distributed under the terms in [LICENSE](LICENSE). Wolfenstein, Enemy Territory, and associated names and assets belong to their respective owners. This is an independent community project and is not affiliated with or endorsed by Splash Damage, id Software, Bethesda, or Microsoft.
