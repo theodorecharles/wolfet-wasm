@@ -33,9 +33,9 @@ describe('browser client scripts', () => {
     const client = fs.readFileSync(path.join(WEB, 'js', 'client.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.9.2');
-    assert.equal(lock.version, '0.9.2');
-    assert.equal(lock.commit, '53bc7e6eeef1ae35dcf3b25dea4e3ec0ab46726f');
+    assert.equal(framework.version, '0.9.3');
+    assert.equal(lock.version, '0.9.3');
+    assert.equal(lock.commit, '50f6d04a9d8c41d5537ac8b3937c5383418ff1f5');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
@@ -46,6 +46,7 @@ describe('browser client scripts', () => {
     assert.equal(config.pointerWidth, 640);
     assert.equal(config.pointerHeight, 480);
     assert.equal(config.pointerFit, 'contain');
+    assert.equal(config.menuCursor, 'native');
     assert.equal(config.adapter, '/game-adapter.js');
     assert.equal(config.fullscreen, true);
     assert.equal(config.persistence.root, '/persistent/wolfet');

@@ -29,6 +29,7 @@
   "pointerWidth": 640,
   "pointerHeight": 480,
   "pointerFit": "contain",
+  "menuCursor": "native",
   "pointerLock": true,
   "fullscreen": true,
   "identity": true,
