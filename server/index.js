@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const crypto = require('crypto');
 const http = require('http');
 const path = require('path');
 
@@ -23,6 +24,10 @@ const FRAMEWORK_ROOT = process.env.WASM_GAME_FRAMEWORK_WEB_ROOT || path.join(ROO
 const FRAMEWORK_DOCUMENT = path.join(FRAMEWORK_ROOT, 'index.html');
 const FRAMEWORK_RUNTIME_ROOT = process.env.WASM_GAME_FRAMEWORK_RUNTIME_ROOT ||
   path.join(ROOT, '.generated', 'framework-runtime');
+if (process.env.WASM_GAME_PASSWORD && !process.env.WASM_GAME_SESSION_SECRET) {
+  process.env.WASM_GAME_SESSION_SECRET = crypto.randomBytes(32).toString('base64url');
+}
+const { createPasswordGate } = require(path.join(FRAMEWORK_RUNTIME_ROOT, 'password-auth.js'));
 const PWA_MANIFEST_PATH = path.join(FRAMEWORK_RUNTIME_ROOT, 'app.webmanifest');
 const SERVICE_WORKER_PATH = path.join(FRAMEWORK_RUNTIME_ROOT, 'service-worker.js');
 const DATA_WEB_ROOT = path.join(dedicated.DATA_ROOT, 'web');
@@ -50,6 +55,7 @@ const GAME_ASSET_DEFS = [
   { parent: '/legacy', name: 'etjs.pk3', hash: dedicated.ETJS_PAK_HASH }
 ];
 let RUNTIME_LIFECYCLE = null;
+const PASSWORD_GATE = createPasswordGate();
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -269,6 +275,11 @@ function serveStatic(req, res) {
   }
 
   if (urlPath === '/health') {
+    if (PASSWORD_GATE.required) {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ ok: true }));
+      return;
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify(Object.assign({ ok: true, dedicatedPort: DED_PORT },
       RUNTIME_LIFECYCLE ? RUNTIME_LIFECYCLE.status() : { state: 'unmanaged' })));
@@ -414,14 +425,38 @@ function serveStatic(req, res) {
   res.end('not found');
 }
 
+function passwordProtectedPath(urlPath) {
+  return urlPath === '/status' || urlPath === '/wake' || urlPath === '/config.json' ||
+    urlPath === '/admin' || urlPath === '/client-log' ||
+    urlPath === '/game-data' || urlPath.startsWith('/game-data/') ||
+    urlPath === '/game-adapter.js' || urlPath.startsWith('/client/') ||
+    urlPath.startsWith('/etmain/') || urlPath.startsWith('/legacy/') ||
+    urlPath.startsWith('/js/') || urlPath.startsWith('/sound/');
+}
+
 function startHttp(port) {
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     res.setHeader('cross-origin-opener-policy', 'same-origin');
     res.setHeader('cross-origin-embedder-policy', 'require-corp');
     res.setHeader('cross-origin-resource-policy', 'same-origin');
     res.setHeader('x-content-type-options', 'nosniff');
     res.setHeader('referrer-policy', 'same-origin');
-    serveStatic(req, res);
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      if (await PASSWORD_GATE.handle(req, res, url)) return;
+      if (passwordProtectedPath(url.pathname) && !PASSWORD_GATE.require(req, res)) return;
+      serveStatic(req, res);
+    } catch (error) {
+      if (!res.headersSent) {
+        res.writeHead(error.statusCode || 500, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store'
+        });
+        res.end(JSON.stringify({ error: error.message || 'Internal server error.' }));
+      } else {
+        res.destroy(error);
+      }
+    }
   });
   attachWsProxy(server, {
     destHost: '127.0.0.1',
@@ -430,6 +465,7 @@ function startHttp(port) {
     registry: CONNECTION_REGISTRY,
     banStore: BAN_STORE,
     clientAddress: (req) => connectionAddress(req, process.env.ETJS_TRUST_PROXY === '1'),
+    authorizeUpgrade: (req) => PASSWORD_GATE.authenticated(req),
     ensureDedicated: RUNTIME_LIFECYCLE
       ? (reason) => RUNTIME_LIFECYCLE.wake(reason)
       : null
@@ -625,5 +661,6 @@ module.exports = {
   startHttp: startHttp,
   waitForDedicated: waitForDedicated,
   startDedicatedWithFallback: startDedicatedWithFallback,
+  passwordProtectedPath: passwordProtectedPath,
   setLifecycleForTests: function (lifecycle) { RUNTIME_LIFECYCLE = lifecycle; }
 };

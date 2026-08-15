@@ -57,7 +57,9 @@ async function main() {
       WASM_GAME_SHELL_ROOT: shellRoot,
       WASM_GAME_DATA_ROOT: temporaryData,
       WASM_GAME_HTTP_PORT: String(port),
-      WASM_GAME_VARIANT: 'wolfet'
+      WASM_GAME_VARIANT: 'wolfet',
+      WASM_GAME_PASSWORD: '',
+      WASM_GAME_SESSION_SECRET: ''
     }),
     stdio: ['ignore', 'ignore', 'pipe']
   });
@@ -72,7 +74,11 @@ async function main() {
     await fsp.mkdir(outputRoot, { recursive: true });
     await Promise.all([
       fsp.writeFile(path.join(outputRoot, 'app.webmanifest'), await manifestResponse.text()),
-      fsp.writeFile(path.join(outputRoot, 'service-worker.js'), await workerResponse.text())
+      fsp.writeFile(path.join(outputRoot, 'service-worker.js'), await workerResponse.text()),
+      fsp.copyFile(path.join(frameworkRoot, 'server', 'password-auth.js'),
+        path.join(outputRoot, 'password-auth.js')),
+      fsp.copyFile(path.join(frameworkRoot, 'server', 'lifecycle.js'),
+        path.join(outputRoot, 'lifecycle.js'))
     ]);
   } finally {
     child.kill('SIGTERM');

@@ -1,5 +1,7 @@
 # wolfet-wasm
 
+Status: **Live**
+
 Wolfenstein: Enemy Territory in a web browser. wolfet-wasm runs a WebAssembly/WebGL 2 build of ET: Legacy in the browser and connects every player to one ET: Legacy Objective server managed by the same host.
 
 The default server is a 12-player Arcade match. Omni-Bot fills empty places and removes a bot whenever a human joins, so the match stays populated without reserving bot-only slots.
@@ -84,6 +86,9 @@ On its first start, the server downloads the official Enemy Territory archive fr
 | `ETJS_OMNIBOT` | `1` | Set to `0` to disable automatic bot fill. |
 | `KEEP_ALIVE` | `false` | Set to `true` to keep the dedicated ET process running indefinitely. |
 | `IDLE_TIMEOUT` | `15m` | Stop the dedicated process after this long without a human player. Accepts seconds or values such as `10m` or `2h`. |
+| `WASM_GAME_PASSWORD` | empty | Optional browser-game password. When set, the framework login protects game data, engine assets, match status, Play/wake, administration, and WebSocket upgrades. |
+| `WASM_GAME_PASSWORD_TTL` | `12h` | Lifetime of the HttpOnly browser password session. Accepts values such as `30m`, `12h`, or `48h`. |
+| `WASM_GAME_TRUST_PROXY` | `false` | Set to `true` only behind a controlled TLS proxy that overwrites `X-Forwarded-Proto`, so password cookies receive the `Secure` attribute. |
 | `ETJS_RCON` | generated | Optional RCON password. If omitted, a random password is stored in the persistent data directory. |
 | `ETJS_TRUST_PROXY` | `0` | Set to `1` only when a same-host reverse proxy overwrites `X-Forwarded-For`. |
 | `ETJS_ADMIN_IPS` | empty | Optional comma-separated admin IP allowlist for NAT or proxy setups where automatic same-host detection is insufficient. |
@@ -91,6 +96,8 @@ On its first start, the server downloads the official Enemy Territory archive fr
 `ETJS_SLOTS` is the maintained playing population. The dedicated server internally keeps one temporary connection place above that number so a human can finish connecting before the supervisor removes the bot being replaced.
 
 Health and match information are available at `/health` and `/status`.
+
+When `WASM_GAME_PASSWORD` is set, the canonical launcher remains reachable so it can present the login form. `/auth/status`, `/auth/login`, and `/auth/logout` manage one HttpOnly same-origin session. The public health check remains available but returns only `{ "ok": true }`; match status and all game traffic require the session.
 
 With the default `KEEP_ALIVE=false`, the lightweight HTTP/WebSocket host stays online while the ET dedicated process and Omni-Bot sleep. Submitting the browser's initial **Play** screen wakes the match and waits for it to become ready before opening the ET main menu; **Join Game** then connects immediately. Each wake chooses a random map from the configured rotation and avoids immediately repeating the previous start map. After the last human leaves, the dedicated process stops when `IDLE_TIMEOUT` expires. Set `KEEP_ALIVE=true` for an always-running match; in that mode `IDLE_TIMEOUT` is ignored.
 

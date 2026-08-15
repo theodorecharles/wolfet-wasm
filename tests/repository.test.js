@@ -15,6 +15,8 @@ describe('reproducible source repository', () => {
     assert.match(readme, /vanilla/i);
     assert.match(readme, /arcade/i);
     assert.match(readme, /aimbot/i);
+    assert.match(readme, /Status: \*\*Live\*\*/);
+    assert.match(readme, /WASM_GAME_PASSWORD/);
   });
 
   it('keeps reference workspaces, game data, builds, and credentials out of Git', () => {
@@ -149,7 +151,7 @@ describe('reproducible source repository', () => {
     assert.match(template, /Target="\/data"[^>]*\/mnt\/user\/appdata\/wolfet-wasm/);
     assert.match(template, /Target="8088"[^>]*Mode="tcp"/);
     assert.match(template, /Target="27960"[^>]*Mode="udp"/);
-    ['ETJS_MODE', 'ETJS_SLOTS', 'KEEP_ALIVE', 'IDLE_TIMEOUT', 'ETJS_OMNIBOT']
+    ['ETJS_MODE', 'ETJS_SLOTS', 'KEEP_ALIVE', 'IDLE_TIMEOUT', 'ETJS_OMNIBOT', 'WASM_GAME_PASSWORD']
       .forEach((name) => assert.match(template, new RegExp('Target="' + name + '"')));
     assert.match(template, /amd64\/x86_64/);
     assert.match(template, /unraid-templates\/master\/wolfet-wasm\.xml/);

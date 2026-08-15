@@ -25,12 +25,32 @@ function attachWsProxy(server, opts) {
   const destPort = (opts && opts.destPort) || 27961;
   const path = (opts && opts.path) || '/ws';
 
-  const wss = new WebSocketServer({ server: server, path: path });
+  const wss = new WebSocketServer({ noServer: true });
 
   const registry = opts && opts.registry;
   const banStore = opts && opts.banStore;
   const clientAddress = opts && opts.clientAddress;
   const ensureDedicated = opts && opts.ensureDedicated;
+  const authorizeUpgrade = opts && opts.authorizeUpgrade;
+
+  server.on('upgrade', (request, socket, head) => {
+    let pathname = '';
+    try { pathname = new URL(request.url, 'http://localhost').pathname; } catch (error) {
+      socket.destroy();
+      return;
+    }
+    if (pathname !== path) {
+      socket.destroy();
+      return;
+    }
+    if (authorizeUpgrade && !authorizeUpgrade(request)) {
+      socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (webSocket) => {
+      wss.emit('connection', webSocket, request);
+    });
+  });
 
   wss.on('connection', (ws, req) => {
     const address = clientAddress ? clientAddress(req) : String(req.socket.remoteAddress || '');
