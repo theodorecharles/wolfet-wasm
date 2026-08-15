@@ -33,9 +33,9 @@ describe('browser client scripts', () => {
     const client = fs.readFileSync(path.join(WEB, 'js', 'client.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.8.0');
-    assert.equal(lock.version, '0.8.0');
-    assert.equal(lock.commit, '3aef7e84f2accde01a04eb4e7398f38132c992fc');
+    assert.equal(framework.version, '0.9.0');
+    assert.equal(lock.version, '0.9.0');
+    assert.equal(lock.commit, '07b5afc6d1685d08a5defda52483c5122259bb48');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
