@@ -240,6 +240,7 @@ index 000000000..e88220e14
 +	"-sMAIN_MODULE=0"
 +	"-sSOCKET_DEBUG=0"
 +	"-lwebsocket.js"
++	"-lidbfs.js"
 +	"-lGLEW"
 +	"-lGL"
 +	"--js-library" "${CMAKE_SOURCE_DIR}/../web-port/gl_arb.js"

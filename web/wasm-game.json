@@ -44,6 +44,18 @@
   "defaultFps": 60,
   "defaultDynamicQuality": true,
   "defaultPlayerName": "Player",
+  "persistence": {
+    "root": "/persistent/wolfet",
+    "debounceMs": 750,
+    "intervalMs": 5000,
+    "requestDurability": true
+  },
+  "controller": {
+    "mode": "wasdMouse",
+    "moveDeadzone": 0.18,
+    "lookDeadzone": 0.14,
+    "lookSensitivity": 0.8
+  },
   "adapter": "/game-adapter.js",
   "theme": {
     "accent": "#c4a35a",

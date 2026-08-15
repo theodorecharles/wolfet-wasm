@@ -69,6 +69,8 @@
   var canonicalPointerButton = null;
   var canonicalInputCaptureChanged = null;
   var canonicalPreferencesChanged = null;
+  var canonicalControllerFrame = null;
+  var canonicalControllerChanged = null;
   var canonicalContextLost = null;
   var canonicalContextRestored = null;
   var frameworkInputCaptured = false;
@@ -694,7 +696,8 @@
     var args = nameArgs.concat([
       '+set', 'etjs_connect', connect,
       '+set', 'fs_basepath', '/',
-      '+set', 'fs_homepath', '/home',
+      '+set', 'fs_homepath', canonicalContext && canonicalContext.persistence
+        ? canonicalContext.persistence.root : '/home',
       '+set', 'fs_game', 'legacy',
       '+set', 'sv_master1', '',
       '+set', 'r_fullscreen', '0',
@@ -818,17 +821,23 @@
     });
   }
 
+  function persistentHomeRoot() {
+    return canonicalContext && canonicalContext.persistence
+      ? canonicalContext.persistence.root : '/home';
+  }
+
   function writeAutoexec(FS) {
     var stored = window.ETJSBinds ? window.ETJSBinds.loadBinds() : null;
     var defaults = selectedAutoexecLines();
     var lines = window.ETJSBinds ? window.ETJSBinds.mergeAutoexec(defaults, stored) : defaults;
     var body = lines.join('\n') + '\n';
-    ['/etmain', '/legacy', '/home/etmain', '/home/legacy'].forEach(function (dir) {
+    var home = persistentHomeRoot();
+    ['/etmain', '/legacy', home + '/etmain', home + '/legacy'].forEach(function (dir) {
       mkdirp(FS, dir);
       try { FS.writeFile(dir + '/autoexec.cfg', body); } catch (e) { /* ignore */ }
     });
     if (stored) {
-      try { FS.writeFile('/home/legacy/etconfig.cfg', stored); } catch (e) { /* ignore */ }
+      try { FS.writeFile(home + '/legacy/etconfig.cfg', stored); } catch (e) { /* ignore */ }
     }
   }
 
@@ -837,7 +846,8 @@
     if (!M || !M.FS || !window.ETJSBinds) {
       return;
     }
-    var paths = ['/home/legacy/etconfig.cfg', '/home/etmain/etconfig.cfg'];
+    var home = persistentHomeRoot();
+    var paths = [home + '/legacy/etconfig.cfg', home + '/etmain/etconfig.cfg'];
     var i;
     for (i = 0; i < paths.length; i++) {
       try {
@@ -848,15 +858,37 @@
         }
         if (text && (/bind\s+/i.test(text) || /seta?\s+/i.test(text))) {
           window.ETJSBinds.saveBinds(text);
+          if (canonicalContext && canonicalContext.persistence) {
+            canonicalContext.persistence.markDirty();
+          }
           return;
         }
       } catch (e) { /* not written yet */ }
     }
   }
 
+  function flushFrameworkPersistence() {
+    persistBindsFromFS();
+    if (!canonicalContext || !canonicalContext.persistence) {
+      return Promise.resolve();
+    }
+    canonicalContext.persistence.markDirty();
+    return canonicalContext.persistence.save().then(function () {
+      if (typeof document !== 'undefined' && document.documentElement) {
+        var saves = Number(document.documentElement.dataset.etjsPersistenceSaves || 0);
+        document.documentElement.dataset.etjsPersistenceSaves = String(saves + 1);
+      }
+    }).catch(function (error) {
+      if (typeof document !== 'undefined' && document.documentElement) {
+        document.documentElement.dataset.etjsPersistence = 'failed';
+      }
+      console.warn('ETJS persistence flush failed', error);
+    });
+  }
+
   function writeMenuFiles(FS) {
     mkdirp(FS, '/legacy/ui');
-    mkdirp(FS, '/home/legacy/ui');
+    mkdirp(FS, persistentHomeRoot() + '/legacy/ui');
     return Promise.all([
       fetch('/legacy/ui/etjs_menus.txt').then(function (r) { return r.ok ? r.text() : ''; }),
       fetch('/legacy/ui/etjs_official.menu').then(function (r) { return r.ok ? r.text() : ''; }),
@@ -866,7 +898,7 @@
       fetch('/legacy/ui/etjs_ingame.menu').then(function (r) { return r.ok ? r.text() : ''; }),
       fetch('/legacy/ui/etjs_options.menu').then(function (r) { return r.ok ? r.text() : ''; })
     ]).then(function (texts) {
-      ['/legacy/ui', '/home/legacy/ui'].forEach(function (dir) {
+      ['/legacy/ui', persistentHomeRoot() + '/legacy/ui'].forEach(function (dir) {
         if (texts[0]) { try { FS.writeFile(dir + '/etjs_menus.txt', texts[0]); } catch (e) { /* ignore */ } }
         if (texts[1]) { try { FS.writeFile(dir + '/etjs_official.menu', texts[1]); } catch (e) { /* ignore */ } }
         if (texts[2]) { try { FS.writeFile(dir + '/main.menu', texts[2]); } catch (e) { /* ignore */ } }
@@ -946,6 +978,9 @@
     var wasLimbo = false;
     var wasDead = false;
     var containedUiState = -1;
+    var controllerMove = { forward: false, backward: false, left: false, right: false, jump: false, crouch: false };
+    var controllerButtons = Object.create(null);
+    var controllerButtonKeys = Object.create(null);
 
     function sendKey(key, down) {
       var M = window.Module;
@@ -1089,12 +1124,12 @@
       var M = window.Module;
       var move = window.ETJSInput
         ? window.ETJSInput.moveFromHeld({
-          KeyW: !!held.KeyW,
-          KeyS: !!held.KeyS,
-          KeyA: !!held.KeyA,
-          KeyD: !!held.KeyD,
-          Space: !!held.Space,
-          KeyC: !!held.KeyC
+          KeyW: !!held.KeyW || controllerMove.forward,
+          KeyS: !!held.KeyS || controllerMove.backward,
+          KeyA: !!held.KeyA || controllerMove.left,
+          KeyD: !!held.KeyD || controllerMove.right,
+          Space: !!held.Space || controllerMove.jump,
+          KeyC: !!held.KeyC || controllerMove.crouch
         })
         : { forward: moveF, right: moveR, up: moveU };
       moveF = move.forward;
@@ -1105,6 +1140,87 @@
         try { M._ETJS_SetMove(move.forward, move.right, move.up); } catch (e) { /* not ready */ }
       }
     }
+
+    function controllerKey(name, key, down) {
+      var next = !!down;
+      if (controllerButtons[name] === next) {
+        return;
+      }
+      controllerButtons[name] = next;
+      sendKey(key, next ? 1 : 0);
+    }
+
+    function releaseController() {
+      Object.keys(controllerButtons).forEach(function (name) {
+        if (controllerButtons[name]) {
+          var key = controllerButtonKeys[name];
+          if (key) { sendKey(key, 0); }
+        }
+      });
+      controllerButtons = Object.create(null);
+      controllerButtonKeys = Object.create(null);
+      controllerMove = { forward: false, backward: false, left: false, right: false, jump: false, crouch: false };
+      sendMove();
+    }
+
+    function setControllerKey(name, key, down) {
+      if (key) { controllerButtonKeys[name] = key; }
+      controllerKey(name, key, down);
+    }
+
+    canonicalControllerFrame = function (detail) {
+      if (!playReady || !detail || !detail.actions) {
+        return;
+      }
+      var actions = detail.actions;
+      var down = function (name) { return Number(actions[name] || 0) > 0.4; };
+      if (uiOpen()) {
+        controllerMove = { forward: false, backward: false, left: false, right: false, jump: false, crouch: false };
+        sendMove();
+        ['attack', 'alt-attack', 'weapon', 'previous-weapon', 'next-weapon', 'reload',
+          'sprint', 'scoreboard', 'menu', 'activate'].forEach(function (name) {
+          setControllerKey(name, controllerButtonKeys[name] || 0, false);
+        });
+        setControllerKey('menu-up', 132, down('forward'));
+        setControllerKey('menu-down', 133, down('backward'));
+        setControllerKey('menu-left', 134, down('left'));
+        setControllerKey('menu-right', 135, down('right'));
+        setControllerKey('menu-accept', 13, down('jump') || down('attack'));
+        setControllerKey('menu-back', 27, down('crouch') || down('menu'));
+      } else {
+        ['menu-up', 'menu-down', 'menu-left', 'menu-right', 'menu-accept', 'menu-back'].forEach(function (name) {
+          setControllerKey(name, controllerButtonKeys[name] || 0, false);
+        });
+        controllerMove.forward = down('forward');
+        controllerMove.backward = down('backward');
+        controllerMove.left = down('left');
+        controllerMove.right = down('right');
+        controllerMove.jump = down('jump');
+        controllerMove.crouch = down('crouch');
+        sendMove();
+        setControllerKey('attack', 178, down('attack'));
+        setControllerKey('alt-attack', 179, down('altAttack'));
+        setControllerKey('weapon', 180, down('weapon'));
+        setControllerKey('previous-weapon', 183, down('previousWeapon'));
+        setControllerKey('next-weapon', 184, down('nextWeapon'));
+        setControllerKey('reload', 114, down('reload'));
+        setControllerKey('sprint', 138, down('sprint'));
+        setControllerKey('scoreboard', 9, down('scoreboard'));
+        setControllerKey('menu', 27, down('menu'));
+        setControllerKey('activate', 102, down('melee'));
+        var delta = Math.max(1, Number(detail.deltaMs) || 16);
+        if (actions.lookX || actions.lookY) {
+          addLook(-Number(actions.lookX || 0) * delta * 0.25,
+            Number(actions.lookY || 0) * delta * 0.25);
+        }
+      }
+    };
+
+    canonicalControllerChanged = function (detail) {
+      if (!detail || detail.activeIndex == null || detail.selection === 'disabled') {
+        releaseController();
+      }
+    };
 
     function cvarInt(name) {
       var M = window.Module;
@@ -1726,6 +1842,8 @@
       if (values.playerName) {
         engineCmd('set name "' + String(values.playerName).replace(/[";\r\n]/g, '') + '"');
       }
+      engineCmd('writeconfig etconfig.cfg');
+      setTimeout(function () { void flushFrameworkPersistence(); }, 0);
     };
 
     canonicalContextLost = function () {
@@ -1888,8 +2006,23 @@
         },
         preRun: [function () {
           var FS = window.Module.FS;
-          writeAutoexec(FS);
-          window.Module.etjsMenus = writeMenuFiles(FS);
+          var persistentReady = canonicalContext && canonicalContext.persistence
+            ? canonicalContext.persistence.attach(FS, { root: canonicalContext.persistence.root })
+            : Promise.resolve(null);
+          persistentReady.then(function () {
+            if (typeof document !== 'undefined' && document.documentElement) {
+              document.documentElement.dataset.etjsPersistence = 'ready';
+            }
+          }).catch(function () {
+            if (typeof document !== 'undefined' && document.documentElement) {
+              document.documentElement.dataset.etjsPersistence = 'failed';
+            }
+          });
+          window.Module.etjsPersistent = persistentReady;
+          window.Module.etjsMenus = persistentReady.then(function () {
+            writeAutoexec(FS);
+            return writeMenuFiles(FS);
+          });
           var files = gameFilesFromConfig(cfg);
           var loaded = files.map(function () { return 0; });
           var totals = files.map(function (f) { return f.bytes || 1; });
@@ -1917,6 +2050,7 @@
           }
           report();
           window.Module.etjsReady = Promise.all([
+            persistentReady,
             preloadGameFiles(window.Module, files, function (idx, got, total, source) {
               loaded[idx] = got;
               if (total) {
@@ -1962,10 +2096,10 @@
               showError(startErr.message || String(startErr));
             }
             setTimeout(installDefaultBinds, 1200);
-            setTimeout(function () { persistBindsFromFS(); }, 4000);
+            setTimeout(function () { void flushFrameworkPersistence(); }, 4000);
             setInterval(function () {
               engineCmd('writeconfig etconfig.cfg');
-              persistBindsFromFS();
+              void flushFrameworkPersistence();
             }, 15000);
           }).catch(function (err) {
             console.error('ETJS engine start failed', err);
@@ -2192,7 +2326,7 @@
     });
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'hidden') {
-        persistBindsFromFS();
+        void flushFrameworkPersistence();
       }
     });
     document.addEventListener('pointerdown', function () {
@@ -2245,6 +2379,16 @@
     preferencesChanged: function (values) {
       if (canonicalPreferencesChanged) {
         return canonicalPreferencesChanged(values);
+      }
+    },
+    controllerFrame: function (detail) {
+      if (canonicalControllerFrame) {
+        return canonicalControllerFrame(detail);
+      }
+    },
+    controllerChanged: function (detail) {
+      if (canonicalControllerChanged) {
+        return canonicalControllerChanged(detail);
       }
     },
     contextLost: function () {

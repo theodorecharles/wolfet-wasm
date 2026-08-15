@@ -33,9 +33,9 @@ describe('browser client scripts', () => {
     const client = fs.readFileSync(path.join(WEB, 'js', 'client.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
-    assert.equal(framework.version, '0.7.6');
-    assert.equal(lock.version, '0.7.6');
-    assert.equal(lock.commit, 'e617f090deaa294dacd033afa52c09f811a3e690');
+    assert.equal(framework.version, '0.8.0');
+    assert.equal(lock.version, '0.8.0');
+    assert.equal(lock.commit, '3aef7e84f2accde01a04eb4e7398f38132c992fc');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
@@ -48,6 +48,8 @@ describe('browser client scripts', () => {
     assert.equal(config.pointerFit, 'contain');
     assert.equal(config.adapter, '/game-adapter.js');
     assert.equal(config.fullscreen, true);
+    assert.equal(config.persistence.root, '/persistent/wolfet');
+    assert.equal(config.controller.mode, 'wasdMouse');
     assert.equal(config.pwa.icons.length, 2);
     assert.deepEqual(config.pwa.icons.map((icon) => icon.src), ['/img/et-192.png', '/img/et-512.png']);
     assert.match(html, /rel="manifest" href="\/app\.webmanifest"/);
@@ -61,7 +63,14 @@ describe('browser client scripts', () => {
     assert.match(adapter, /readCaptureIntent/);
     assert.match(adapter, /captureLost/);
     ['pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',
+      'controllerFrame', 'controllerChanged',
       'contextLost', 'contextRestored'].forEach((hook) => assert.match(adapter, new RegExp(hook)));
+    assert.match(client, /canonicalContext\.persistence\.attach\(FS/);
+    assert.match(client, /canonicalContext\.persistence\.save\(\)/);
+    assert.match(client, /dataset\.etjsPersistence = 'ready'/);
+    assert.match(client, /dataset\.etjsPersistenceSaves/);
+    assert.match(client, /canonicalControllerFrame/);
+    assert.match(client, /addLook\(-Number\(actions\.lookX/);
     assert.doesNotMatch(client, /(?:request|exit)PointerLock|webkitRequestPointerLock/,
       'only the canonical framework may own pointer lock');
     assert.doesNotMatch(client,
@@ -97,6 +106,7 @@ describe('browser client scripts', () => {
     const inner = {};
     ['init', 'start', 'readEngineState', 'readCaptureIntent', 'resize', 'captureLost',
       'pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',
+      'controllerFrame', 'controllerChanged',
       'contextLost', 'contextRestored'].forEach((name) => {
       inner[name] = function () { calls.push([name, ...arguments]); return name; };
     });
@@ -121,11 +131,14 @@ describe('browser client scripts', () => {
     adapter.pointerButton({ button: 0, pressed: true }, {}, {});
     adapter.inputCaptureChanged(true, {});
     adapter.preferencesChanged({ targetFps: 60 }, {});
+    adapter.controllerFrame({ actions: {} }, {});
+    adapter.controllerChanged({ activeIndex: null }, {});
     adapter.contextLost({}, {});
     adapter.contextRestored({}, {});
     assert.deepEqual(calls.map((entry) => entry[0]), [
       'init', 'start', 'readEngineState', 'readCaptureIntent', 'resize', 'captureLost',
       'pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',
+      'controllerFrame', 'controllerChanged',
       'contextLost', 'contextRestored'
     ]);
   });

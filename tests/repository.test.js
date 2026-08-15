@@ -50,6 +50,8 @@ describe('reproducible source repository', () => {
     const entrypoint = fs.readFileSync(path.join(ROOT, 'docker', 'entrypoint.sh'), 'utf8');
     assert.equal(game.icon, '/img/et-512.png');
     assert.equal(game.iconPixelated, true);
+    assert.equal(game.persistence.root, '/persistent/wolfet');
+    assert.equal(game.controller.mode, 'wasdMouse');
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-192.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-512.png')));
     assert.equal(data.namespace, 'wolfet');

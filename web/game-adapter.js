@@ -62,6 +62,12 @@
     preferencesChanged: function (values, context) {
       if (window.ETJSGameAdapter) { return inner().preferencesChanged(values, context); }
     },
+    controllerFrame: function (detail, context) {
+      if (window.ETJSGameAdapter) { return inner().controllerFrame(detail, context); }
+    },
+    controllerChanged: function (detail, context) {
+      if (window.ETJSGameAdapter) { return inner().controllerChanged(detail, context); }
+    },
     contextLost: function (event, context) {
       if (window.ETJSGameAdapter) { return inner().contextLost(event, context); }
     },
