@@ -5,6 +5,7 @@ PROJECT_ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 FRAMEWORK_ROOT="${WASM_GAME_FRAMEWORK_DIR:-}"
 FRAMEWORK_LOCK="$PROJECT_ROOT/framework-lock.json"
 FRAMEWORK_TARGET="$PROJECT_ROOT/.generated/shared-shell"
+FRAMEWORK_RUNTIME_TARGET="$PROJECT_ROOT/.generated/framework-runtime"
 FRAMEWORK_REPOSITORY="$(node -p "require('$FRAMEWORK_LOCK').repository")"
 FRAMEWORK_VERSION="$(node -p "require('$FRAMEWORK_LOCK').version")"
 FRAMEWORK_COMMIT="$(node -p "require('$FRAMEWORK_LOCK').commit")"
@@ -49,3 +50,6 @@ fi
 
 rm -rf -- "$FRAMEWORK_TARGET"
 "$FRAMEWORK_SOURCE/scripts/install-browser-package.sh" "$FRAMEWORK_TARGET" copy
+node "$FRAMEWORK_SOURCE/scripts/check-game-package.js" "$PROJECT_ROOT/web"
+node "$PROJECT_ROOT/scripts/stage-framework-runtime.js" \
+  "$FRAMEWORK_SOURCE" "$PROJECT_ROOT/web" "$FRAMEWORK_TARGET" "$FRAMEWORK_RUNTIME_TARGET"

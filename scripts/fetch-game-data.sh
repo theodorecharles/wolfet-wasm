@@ -35,14 +35,13 @@ require_command sha256sum
 require_command unzip
 
 mkdir -p "$CACHE_DIR" "$ROOT/runtime/etmain" "$ROOT/runtime/legacy" \
-  "$ROOT/web/img" "$ROOT/web/sound/music"
+  "$ROOT/web/sound/music"
 
 NEED_INSTALLER=0
 file_matches "712966b20e06523fe81419516500e499c86b2b4fec823856ddbd333fcb3d26e5" "$ROOT/runtime/etmain/pak0.pk3" || NEED_INSTALLER=1
 file_matches "5610fd749024405b4425a7ce6397e58187b941d22092ef11d4844b427df53e5d" "$ROOT/runtime/etmain/pak1.pk3" || NEED_INSTALLER=1
 file_matches "a48ab749a1a12ab4d9137286b1f23d642c29da59845b2bafc8f64e052cf06f3e" "$ROOT/runtime/etmain/pak2.pk3" || NEED_INSTALLER=1
 file_matches "cf0a7ce662421c766f93cc196841849eb66905b047d209dd5f3ed0b1396cd42e" "$ROOT/runtime/etmain/mp_bin.pk3" || NEED_INSTALLER=1
-[ -s "$ROOT/web/img/et.png" ] || NEED_INSTALLER=1
 file_matches "4c61a3723f200a0e51681e55c6822d5886e48fa4247459834b239910570f191b" "$ROOT/web/sound/music/menu_server.wav" || NEED_INSTALLER=1
 
 TMP_DIR=""
@@ -103,32 +102,9 @@ if [ "$NEED_INSTALLER" -eq 1 ]; then
     echo "menu music checksum mismatch" >&2
     exit 1
   fi
-
-  if command -v magick >/dev/null 2>&1; then
-    magick "$TMP_DIR/game/ET.xpm" "$ROOT/web/img/et.png"
-  elif command -v convert >/dev/null 2>&1; then
-    convert "$TMP_DIR/game/ET.xpm" "$ROOT/web/img/et.png"
-  else
-    echo "ImageMagick (magick or convert) is required to create the web icon" >&2
-    exit 1
-  fi
   echo "installed official game data from Splash Damage"
 else
   echo "official game data already matches the pinned checksums"
-fi
-
-# PWA sizes are deterministic nearest-neighbor derivatives of the authentic
-# Windows icon extracted from the pinned official installer. They stay with
-# the private runtime data and are never committed or bundled in the image.
-if command -v magick >/dev/null 2>&1; then
-  magick "$ROOT/web/img/et.png" -filter point -resize 192x192 "$ROOT/web/img/et-192.png"
-  magick "$ROOT/web/img/et.png" -filter point -resize 512x512 "$ROOT/web/img/et-512.png"
-elif command -v convert >/dev/null 2>&1; then
-  convert "$ROOT/web/img/et.png" -filter point -resize 192x192 "$ROOT/web/img/et-192.png"
-  convert "$ROOT/web/img/et.png" -filter point -resize 512x512 "$ROOT/web/img/et-512.png"
-else
-  echo "ImageMagick (magick or convert) is required to create the PWA icons" >&2
-  exit 1
 fi
 
 LEGACY_PAK="$ROOT/runtime/legacy/legacy_v2.84.0.pk3"

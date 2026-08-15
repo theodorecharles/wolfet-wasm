@@ -7,7 +7,7 @@
     '/js/bind-store.js?v=2',
     '/js/pk3-cache.js?v=3',
     '/js/pk3-download.js?v=1',
-    '/js/client.js?v=18'
+    '/js/client.js?v=19'
   ];
 
   function load(source) {
@@ -49,6 +49,24 @@
     },
     captureLost: function (detail, context) {
       if (window.ETJSGameAdapter) { return inner().captureLost(detail, context); }
+    },
+    pointerMove: function (detail, event, context) {
+      if (window.ETJSGameAdapter) { return inner().pointerMove(detail, event, context); }
+    },
+    pointerButton: function (detail, event, context) {
+      if (window.ETJSGameAdapter) { return inner().pointerButton(detail, event, context); }
+    },
+    inputCaptureChanged: function (captured, context) {
+      if (window.ETJSGameAdapter) { return inner().inputCaptureChanged(captured, context); }
+    },
+    preferencesChanged: function (values, context) {
+      if (window.ETJSGameAdapter) { return inner().preferencesChanged(values, context); }
+    },
+    contextLost: function (event, context) {
+      if (window.ETJSGameAdapter) { return inner().contextLost(event, context); }
+    },
+    contextRestored: function (event, context) {
+      if (window.ETJSGameAdapter) { return inner().contextRestored(event, context); }
     }
   };
 })();

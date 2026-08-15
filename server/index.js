@@ -21,8 +21,10 @@ const ROOT = path.join(__dirname, '..');
 const WEB_ROOT = path.join(ROOT, 'web');
 const FRAMEWORK_ROOT = process.env.WASM_GAME_FRAMEWORK_WEB_ROOT || path.join(ROOT, '.generated', 'shared-shell');
 const FRAMEWORK_DOCUMENT = path.join(FRAMEWORK_ROOT, 'index.html');
-const GAME_CONFIG_PATH = path.join(WEB_ROOT, 'wasm-game.json');
-const FRAMEWORK_METADATA_PATH = path.join(FRAMEWORK_ROOT, 'wasm-game-framework.json');
+const FRAMEWORK_RUNTIME_ROOT = process.env.WASM_GAME_FRAMEWORK_RUNTIME_ROOT ||
+  path.join(ROOT, '.generated', 'framework-runtime');
+const PWA_MANIFEST_PATH = path.join(FRAMEWORK_RUNTIME_ROOT, 'app.webmanifest');
+const SERVICE_WORKER_PATH = path.join(FRAMEWORK_RUNTIME_ROOT, 'service-worker.js');
 const DATA_WEB_ROOT = path.join(dedicated.DATA_ROOT, 'web');
 const HTTP_PORT = Number(process.env.ETJS_HTTP_PORT || 8088);
 const DED_PORT = dedicated.HOST_UDP_PORT;
@@ -102,17 +104,17 @@ function gameAssets() {
   });
 }
 
-function sendFile(req, res, filePath) {
+function sendFile(req, res, filePath, extraHeaders) {
   const ext = path.extname(filePath).toLowerCase();
   const type = MIME[ext] || 'application/octet-stream';
   const stat = fs.statSync(filePath);
-  const headers = {
+  const headers = Object.assign({
     'content-type': type,
     'accept-ranges': 'bytes',
     'cache-control': ext === '.pk3' || ext === '.data'
       ? 'public, max-age=3600'
       : (ext === '.js' || ext === '.wasm' ? 'no-store' : 'no-cache')
-  };
+  }, extraHeaders || {});
   const range = req.headers && req.headers.range;
   if (range) {
     const match = /^bytes=(\d+)-(\d*)$/.exec(range);
@@ -144,42 +146,6 @@ function sendFile(req, res, filePath) {
   }
 }
 
-function pwaManifest() {
-  const config = JSON.parse(fs.readFileSync(GAME_CONFIG_PATH, 'utf8'));
-  const pwa = config.pwa || {};
-  return {
-    id: String(pwa.id || '/'),
-    name: String(pwa.name || config.title || 'WASM Game'),
-    short_name: String(pwa.shortName || config.title || 'WASM Game').slice(0, 30),
-    description: String(pwa.description || config.description || ''),
-    start_url: String(pwa.startUrl || '/'),
-    scope: String(pwa.scope || '/'),
-    display: String(pwa.display || 'standalone'),
-    background_color: String(pwa.backgroundColor || '#000000'),
-    theme_color: String(pwa.themeColor || config.theme?.accent || '#111827'),
-    orientation: String(pwa.orientation || 'landscape'),
-    icons: (pwa.icons || []).map((icon) => ({
-      src: String(icon.src),
-      sizes: String(icon.sizes || 'any'),
-      ...(icon.type ? { type: String(icon.type) } : {}),
-      ...(icon.purpose ? { purpose: String(icon.purpose) } : {})
-    }))
-  };
-}
-
-function serviceWorkerSource() {
-  const metadata = JSON.parse(fs.readFileSync(FRAMEWORK_METADATA_PATH, 'utf8'));
-  const cache = 'wasm-game-shell-' + metadata.version;
-  const shell = ['/', '/shared-shell/wasm-game-framework.css', '/shared-shell/wasm-game-framework.js',
-    '/shared-shell/wasm-game-bootstrap.js', '/wasm-game.json', '/game-adapter.js'];
-  return `'use strict';\n` +
-    `const CACHE = ${JSON.stringify(cache)};\n` +
-    `const SHELL = ${JSON.stringify(shell)};\n` +
-    `self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => Promise.all(SHELL.map(path => fetch(path, { cache: 'no-cache' }).then(response => { if (response.ok) return cache.put(path, response); }).catch(() => undefined)))).then(() => self.skipWaiting())); });\n` +
-    `self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith('wasm-game-shell-') && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())); });\n` +
-    `self.addEventListener('fetch', event => { const url = new URL(event.request.url); if (event.request.method !== 'GET' || url.origin !== self.location.origin || !SHELL.includes(url.pathname)) return; event.respondWith(fetch(event.request).then(response => { if (response.ok) { const copy = response.clone(); caches.open(CACHE).then(cache => cache.put(url.pathname, copy)); } return response; }).catch(() => caches.match(url.pathname).then(response => response || Response.error()))); });\n`;
-}
-
 function serveStatic(req, res) {
   const urlPath = (req.url || '/').split('?')[0];
 
@@ -207,25 +173,12 @@ function serveStatic(req, res) {
   }
 
   if (urlPath === '/app.webmanifest' && (req.method === 'GET' || req.method === 'HEAD')) {
-    const body = Buffer.from(JSON.stringify(pwaManifest()));
-    res.writeHead(200, {
-      'content-type': 'application/manifest+json',
-      'content-length': String(body.length),
-      'cache-control': 'no-cache'
-    });
-    if (req.method === 'HEAD') { res.end(); } else { res.end(body); }
+    sendFile(req, res, PWA_MANIFEST_PATH);
     return;
   }
 
   if (urlPath === '/service-worker.js' && (req.method === 'GET' || req.method === 'HEAD')) {
-    const body = Buffer.from(serviceWorkerSource());
-    res.writeHead(200, {
-      'content-type': 'text/javascript; charset=utf-8',
-      'content-length': String(body.length),
-      'cache-control': 'no-cache',
-      'service-worker-allowed': '/'
-    });
-    if (req.method === 'HEAD') { res.end(); } else { res.end(body); }
+    sendFile(req, res, SERVICE_WORKER_PATH, { 'service-worker-allowed': '/' });
     return;
   }
 
@@ -429,6 +382,7 @@ function serveStatic(req, res) {
     { prefix: '/etmain/', root: path.join(dedicated.RUNTIME_ROOT, 'etmain'), strip: '/etmain/' },
     { prefix: '/legacy/', root: path.join(dedicated.RUNTIME_ROOT, 'legacy'), strip: '/legacy/' },
     { prefix: '/client/', root: path.join(ROOT, 'web', 'client'), strip: '/client/' },
+    { prefix: '/img/', root: path.join(WEB_ROOT, 'img'), strip: '/img/' },
     { prefix: '/img/', root: path.join(DATA_WEB_ROOT, 'img'), strip: '/img/' },
     { prefix: '/sound/music/', root: path.join(DATA_WEB_ROOT, 'sound', 'music'), strip: '/sound/music/' },
     { prefix: '/shared-shell/', root: FRAMEWORK_ROOT, strip: '/shared-shell/' },
@@ -461,7 +415,14 @@ function serveStatic(req, res) {
 }
 
 function startHttp(port) {
-  const server = http.createServer(serveStatic);
+  const server = http.createServer((req, res) => {
+    res.setHeader('cross-origin-opener-policy', 'same-origin');
+    res.setHeader('cross-origin-embedder-policy', 'require-corp');
+    res.setHeader('cross-origin-resource-policy', 'same-origin');
+    res.setHeader('x-content-type-options', 'nosniff');
+    res.setHeader('referrer-policy', 'same-origin');
+    serveStatic(req, res);
+  });
   attachWsProxy(server, {
     destHost: '127.0.0.1',
     destPort: DED_PORT,

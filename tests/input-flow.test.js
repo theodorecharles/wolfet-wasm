@@ -96,16 +96,17 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.match(client, /function sendChar[\s\S]*_ETJS_CharEvent/);
   });
 
-  it('does not pointer-lock the official MAIN menu and maps resize like QuakeJS', () => {
+  it('delegates native menu input while the framework alone owns pointer lock', () => {
     const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
-    const click = client.split('function onCanvasClick')[1].split('function onMouseOut')[0];
-    assert.match(click, /uiOpen\(\)/);
-    assert.match(click, /lockPointer/);
+    assert.doesNotMatch(client, /(?:request|exit)PointerLock|webkitRequestPointerLock/);
     assert.match(client, /offsetWidth/);
     assert.match(client, /setCanvasSize/);
     const mouseDown = client.split('function onMouseDown')[1].split('function onMouseUp')[0];
     assert.match(mouseDown, /held\['mouse'/);
     assert.match(mouseDown, /uiOpen\(\)/);
+    assert.match(client, /canonicalPointerMove = function[\s\S]*pushCursorPoint\(detail\.x, detail\.y\)/);
+    assert.match(client, /canonicalPointerButton = function[\s\S]*sendKey\(mkey, 1\)/);
+    assert.match(client, /canonicalInputCaptureChanged = function/);
     assert.match(client, /cvarInt\('etjs_uiopen'\)/);
   });
 

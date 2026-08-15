@@ -65,6 +65,14 @@
   var canonicalContext = null;
   var canonicalStart = null;
   var canonicalCaptureLost = null;
+  var canonicalPointerMove = null;
+  var canonicalPointerButton = null;
+  var canonicalInputCaptureChanged = null;
+  var canonicalPreferencesChanged = null;
+  var canonicalContextLost = null;
+  var canonicalContextRestored = null;
+  var frameworkInputCaptured = false;
+  var frameworkContextLost = false;
 
   function setFrameworkEngineState(next, options) {
     frameworkEngineState = next;
@@ -588,16 +596,11 @@
       document.webkitPointerLockElement === canvas;
   }
 
-  function lockPointer() {
+  function focusForInput() {
     if (!canvas) {
       return;
     }
     canvas.focus();
-    if (canvas.requestPointerLock) {
-      canvas.requestPointerLock();
-    } else if (canvas.webkitRequestPointerLock) {
-      canvas.webkitRequestPointerLock();
-    }
     resumeAudio();
   }
 
@@ -1228,8 +1231,8 @@
     }
 
     function inputCaptured() {
-      var captured = pointerLocked() || document.activeElement === canvas ||
-        communicationInput || !!typingMode;
+      var captured = (canonicalContext ? frameworkInputCaptured :
+        (pointerLocked() || document.activeElement === canvas)) || communicationInput || !!typingMode;
       window.__etjsInputCaptured = captured;
       return captured;
     }
@@ -1244,9 +1247,6 @@
 
     function syncCursor() {
       if (uiOpen()) {
-        if (document.exitPointerLock) {
-          document.exitPointerLock();
-        }
         if (canvas && canvas.style) {
           /* ET draws its own cursor. Keep the browser cursor available
            * everywhere else on the page, but never double it over canvas. */
@@ -1482,20 +1482,28 @@
     }
 
     function pushCursor(ev) {
-      var M = window.Module;
-      if (!canvas || !M || typeof M._ETJS_SetCursor !== 'function') {
-        return;
-      }
       var rect = canvas.getBoundingClientRect();
       var mapped = window.ETJSInput
         ? window.ETJSInput.letterboxTo640(ev.clientX, ev.clientY, rect,
           uiOpen())
         : { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
-      try { M._ETJS_SetCursor(mapped.x, mapped.y); } catch (e) { /* not ready */ }
+      pushCursorPoint(mapped.x, mapped.y);
+    }
+
+    function pushCursorPoint(x, y) {
+      var M = window.Module;
+      if (!M || typeof M._ETJS_SetCursor !== 'function') {
+        return false;
+      }
+      try { M._ETJS_SetCursor(x, y); } catch (e) { return false; }
+      return true;
     }
 
     function onMouseDown(ev) {
       if (!playReady || typingMode || (ev.target !== canvas && !pointerLocked())) {
+        return;
+      }
+      if (canonicalContext && !pointerLocked()) {
         return;
       }
       canvas.focus();
@@ -1516,12 +1524,6 @@
       }
       ev.preventDefault();
       ev.stopImmediatePropagation();
-      if (!pointerLocked()) {
-        /* Browsers may emit large synthetic movement deltas while pointer lock
-         * recenters the cursor. They are not player look input. */
-        ignoreLookUntil = Date.now() + 350;
-        lockPointer();
-      }
       if (window.ETJSInput && !window.ETJSInput.shouldFireOnMouseDown(true, false, pointerLocked())) {
         return;
       }
@@ -1536,6 +1538,9 @@
     }
 
     function onMouseUp(ev) {
+      if (canonicalContext && !pointerLocked()) {
+        return;
+      }
       var id = 'mouse' + ev.button;
       var mkey = held[id];
       if (mkey) {
@@ -1551,6 +1556,9 @@
 
     function onMouseMove(ev) {
       if (!playReady || typingMode || !inputCaptured()) {
+        return;
+      }
+      if (canonicalContext && !pointerLocked()) {
         return;
       }
       var limbo = limboOpen();
@@ -1594,16 +1602,6 @@
       }
     }
 
-    function onCanvasClick(ev) {
-      /* QuakeJS elementPointerLock: lock on click only once you are
-       * actually playing. Locking MAIN freezes clientX/Y and steals JOIN. */
-      if (!playReady || uiOpen()) {
-        return;
-      }
-      ignoreLookUntil = Date.now() + 350;
-      lockPointer();
-    }
-
     function onMouseOut(ev) {
       if (!playReady) {
         return;
@@ -1630,7 +1628,7 @@
       releaseInputHolds();
       communicationInput = false;
       window.__etjsInputCaptured = false;
-      if (shouldShowMenu) {
+      if (shouldShowMenu && !canonicalContext) {
         showInGameMenuWhenUncaptured('window-blur');
       }
     });
@@ -1643,8 +1641,10 @@
     document.addEventListener('pointerlockchange', function () {
       if (pointerLocked()) {
         ignoreLookUntil = Date.now() + 350;
+        frameworkInputCaptured = true;
         window.__etjsInputCaptured = true;
       } else {
+        frameworkInputCaptured = false;
         releaseInputHolds();
         window.__etjsInputCaptured = false;
         /* The canonical framework invokes captureLost() exactly once. Retain
@@ -1654,8 +1654,94 @@
         }
       }
     });
-    canvas.addEventListener('click', onCanvasClick, true);
     canvas.addEventListener('mouseout', onMouseOut, true);
+
+    canonicalPointerMove = function (detail) {
+      if (!playReady || !detail) {
+        return false;
+      }
+      var contained = uiOpen() ? 1 : 0;
+      if (contained !== containedUiState) {
+        containedUiState = contained;
+        engineCmd('set etjs_containui ' + contained);
+      }
+      return pushCursorPoint(detail.x, detail.y);
+    };
+
+    canonicalPointerButton = function (detail) {
+      if (!playReady || typingMode || !detail) {
+        return false;
+      }
+      canonicalPointerMove(detail);
+      var id = 'mouse' + detail.button;
+      var mkey = MOUSE_TO_KEY[detail.button] || (K_MOUSE1 + detail.button);
+      if (detail.pressed) {
+        held[id] = mkey;
+        if (sendKey(mkey, 1)) {
+          return true;
+        }
+        if (MOUSE_HOLD[detail.button]) {
+          return engineCmd(MOUSE_HOLD[detail.button]);
+        }
+        return MOUSE_TAP[detail.button] ? engineCmd(MOUSE_TAP[detail.button]) : false;
+      }
+      if (held[id]) {
+        delete held[id];
+        if (sendKey(mkey, 0)) {
+          return true;
+        }
+        return MOUSE_HOLD[detail.button]
+          ? engineCmd('-' + MOUSE_HOLD[detail.button].slice(1))
+          : false;
+      }
+      return false;
+    };
+
+    canonicalInputCaptureChanged = function (captured) {
+      frameworkInputCaptured = captured === true;
+      window.__etjsInputCaptured = frameworkInputCaptured;
+      if (frameworkInputCaptured) {
+        ignoreLookUntil = Date.now() + 350;
+        focusForInput();
+      } else {
+        releaseInputHolds();
+      }
+    };
+
+    canonicalPreferencesChanged = function (values) {
+      values = values || {};
+      var quality = Number(values.qualityProfile);
+      var fps = Number(values.targetFps);
+      if (quality >= 0 && quality < QUALITY_PROFILES.length) {
+        selectedQualityLevel = quality;
+        qualityCeiling = quality;
+        applyQualityProfile(quality, 0);
+      }
+      if ([30, 60, 120].indexOf(fps) !== -1) {
+        selectedFpsTarget = fps;
+        engineCmd('set com_maxfps ' + fps);
+      }
+      adaptiveQuality = values.dynamicQuality !== false;
+      engineCmd('set etjs_autoQuality ' + (adaptiveQuality ? 1 : 0));
+      if (values.playerName) {
+        engineCmd('set name "' + String(values.playerName).replace(/[";\r\n]/g, '') + '"');
+      }
+    };
+
+    canonicalContextLost = function () {
+      frameworkContextLost = true;
+      releaseInputHolds();
+      if (frameworkEngineState === 'gameplay') {
+        setFrameworkEngineState('paused');
+      }
+      console.error('ETJS WebGL context lost');
+    };
+
+    canonicalContextRestored = function () {
+      frameworkContextLost = false;
+      sizeCanvas();
+      console.info('ETJS WebGL context restored');
+    };
     function pumpMove() {
       sendMove();
       if (communicationInput && !typingMode &&
@@ -1671,9 +1757,9 @@
         ignoreLookUntil = Date.now() + 100;
       }
       wasDead = dead;
-      var nextFrameworkState = frameworkCaptureIntent ? 'loading' :
+      var nextFrameworkState = frameworkContextLost ? 'paused' : (frameworkCaptureIntent ? 'loading' :
         (intermissionOpen() ? 'debrief' :
-          (!inWorld() ? 'menu' : ((engineUiOpen() || limboOpen()) ? 'paused' : 'gameplay')));
+          (!inWorld() ? 'menu' : ((engineUiOpen() || limboOpen()) ? 'paused' : 'gameplay'))));
       if (nextFrameworkState !== 'loading') {
         frameworkCaptureIntent = false;
       }
@@ -1699,7 +1785,7 @@
       loadPanel.hidden = false;
       loadPanel.classList.remove('hidden');
     }
-    setLoadProgress(0.10, 'Preparing official game data…', '');
+    setLoadProgress(0.10, 'Preparing Wolfenstein: Enemy Territory…', 'Starting the game');
     sizeCanvas();
     window.addEventListener('resize', sizeCanvas);
 
@@ -1819,9 +1905,6 @@
             var cached = sources.filter(function (source) { return source === 'cache'; }).length;
             var network = sources.filter(function (source) { return source === 'network'; }).length;
             var pending = sources.length - cached - network;
-            var status = network > 0
-              ? 'Downloading game data from ETJS…'
-              : (pending > 0 ? 'Checking the local game cache…' : 'Loading cached game data…');
             window.__etjsAssets = {
               cached: cached,
               network: network,
@@ -1829,9 +1912,8 @@
               total: files.length
             };
             setLoadProgress(0.05 + 0.85 * (all ? got / all : 0),
-              status,
-              Math.round(got / 1048576) + ' / ' + Math.round(all / 1048576) +
-                ' MB · ' + cached + ' of ' + files.length + ' files cached');
+              'Preparing Wolfenstein: Enemy Territory…',
+              'Getting the battlefield ready · ' + Math.round(100 * (all ? got / all : 0)) + '%');
           }
           report();
           window.Module.etjsReady = Promise.all([
@@ -1895,10 +1977,6 @@
       if (!window.WebGLRenderingContext && !window.WebGL2RenderingContext) {
         throw new Error('WebGL is required');
       }
-      canvas.addEventListener('webglcontextlost', function (ev) {
-        ev.preventDefault();
-        console.error('ETJS WebGL context lost');
-      });
       bindQuakejsInput();
       if (!window.__etjsPreserveGL) {
         window.__etjsPreserveGL = true;
@@ -2146,6 +2224,37 @@
     captureLost: function () {
       if (canonicalCaptureLost) {
         return canonicalCaptureLost('framework-capture-lost');
+      }
+    },
+    pointerMove: function (detail) {
+      if (canonicalPointerMove) {
+        return canonicalPointerMove(detail);
+      }
+    },
+    pointerButton: function (detail) {
+      if (canonicalPointerButton) {
+        return canonicalPointerButton(detail);
+      }
+    },
+    inputCaptureChanged: function (captured) {
+      if (canonicalInputCaptureChanged) {
+        return canonicalInputCaptureChanged(captured);
+      }
+      frameworkInputCaptured = captured === true;
+    },
+    preferencesChanged: function (values) {
+      if (canonicalPreferencesChanged) {
+        return canonicalPreferencesChanged(values);
+      }
+    },
+    contextLost: function () {
+      if (canonicalContextLost) {
+        return canonicalContextLost();
+      }
+    },
+    contextRestored: function () {
+      if (canonicalContextRestored) {
+        return canonicalContextRestored();
       }
     }
   };

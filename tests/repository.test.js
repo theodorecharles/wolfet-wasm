@@ -40,6 +40,29 @@ describe('reproducible source repository', () => {
     assert.match(fetcher, /d1abab70f6e3e3af8f34dfb4d94542c8bd592b0a1a582f0107d2162ee23c679b/);
   });
 
+  it('stages declarative data, icon, and PWA policy before the runtime image', () => {
+    const game = JSON.parse(fs.readFileSync(path.join(ROOT, 'web', 'wasm-game.json'), 'utf8'));
+    const data = JSON.parse(fs.readFileSync(path.join(ROOT, 'web', 'wasm-game-data.json'), 'utf8'));
+    const dockerfile = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
+    const server = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');
+    const entrypoint = fs.readFileSync(path.join(ROOT, 'docker', 'entrypoint.sh'), 'utf8');
+    assert.equal(game.icon, '/img/etl.svg');
+    assert.equal(game.iconPixelated, false);
+    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'etl.svg')));
+    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'NOTICE')));
+    assert.equal(data.namespace, 'wolfet');
+    assert.equal(data.files.length, 6);
+    assert.equal(data.files.find((file) => file.key === 'etmain-pak0.pk3').size, 228138631);
+    assert.match(dockerfile, /check-game-package\.js \/game-site/);
+    assert.match(dockerfile, /stage-framework-runtime\.js \/framework \/game-site \/framework-dist \/framework-runtime/);
+    assert.match(server, /FRAMEWORK_RUNTIME_ROOT/);
+    assert.match(server, /sendFile\(req, res, PWA_MANIFEST_PATH\)/);
+    assert.match(server, /sendFile\(req, res, SERVICE_WORKER_PATH/);
+    assert.doesNotMatch(server, /function pwaManifest|function serviceWorkerSource/);
+    assert.doesNotMatch(entrypoint, /web\/img/,
+      'the entrypoint must not author downstream icons or PWA metadata');
+  });
+
   it('provisions official data on the host and only serves same-origin URLs to browsers', () => {
     const dedicated = fs.readFileSync(path.join(ROOT, 'server', 'dedicated.js'), 'utf8');
     const host = fs.readFileSync(path.join(ROOT, 'server', 'index.js'), 'utf8');

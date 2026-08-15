@@ -5,6 +5,9 @@ ARG ETLEGACY_IMAGE=etlegacy/server@sha256:e8810511b59a70cd66ddf36951cbb873333c40
 FROM node:22-alpine AS framework-source
 RUN apk add --no-cache bash coreutils git
 COPY framework-lock.json /tmp/framework-lock.json
+COPY web/wasm-game.json web/wasm-game-data.json web/game-adapter.js /game-site/
+COPY web/img/etl.svg /game-site/img/etl.svg
+COPY scripts/stage-framework-runtime.js /tmp/stage-framework-runtime.js
 RUN FRAMEWORK_REPOSITORY="$(node -p "require('/tmp/framework-lock.json').repository")" \
     && FRAMEWORK_COMMIT="$(node -p "require('/tmp/framework-lock.json').commit")" \
     && FRAMEWORK_VERSION="$(node -p "require('/tmp/framework-lock.json').version")" \
@@ -14,7 +17,9 @@ RUN FRAMEWORK_REPOSITORY="$(node -p "require('/tmp/framework-lock.json').reposit
     && git -C /framework checkout -q --detach FETCH_HEAD \
     && test "$(git -C /framework rev-parse HEAD)" = "$FRAMEWORK_COMMIT" \
     && test "$(node -p "require('/framework/package.json').version")" = "$FRAMEWORK_VERSION" \
-    && /framework/scripts/install-browser-package.sh /framework-dist copy
+    && /framework/scripts/install-browser-package.sh /framework-dist copy \
+    && node /framework/scripts/check-game-package.js /game-site \
+    && node /tmp/stage-framework-runtime.js /framework /game-site /framework-dist /framework-runtime
 
 FROM debian:trixie-slim AS etlegacy-source
 RUN apt-get update \
@@ -57,7 +62,7 @@ FROM ${ETLEGACY_IMAGE} AS runtime
 USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-      ca-certificates curl imagemagick libcjson1 nodejs npm tini unzip zip \
+      ca-certificates curl libcjson1 nodejs npm tini unzip zip \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/wolfet-wasm
@@ -70,6 +75,7 @@ COPY scripts scripts
 COPY web web
 COPY framework-lock.json framework-lock.json
 COPY --from=framework-source /framework-dist .generated/shared-shell
+COPY --from=framework-source /framework-runtime .generated/framework-runtime
 COPY runtime seed/runtime
 COPY docker/entrypoint.sh docker/entrypoint.sh
 COPY --from=native-builder /build/tools/huffpack tools/huffpack

@@ -2,9 +2,12 @@
 
 const { after, before, describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const http = require('http');
+const path = require('path');
 
 const host = require('../server/index');
+const ROOT = path.join(__dirname, '..');
 
 function request(port, pathname, options) {
   return new Promise((resolve, reject) => {
@@ -104,11 +107,15 @@ describe('same-origin content-addressed game assets', () => {
     assert.equal(manifestResponse.status, 200);
     assert.equal(manifestResponse.headers['content-type'], 'application/manifest+json');
     const manifest = JSON.parse(manifestResponse.body.toString('utf8'));
-    assert.equal(manifest.name, 'Enemy Territory');
+    assert.equal(manifest.name, 'Wolfenstein: Enemy Territory');
     assert.equal(manifest.short_name, 'WolfET');
     assert.equal(manifest.display, 'standalone');
     assert.equal(manifest.orientation, 'landscape');
-    assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ['192x192', '512x512']);
+    assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ['any']);
+    assert.equal(manifest.icons[0].src, '/img/etl.svg');
+    assert.deepEqual(manifestResponse.body,
+      fs.readFileSync(path.join(ROOT, '.generated', 'framework-runtime', 'app.webmanifest')),
+      'the application server must serve the framework-staged manifest byte for byte');
 
     const workerResponse = await request(port, '/service-worker.js');
     assert.equal(workerResponse.status, 200);
@@ -117,8 +124,15 @@ describe('same-origin content-addressed game assets', () => {
     assert.match(worker, /wasm-game-shell-0\.7\.3/);
     assert.match(worker, /fetch\(event\.request\)/);
     assert.doesNotMatch(worker, /game-data/, 'PWA shell cache must not duplicate owner PK3 caching');
+    assert.deepEqual(workerResponse.body,
+      fs.readFileSync(path.join(ROOT, '.generated', 'framework-runtime', 'service-worker.js')),
+      'the application server must serve the framework-staged worker byte for byte');
 
-    assert.equal((await request(port, '/img/et-192.png')).status, 200);
-    assert.equal((await request(port, '/img/et-512.png')).status, 200);
+    const iconResponse = await request(port, '/img/etl.svg');
+    assert.equal(iconResponse.status, 200);
+    assert.equal(iconResponse.headers['content-type'], 'image/svg+xml');
+    assert.equal(iconResponse.headers['cross-origin-opener-policy'], 'same-origin');
+    assert.equal(iconResponse.headers['cross-origin-embedder-policy'], 'require-corp');
+    assert.equal(iconResponse.headers['x-content-type-options'], 'nosniff');
   });
 });

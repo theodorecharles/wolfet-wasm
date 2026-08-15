@@ -27,22 +27,29 @@ describe('browser client scripts', () => {
   it('uses the canonical framework document plus a game manifest and adapter', () => {
     const html = fs.readFileSync(path.join(FRAMEWORK_WEB, 'index.html'), 'utf8');
     const framework = JSON.parse(fs.readFileSync(path.join(FRAMEWORK_WEB, 'wasm-game-framework.json'), 'utf8'));
+    const lock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'framework-lock.json'), 'utf8'));
     const config = JSON.parse(fs.readFileSync(path.join(WEB, 'wasm-game.json'), 'utf8'));
     const adapter = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
     const client = fs.readFileSync(path.join(WEB, 'js', 'client.js'), 'utf8');
     assert.equal(fs.existsSync(path.join(WEB, 'index.html')), false, 'WolfET must not fork the framework document');
     assert.equal(fs.existsSync(path.join(WEB, 'css', 'etjs.css')), false, 'WolfET must not fork the framework shell CSS');
     assert.equal(framework.version, '0.7.3');
+    assert.equal(lock.version, '0.7.3');
+    assert.equal(lock.commit, 'be0b81301c5f12f09e445a3bc765b7709603265e');
     assert.match(html, /id="launcher-form"/);
     assert.match(html, /id="launcher"/);
     assert.match(html, /id="player-name"/);
-    assert.equal(config.icon, '/img/et.png');
+    assert.equal(config.icon, '/img/etl.svg');
     assert.equal(config.displayMode, 'dynamic');
     assert.equal(config.nativeManaged, true);
     assert.equal(config.resizeTransition, 'immediate');
+    assert.equal(config.pointerWidth, 640);
+    assert.equal(config.pointerHeight, 480);
+    assert.equal(config.pointerFit, 'contain');
     assert.equal(config.adapter, '/game-adapter.js');
     assert.equal(config.fullscreen, true);
-    assert.equal(config.pwa.icons.length, 2);
+    assert.equal(config.pwa.icons.length, 1);
+    assert.equal(config.pwa.icons[0].src, '/img/etl.svg');
     assert.match(html, /rel="manifest" href="\/app\.webmanifest"/);
     assert.match(html, /data-shell-launch-fullscreen/);
     assert.match(adapter, /player-name\.js/);
@@ -50,9 +57,16 @@ describe('browser client scripts', () => {
     assert.match(adapter, /bind-store\.js/);
     assert.match(adapter, /pk3-cache\.js/);
     assert.match(adapter, /pk3-download\.js/);
-    assert.match(adapter, /client\.js\?v=18/);
+    assert.match(adapter, /client\.js\?v=19/);
     assert.match(adapter, /readCaptureIntent/);
     assert.match(adapter, /captureLost/);
+    ['pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',
+      'contextLost', 'contextRestored'].forEach((hook) => assert.match(adapter, new RegExp(hook)));
+    assert.doesNotMatch(client, /(?:request|exit)PointerLock|webkitRequestPointerLock/,
+      'only the canonical framework may own pointer lock');
+    assert.doesNotMatch(client,
+      /Preparing official game data|Downloading game data|local game cache|cached game data|files cached/,
+      'normal loading copy must remain game-focused');
     assert.match(client, /frameworkCaptureIntent = true;\s*setFrameworkEngineState\('loading'\)/,
       'JOIN must publish trusted capture intent while honestly reporting loading');
     assert.match(client, /frameworkCaptureIntent \? 'loading'/,
@@ -75,6 +89,45 @@ describe('browser client scripts', () => {
     assert.match(html, /id="graphics-profile"/);
     assert.match(html, /id="dynamic-quality"/);
     assert.match(html, /id="fps-target"/);
+  });
+
+  it('delegates every canonical adapter lifecycle and input hook', async () => {
+    const src = fs.readFileSync(path.join(WEB, 'game-adapter.js'), 'utf8');
+    const calls = [];
+    const inner = {};
+    ['init', 'start', 'readEngineState', 'readCaptureIntent', 'resize', 'captureLost',
+      'pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',
+      'contextLost', 'contextRestored'].forEach((name) => {
+      inner[name] = function () { calls.push([name, ...arguments]); return name; };
+    });
+    const sandbox = {
+      window: { ETJSGameAdapter: inner },
+      document: {
+        createElement: () => ({}),
+        head: { appendChild: (script) => script.onload() }
+      },
+      Promise: Promise
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(src, sandbox);
+    const adapter = sandbox.window.WasmGameAdapter;
+    await adapter.init({ shell: true });
+    await adapter.start({ shell: true });
+    adapter.readEngineState();
+    adapter.readCaptureIntent();
+    adapter.resize({ requestedWidth: 800, requestedHeight: 600 }, {});
+    adapter.captureLost({}, {});
+    adapter.pointerMove({ x: 320, y: 240 }, {}, {});
+    adapter.pointerButton({ button: 0, pressed: true }, {}, {});
+    adapter.inputCaptureChanged(true, {});
+    adapter.preferencesChanged({ targetFps: 60 }, {});
+    adapter.contextLost({}, {});
+    adapter.contextRestored({}, {});
+    assert.deepEqual(calls.map((entry) => entry[0]), [
+      'init', 'start', 'readEngineState', 'readCaptureIntent', 'resize', 'captureLost',
+      'pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',
+      'contextLost', 'contextRestored'
+    ]);
   });
 
   it('evaluates player-name.js in a browser-like environment', () => {

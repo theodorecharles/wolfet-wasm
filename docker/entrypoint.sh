@@ -22,7 +22,7 @@ DATA_OWNER_UID="$(stat -c '%u' "$DATA_ROOT")"
 DATA_OWNER_GID="$(stat -c '%g' "$DATA_ROOT")"
 
 mkdir -p "$DATA_ROOT/runtime/etmain" "$DATA_ROOT/runtime/legacy" \
-  "$DATA_ROOT/runtime/omni-bot-user" "$DATA_ROOT/web/img" \
+  "$DATA_ROOT/runtime/omni-bot-user" \
   "$DATA_ROOT/web/sound/music" "$DATA_ROOT/custom_maps" "$ANNOUNCER_ROOT"
 chown "$DATA_OWNER_UID:$DATA_OWNER_GID" "$DATA_ROOT/custom_maps" "$ANNOUNCER_ROOT"
 chmod 0775 "$DATA_ROOT/custom_maps" "$ANNOUNCER_ROOT"

@@ -258,7 +258,9 @@ describe('no overlay theater in the shipped draw path', () => {
     const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
     assert.match(view, /trap_Cvar_Set\("etjs_intermission"/);
     assert.match(client, /cvarInt\('etjs_intermission'\)/);
-    assert.match(client, /document\.exitPointerLock\(\)/);
+    assert.doesNotMatch(client, /(?:request|exit)PointerLock|webkitRequestPointerLock/);
+    assert.match(client, /canonicalPointerMove = function/);
+    assert.match(client, /canonicalPointerButton = function/);
     assert.match(draw, /PM_INTERMISSION[\s\S]*?CG_Debriefing_MouseEvent\(x, y\)/);
     assert.match(input, /KEYCATCH_CGAME[\s\S]*?CG_MOUSE_EVENT/);
     assert.match(client, /function pumpMove\(\)[\s\S]*?syncCursor\(\)/);
@@ -490,13 +492,13 @@ describe('no overlay theater in the shipped draw path', () => {
       /void ETJS_CharEvent[\s\S]*CL_CharEvent\(ch\)/);
   });
 
-  it('distinguishes local cached assets from real network downloads', () => {
+  it('tracks cache provenance internally without exposing it in normal loading copy', () => {
     const page = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
-    assert.match(page, /Checking the local game cache/);
-    assert.match(page, /Loading cached game data/);
-    assert.match(page, /Downloading game data from ETJS/);
     assert.match(page, /window\.__etjsAssets/);
     assert.match(page, /bytes\.byteLength === file\.bytes/);
+    assert.doesNotMatch(page,
+      /Preparing official game data|Downloading game data|local game cache|cached game data|files cached/);
+    assert.match(page, /Getting the battlefield ready/);
   });
 
   it('keeps browser diagnostics out of the normal in-game console', () => {
@@ -607,9 +609,9 @@ describe('no overlay theater in the shipped draw path', () => {
     const html = fs.readFileSync(path.join(FRAMEWORK_WEB, 'index.html'), 'utf8');
     const gameConfig = JSON.parse(fs.readFileSync(path.join(ROOT, 'web', 'wasm-game.json'), 'utf8'));
     assert.match(html, /id="launcher"/);
-    assert.equal(gameConfig.icon, '/img/et.png');
+    assert.equal(gameConfig.icon, '/img/etl.svg');
     assert.equal(gameConfig.fullscreen, true);
-    assert.equal(gameConfig.pwa.icons.length, 2);
+    assert.equal(gameConfig.pwa.icons.length, 1);
     assert.match(page, /ETJS UIMENU_MAIN/);
     assert.match(page, /playMenuMusic/);
     const beginForm = page.split('function beginFromForm')[1] || '';
@@ -661,7 +663,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(client, /window\.location\.host \+ '\/ws'/);
     const pw = fs.readFileSync(path.join(ROOT, 'scripts', 'playwright-etjs.js'), 'utf8');
     assert.match(pw, /127\.0\.0\.1:8088/);
-    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et.png')));
+    assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'etl.svg')));
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'sound', 'music', 'menu_server.wav')));
   });
 });
