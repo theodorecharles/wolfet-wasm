@@ -54,6 +54,11 @@ describe('reproducible source repository', () => {
     assert.equal(game.controller.mode, 'wasdMouse');
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-192.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-512.png')));
+    const tracked = execFileSync('git', ['ls-files', 'web/img'], { cwd: ROOT, encoding: 'utf8' });
+    assert.match(tracked, /^web\/img\/et\.ico$/m);
+    assert.match(tracked, /^web\/img\/et-192\.png$/m);
+    assert.match(tracked, /^web\/img\/et-512\.png$/m,
+      'the reproducible Docker build must contain its declared PWA icons');
     assert.equal(data.namespace, 'wolfet');
     assert.equal(data.files.length, 6);
     assert.equal(data.files.find((file) => file.key === 'etmain-pak0.pk3').size, 228138631);
