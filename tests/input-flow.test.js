@@ -110,6 +110,25 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.match(client, /cvarInt\('etjs_uiopen'\)/);
   });
 
+  it('raises JOIN capture intent synchronously inside the trusted native button dispatch', () => {
+    const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
+    const nativeInput = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_input.c'), 'utf8');
+    const nativeMain = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_main.c'), 'utf8');
+    const menu = fs.readFileSync(path.join(ROOT, 'runtime', 'legacy', 'ui', 'etjs_main.menu'), 'utf8');
+    const pointerButton = client.split('canonicalPointerButton = function')[1]
+      .split('canonicalInputCaptureChanged = function')[0];
+    const wakeAndJoin = client.split('etjsWakeAndJoin: function')[1]
+      .split('etjsAdminCommand: function')[0];
+    assert.match(pointerButton, /sendKey\(mkey, 1\)/);
+    assert.match(pointerButton, /sendKey\(mkey, 0\)/);
+    assert.match(client, /function sendKey[\s\S]*M\._ETJS_KeyEvent/);
+    assert.match(nativeInput, /void ETJS_KeyEvent[\s\S]*CL_KeyEvent\(key, down \? qtrue : qfalse/);
+    assert.match(menu, /exec "etjs_joingame"/);
+    assert.match(nativeMain, /CL_EtjsJoin_f[\s\S]*Module\['etjsWakeAndJoin'\]\(UTF8ToString\(\$0\)\)/);
+    assert.match(wakeAndJoin, /frameworkCaptureIntent = true;[\s\S]*setFrameworkEngineState\('loading'\)/);
+    assert.match(wakeAndJoin, /engineCmd\('connect ' \+ connectAddress\);[\s\S]*return Promise\.resolve\(\)/);
+  });
+
   it('starts at maximum graphics and adapts toward the chosen FPS target', () => {
     const client = fs.readFileSync(path.join(ROOT, 'web', 'js', 'client.js'), 'utf8');
     assert.match(client, /set r_picmip 0/);
