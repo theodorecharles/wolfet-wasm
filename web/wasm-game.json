@@ -52,10 +52,7 @@
     "requestDurability": true
   },
   "controller": {
-    "mode": "wasdMouse",
-    "moveDeadzone": 0.18,
-    "lookDeadzone": 0.14,
-    "lookSensitivity": 0.8
+    "mode": "disabled"
   },
   "adapter": "/game-adapter.js",
   "theme": {

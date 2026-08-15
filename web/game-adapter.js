@@ -7,7 +7,7 @@
     '/js/bind-store.js?v=2',
     '/js/pk3-cache.js?v=3',
     '/js/pk3-download.js?v=1',
-    '/js/client.js?v=19'
+    '/js/client.js?v=20'
   ];
 
   function load(source) {

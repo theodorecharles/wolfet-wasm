@@ -126,6 +126,10 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.match(menu, /exec "etjs_joingame"/);
     assert.match(nativeMain, /CL_EtjsJoin_f[\s\S]*Module\['etjsWakeAndJoin'\]\(UTF8ToString\(\$0\)\)/);
     assert.match(wakeAndJoin, /frameworkCaptureIntent = true;[\s\S]*setFrameworkEngineState\('loading'\)/);
+    assert.match(wakeAndJoin, /wasmShell\.showRuntime\(\)/,
+      'JOIN must remain on the native game surface while connecting');
+    assert.doesNotMatch(wakeAndJoin, /showLoading\(\)|loadPanel\.hidden = false/,
+      'JOIN must never return to the launcher loading card');
     assert.match(wakeAndJoin, /engineCmd\('connect ' \+ connectAddress\);[\s\S]*return Promise\.resolve\(\)/);
   });
 

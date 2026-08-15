@@ -529,6 +529,8 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(wake, /MAIN menu can[\s\S]*never appear[\s\S]*server is still booting/);
     assert.doesNotMatch(join, /fetch\('\/wake'/);
     assert.match(join, /Connecting to game server/);
+    assert.match(join, /wasmShell\.showRuntime\(\)/);
+    assert.doesNotMatch(join, /showLoading\(\)|loadPanel\.hidden = false/);
     assert.match(join, /engineCmd\('connect ' \+ connectAddress\)/);
     assert.match(page, /requestAnimationFrame\(resolve\)/);
     assert.match(page, /Game server is ready/);

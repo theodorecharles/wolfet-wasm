@@ -1938,16 +1938,14 @@
             .replace(/[^A-Za-z0-9.:[\]_-]/g, '');
           /* Server startup belongs to the web Play/loading phase. By the time
            * MAIN is visible, JOIN GAME only has to begin the ET connection. */
-          loadHidden = false;
           frameworkCaptureIntent = true;
           setFrameworkEngineState('loading');
           if (wasmShell) {
-            wasmShell.showLoading();
+            /* Play already woke the dedicated server and admitted the player
+             * to the native menu. JOIN is an in-engine connection transition;
+             * never reveal the launcher/loading card again from here. */
+            wasmShell.showRuntime();
           } else {
-            if (loadPanel) {
-              loadPanel.hidden = false;
-              loadPanel.classList.remove('hidden');
-            }
             if (frame) {
               frame.hidden = false;
               frame.classList.remove('hidden');

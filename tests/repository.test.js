@@ -51,7 +51,7 @@ describe('reproducible source repository', () => {
     assert.equal(game.icon, '/img/et-512.png');
     assert.equal(game.iconPixelated, true);
     assert.equal(game.persistence.root, '/persistent/wolfet');
-    assert.equal(game.controller.mode, 'wasdMouse');
+    assert.equal(game.controller.mode, 'disabled');
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-192.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-512.png')));
     const tracked = execFileSync('git', ['ls-files', 'web/img'], { cwd: ROOT, encoding: 'utf8' });

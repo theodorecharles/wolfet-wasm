@@ -50,7 +50,7 @@ describe('browser client scripts', () => {
     assert.equal(config.adapter, '/game-adapter.js');
     assert.equal(config.fullscreen, true);
     assert.equal(config.persistence.root, '/persistent/wolfet');
-    assert.equal(config.controller.mode, 'wasdMouse');
+    assert.equal(config.controller.mode, 'disabled');
     assert.equal(config.pwa.icons.length, 2);
     assert.deepEqual(config.pwa.icons.map((icon) => icon.src), ['/img/et-192.png', '/img/et-512.png']);
     assert.match(html, /rel="manifest" href="\/app\.webmanifest"/);
@@ -60,7 +60,7 @@ describe('browser client scripts', () => {
     assert.match(adapter, /bind-store\.js/);
     assert.match(adapter, /pk3-cache\.js/);
     assert.match(adapter, /pk3-download\.js/);
-    assert.match(adapter, /client\.js\?v=19/);
+    assert.match(adapter, /client\.js\?v=20/);
     assert.match(adapter, /readCaptureIntent/);
     assert.match(adapter, /captureLost/);
     ['pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',
@@ -79,6 +79,12 @@ describe('browser client scripts', () => {
       'normal loading copy must remain game-focused');
     assert.match(client, /frameworkCaptureIntent = true;\s*setFrameworkEngineState\('loading'\)/,
       'JOIN must publish trusted capture intent while honestly reporting loading');
+    const join = client.split('etjsWakeAndJoin: function')[1]
+      .split('etjsAdminCommand: function')[0];
+    assert.match(join, /wasmShell\.showRuntime\(\)/,
+      'JOIN must stay on the native runtime while connecting');
+    assert.doesNotMatch(join, /showLoading\(\)|loadPanel\.hidden = false/,
+      'JOIN must not reveal the launcher after native menu admission');
     assert.match(client, /frameworkCaptureIntent \? 'loading'/,
       'the native state pump must retain loading until the first active game state');
     assert.match(client, /hideLoadPanel\('gameplay'\);\s*frameworkCaptureIntent = false;/,
