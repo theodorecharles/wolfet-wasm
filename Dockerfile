@@ -29,6 +29,8 @@ WORKDIR /source
 COPY scripts/setup-etlegacy.sh scripts/setup-etlegacy.sh
 COPY patches/etlegacy-wasm.patch patches/etlegacy-wasm.patch
 COPY patches/etlegacy-modes.patch patches/etlegacy-modes.patch
+COPY patches/etlegacy-eth32nix.patch patches/etlegacy-eth32nix.patch
+COPY eth32nix eth32nix
 RUN sh scripts/setup-etlegacy.sh
 
 FROM debian:trixie-slim AS native-builder

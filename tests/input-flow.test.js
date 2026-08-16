@@ -88,7 +88,7 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.match(onKeyDown, /isConsoleEvent/);
     assert.match(client, /K_CONSOLE = 297/);
     const menuBranch = (onKeyDown.split('if (uiOpen())')[1] || '').split('if (typingMode)')[0];
-    assert.match(menuBranch, /if \(bareControl\(code\)\)[\s\S]*stopImmediatePropagation[\s\S]*else[\s\S]*preventDefault/);
+    assert.match(menuBranch, /ev\.preventDefault\(\);\s*ev\.stopImmediatePropagation\(\);/);
     const worldBranch = onKeyDown.split('var key = CODE_TO_KEY[code]')[1] || '';
     assert.match(worldBranch, /if \(bareControl\(code\)\)[\s\S]*else[\s\S]*ev\.preventDefault/);
     const typingBranch = onKeyDown.split('if (typingMode)')[1].split('var key = CODE_TO_KEY[code]')[0];
@@ -108,6 +108,17 @@ describe('shipped input helpers (window map, WASD, attack)', () => {
     assert.match(client, /canonicalPointerButton = function[\s\S]*sendKey\(mkey, 1\)/);
     assert.match(client, /canonicalInputCaptureChanged = function/);
     assert.match(client, /cvarInt\('etjs_uiopen'\)/);
+    assert.match(client, /cvarInt\('cl_aimbotmenu'\)/);
+    assert.match(client, /if \(uiOpen\(\)\) \{\s*move = \{ forward: 0, right: 0, up: 0 \};/);
+    assert.match(client, /if \(openUi && !wasUiOpen\) \{\s*releaseInputHolds\(\);/);
+    assert.match(client, /function engineWantsKeys\(\)/);
+    assert.match(client, /if \(!engineWantsKeys\(\)\)/);
+    assert.match(client, /cvarInt\('etjs_console'\)/);
+    const consoleGate = client.split('if (isConsoleEvent(ev, initialCode))')[1] || '';
+    assert.match(consoleGate, /sendKey\(K_CONSOLE, 1\)[\s\S]*sendKey\(K_CONSOLE, 0\)/);
+    assert.ok(client.indexOf('if (isConsoleEvent(ev, initialCode))') <
+      client.indexOf('if (!engineWantsKeys())'),
+      'console key must be handled before the capture gate');
   });
 
   it('raises JOIN capture intent synchronously inside the trusted native button dispatch', () => {

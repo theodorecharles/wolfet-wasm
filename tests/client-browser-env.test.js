@@ -60,7 +60,7 @@ describe('browser client scripts', () => {
     assert.match(adapter, /bind-store\.js/);
     assert.match(adapter, /pk3-cache\.js/);
     assert.match(adapter, /pk3-download\.js/);
-    assert.match(adapter, /client\.js\?v=20/);
+    assert.match(adapter, /client\.js\?v=26/);
     assert.match(adapter, /readCaptureIntent/);
     assert.match(adapter, /captureLost/);
     ['pointerMove', 'pointerButton', 'inputCaptureChanged', 'preferencesChanged',

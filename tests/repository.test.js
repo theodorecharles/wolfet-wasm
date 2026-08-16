@@ -96,7 +96,12 @@ describe('reproducible source repository', () => {
     const modesPatch = path.join(ROOT, 'patches', 'etlegacy-modes.patch');
     assert.ok(fs.statSync(modesPatch).size > 1000);
     assert.match(setup, /etlegacy-modes\.patch/);
-    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', modesPatch]);
+    const eth32Patch = path.join(ROOT, 'patches', 'etlegacy-eth32nix.patch');
+    assert.ok(fs.statSync(eth32Patch).size > 1000);
+    assert.match(setup, /etlegacy-eth32nix\.patch/);
+    assert.match(setup, /install_eth32nix/);
+    assert.ok(fs.existsSync(path.join(ROOT, 'eth32nix', 'eth32nix_aim.c')));
+    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', eth32Patch]);
   });
 
   it('builds and requires the matching native qagame module', () => {
@@ -122,6 +127,8 @@ describe('reproducible source repository', () => {
     assert.match(dockerfile, /platforms: linux\/amd64|EXPOSE 8088\/tcp 27960\/udp/);
     assert.match(dockerfile, /COPY third_party third_party/);
     assert.match(dockerfile, /COPY web-port web-port/);
+    assert.match(dockerfile, /COPY patches\/etlegacy-eth32nix\.patch/);
+    assert.match(dockerfile, /COPY eth32nix eth32nix/);
     assert.match(dockerfile, /ETJS_MODE=arcade/);
     assert.match(dockerfile, /ETJS_SLOTS=12/);
     assert.match(dockerfile, /KEEP_ALIVE=false/);

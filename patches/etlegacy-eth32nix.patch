@@ -1,0 +1,621 @@
+diff -Naur a/src/cgame/cg_cvars.c b/src/cgame/cg_cvars.c
+--- a/src/cgame/cg_cvars.c
++++ b/src/cgame/cg_cvars.c
+@@ -67,9 +67,8 @@
+ vmCvar_t cg_brassTime;
+ vmCvar_t cg_letterbox;
+ vmCvar_t cg_drawGun;
+-vmCvar_t cg_rshook;
+ #ifdef __EMSCRIPTEN__
+-vmCvar_t cg_cchook;
++vmCvar_t cg_aimbot;
+ vmCvar_t cg_etjsContainUi;
+ vmCvar_t cg_etjsArcade;
+ #endif
+@@ -347,9 +346,8 @@
+ {
+ 	{ &cg_autoswitch,                         "cg_autoswitch",                         "2",           CVAR_ARCHIVE,                 0 },
+ 	{ &cg_drawGun,                            "cg_drawGun",                            "1",           CVAR_ARCHIVE,                 0 },
+-	{ &cg_rshook,                             "cl_rshook",                             "0",           0,                            0 },
+ #ifdef __EMSCRIPTEN__
+-	{ &cg_cchook,                             "cl_cchook",                             "0",           0,                            0 },
++	{ &cg_aimbot,                             "cl_aimbot",                             "0",           0,                            0 },
+ 	{ &cg_etjsContainUi,                      "etjs_containui",                        "1",           0,                            0 },
+ 	{ &cg_etjsArcade,                         "g_etjsArcade",                          "0",           0,                            0 },
+ #endif
+diff -Naur a/src/cgame/cg_cvars.h b/src/cgame/cg_cvars.h
+--- a/src/cgame/cg_cvars.h
++++ b/src/cgame/cg_cvars.h
+@@ -72,9 +72,8 @@
+ extern vmCvar_t cg_gun_y;
+ extern vmCvar_t cg_gun_z;
+ extern vmCvar_t cg_drawGun;
+-extern vmCvar_t cg_rshook;
+ #ifdef __EMSCRIPTEN__
+-extern vmCvar_t cg_cchook;
++extern vmCvar_t cg_aimbot;
+ extern vmCvar_t cg_etjsArcade;
+ extern vmCvar_t cg_etjsContainUi;
+ #endif
+diff -Naur a/src/cgame/cg_draw.c b/src/cgame/cg_draw.c
+--- a/src/cgame/cg_draw.c
++++ b/src/cgame/cg_draw.c
+@@ -35,6 +35,9 @@
+  */
+ 
+ #include "cg_local.h"
++#ifdef __EMSCRIPTEN__
++#include "eth32nix.h"
++#endif
+ 
+ char *Binding_FromName(const char *cvar);
+ void Controls_GetConfig(void);
+@@ -4364,6 +4367,10 @@
+ 		CG_Spawnpoints_Draw();
+ 	}
+ 
++#ifdef __EMSCRIPTEN__
++	ETH32_Draw2D();
++#endif
++
+ 	// Info overlays
+ 	CG_DrawOverlays();
+ 
+diff -Naur a/src/cgame/cg_ents.c b/src/cgame/cg_ents.c
+--- a/src/cgame/cg_ents.c
++++ b/src/cgame/cg_ents.c
+@@ -1232,6 +1232,8 @@
+ }
+ 
+ #ifdef __EMSCRIPTEN__
++#include "eth32nix.h"
++
+ static qboolean ETJS_IsHookDeployable(const entityState_t *state)
+ {
+ 	return state->weapon == WP_LANDMINE || state->weapon == WP_DYNAMITE ||
+@@ -1242,7 +1244,7 @@
+ {
+ 	int localTeam;
+ 
+-	if (!cg_etjsArcade.integer || !(cg_rshook.integer || cg_cchook.integer) || !cg.snap || !ETJS_IsHookDeployable(state))
++	if (!ETH32_RevealDeployable(state) || !cg.snap || !ETJS_IsHookDeployable(state))
+ 	{
+ 		return qfalse;
+ 	}
+@@ -1616,6 +1618,7 @@
+ 		CG_AddRefEntityWithPowerups(&ent, s1->powerups, TEAM_FREE, s1, vec3_origin);
+ #ifdef __EMSCRIPTEN__
+ 		ETJS_AddDeployableHookShell(&ent, cent);
++		ETH32_ItemChams(&ent, cent);
+ #endif
+ 	}
+ 
+diff -Naur a/src/cgame/cg_main.c b/src/cgame/cg_main.c
+--- a/src/cgame/cg_main.c
++++ b/src/cgame/cg_main.c
+@@ -35,6 +35,9 @@
+ 
+ #include "cg_local.h"
+ #include "cg_cvars.h"
++#ifdef __EMSCRIPTEN__
++#include "eth32nix.h"
++#endif
+ 
+ displayContextDef_t cgDC;
+ 
+@@ -2455,6 +2458,9 @@
+ 	cgs.demoCamera.noclip    = qfalse;
+ 	cgs.currentMenuLevel     = ML_MAIN;
+ #endif
++#ifdef __EMSCRIPTEN__
++	ETH32_Init();
++#endif
+ }
+ 
+ /**
+diff -Naur a/src/cgame/cg_newDraw.c b/src/cgame/cg_newDraw.c
+--- a/src/cgame/cg_newDraw.c
++++ b/src/cgame/cg_newDraw.c
+@@ -33,6 +33,9 @@
+  */
+ 
+ #include "cg_local.h"
++#ifdef __EMSCRIPTEN__
++#include "eth32nix.h"
++#endif
+ 
+ /**
+  * @brief CG_TrimLeftPixels
+@@ -660,6 +663,12 @@
+  */
+ void CG_MouseEvent(int x, int y)
+ {
++#ifdef __EMSCRIPTEN__
++	if (ETH32_MouseEvent(x, y))
++	{
++		return;
++	}
++#endif
+ 	/* The debrief uses its own panel cursor while eventHandling remains NONE. */
+ 	if (cg.snap && cg.snap->ps.pm_type == PM_INTERMISSION)
+ 	{
+@@ -1046,6 +1055,12 @@
+ 
+ void CG_KeyEvent(int key, qboolean down)
+ {
++#ifdef __EMSCRIPTEN__
++	if (ETH32_KeyEvent(key, down))
++	{
++		return;
++	}
++#endif
+ 	switch (cgs.eventHandling)
+ 	{
+ 	// Demos get their own keys
+diff -Naur a/src/cgame/cg_players.c b/src/cgame/cg_players.c
+--- a/src/cgame/cg_players.c
++++ b/src/cgame/cg_players.c
+@@ -34,6 +34,9 @@
+  */
+ 
+ #include "cg_local.h"
++#ifdef __EMSCRIPTEN__
++#include "eth32nix.h"
++#endif
+ 
+ #define SWING_RIGHT 1.f
+ #define SWING_LEFT  2.f
+@@ -2710,53 +2713,8 @@
+ 	trap_R_AddRefEntityToScene(ent);
+ 
+ #ifdef __EMSCRIPTEN__
+-	if (cg_etjsArcade.integer && (cg_rshook.integer || cg_cchook.integer)
+-	    && es->eType == ET_PLAYER
+-	    && cg.snap
+-	    && es->number != cg.snap->ps.clientNum
+-	    && !(es->eFlags & EF_DEAD)
+-	    && (cg.snap->ps.teamNum == TEAM_SPECTATOR ||
+-	        ((es->teamNum == TEAM_AXIS || es->teamNum == TEAM_ALLIES)
+-	         ? es->teamNum != cg.snap->ps.teamNum
+-	         : team != cg.snap->ps.teamNum))
+-	    && cgs.media.shoutcastLandmineShader)
+-	{
+-		refEntity_t glow = *ent;
+-		trace_t       trace;
+-		vec3_t        tracePoint;
+-		qboolean      visible;
+-
+-		VectorCopy(cg_entities[es->number].lerpOrigin, tracePoint);
+-		tracePoint[2] += (es->eFlags & EF_PRONE) ? 18.f : ((es->eFlags & EF_CROUCHING) ? 28.f : 40.f);
+-		CG_Trace(&trace, cg.refdef.vieworg, NULL, NULL, tracePoint,
+-		         cg.snap->ps.clientNum, CONTENTS_SOLID);
+-		visible = trace.fraction > 0.98f;
+-
+-		glow.renderfx    |= RF_NOSHADOW;
+-		glow.customSkin   = 0;
+-		/* ETL's shoutcast shell is a translucent, slightly expanded
+-		 * environment-mapped construction texture with tcMod scroll.  It gives
+-		 * the moving liquid/weapon-shine layer the hook originally intended. */
+-		glow.customShader = cgs.media.shoutcastLandmineShader;
+-		if (visible)
+-		{
+-			/* Blue: directly visible enemy, depth-tested against the world. */
+-			glow.renderfx      &= ~RF_DEPTHHACK;
+-			glow.shaderRGBA[0]  = 48;
+-			glow.shaderRGBA[1]  = 128;
+-			glow.shaderRGBA[2]  = 255;
+-		}
+-		else
+-		{
+-			/* Red: world-occluded enemy, pulled forward for the wall silhouette. */
+-			glow.renderfx      |= RF_DEPTHHACK;
+-			glow.shaderRGBA[0]  = 255;
+-			glow.shaderRGBA[1]  = 48;
+-			glow.shaderRGBA[2]  = 48;
+-		}
+-		glow.shaderRGBA[3] = 210;
+-		trap_R_AddRefEntityToScene(&glow);
+-	}
++	ETH32_CaptureHead(es->number, ent);
++	ETH32_PlayerChams(ent, es, team);
+ #endif
+ 
+ 	if (onFire)
+diff -Naur a/src/cgame/cg_view.c b/src/cgame/cg_view.c
+--- a/src/cgame/cg_view.c
++++ b/src/cgame/cg_view.c
+@@ -34,6 +34,9 @@
+  */
+ 
+ #include "cg_local.h"
++#ifdef __EMSCRIPTEN__
++#include "eth32nix.h"
++#endif
+ 
+ #ifdef __EMSCRIPTEN__
+ /* Dead-camera input must remain independent of the predicted player state.
+@@ -2527,6 +2530,7 @@
+ }
+ 
+ #ifdef __EMSCRIPTEN__
++#if 0 /* superseded by compiled-in ETH32NIX */
+ /**
+  * Return a sane, slightly-low head target for the ETJS assist.  Head tags are
+  * generated while drawing a model, so never trust one without also checking
+@@ -2923,6 +2927,7 @@
+ 		etjsCcHookTarget = -1;
+ 	}
+ }
++#endif /* superseded by compiled-in ETH32NIX */
+ #endif
+ 
+ /**
+@@ -3166,97 +3171,7 @@
+ 			/* Invalidate every frame before CL_FinishMove consumes the result.
+ 			 * This also prevents attack-to-tap-out while dead from reusing aim. */
+ 			trap_Cvar_Set("etjs_target", "-1");
+-			if (cg_etjsArcade.integer && (cg_rshook.integer || cg_cchook.integer)
+-			    && (ucmd.buttons & BUTTON_ATTACK) && cg.snap
+-			    && cg.predictedPlayerState.pm_type == PM_NORMAL
+-			    && cg.predictedPlayerState.stats[STAT_HEALTH] > 0)
+-			{
+-				vec3_t shooterOrigin;
+-
+-				VectorCopy(cg.predictedPlayerState.origin, shooterOrigin);
+-				shooterOrigin[2] += cg.predictedPlayerState.viewheight;
+-
+-				if (cg_cchook.integer &&
+-				    ETJS_CcHookHitscan(cg.predictedPlayerState.weapon))
+-				{
+-					ETJS_CcHookAim(shooterOrigin);
+-				}
+-				else if (cg_rshook.integer)
+-				{
+-					int      i, best = -1;
+-					float    bestScore = 1e30f;
+-					vec3_t   fwd, to, aimPoint;
+-					int      localTeam = cg.snap->ps.teamNum;
+-					int      enemyTeam;
+-
+-					if (localTeam != TEAM_AXIS && localTeam != TEAM_ALLIES)
+-					{
+-						localTeam = cgs.clientinfo[cg.clientNum].team;
+-					}
+-					enemyTeam = (localTeam == TEAM_AXIS) ? TEAM_ALLIES
+-					            : ((localTeam == TEAM_ALLIES) ? TEAM_AXIS : TEAM_FREE);
+-
+-					AngleVectors(cg.predictedPlayerState.viewangles, fwd, NULL, NULL);
+-					for (i = 0; i < MAX_CLIENTS; i++)
+-					{
+-						centity_t *cent = &cg_entities[i];
+-						float     d, len, score;
+-
+-						if (i == cg.clientNum || !cgs.clientinfo[i].infoValid)
+-						{
+-							continue;
+-						}
+-						if (!ETJS_RsAimPoint(i, aimPoint))
+-						{
+-							continue;
+-						}
+-						/* Require a positively identified enemy from both live entity and
+-						 * client metadata where available. Never infer enemy from "not self". */
+-						if (enemyTeam == TEAM_FREE ||
+-						    (cent->currentState.teamNum != enemyTeam &&
+-						     cgs.clientinfo[i].team != enemyTeam) ||
+-						    cent->currentState.teamNum == localTeam ||
+-						    cgs.clientinfo[i].team == localTeam)
+-						{
+-							continue;
+-						}
+-
+-						VectorSubtract(aimPoint, shooterOrigin, to);
+-						len    = VectorNormalize(to);
+-						if (len < 8.f || len > 32768.f || Q_fabs(to[2]) > 0.94f)
+-						{
+-							continue;
+-						}
+-						d = DotProduct(fwd, to);
+-						if (d < 0.55f)
+-						{
+-							continue;
+-						}
+-
+-						/* Never acquire through world geometry.  Treat visibility as a
+-						 * hard safety condition instead of a score preference. */
+-						if (!ETJS_RsTargetVisible(i, shooterOrigin, aimPoint))
+-						{
+-							continue;
+-						}
+-
+-						/* Distance is primary while angular error breaks close calls. */
+-						score = len / (0.35f + d * d);
+-						if (score < bestScore)
+-						{
+-							bestScore = score;
+-							best      = i;
+-						}
+-					}
+-					if (best >= 0 && ETJS_RsAimPoint(best, aimPoint))
+-					{
+-						/* Reject malformed/stale transforms at the last possible point.
+-						 * Keep both the absolute pitch and the one-frame vertical turn well
+-						 * away from a straight-up/down camera snap. */
+-						ETJS_ApplyHookAim(shooterOrigin, aimPoint, best, qtrue);
+-					}
+-				}
+-			}
++			ETH32_AimFrame();
+ 		}
+ 	}
+ #endif
+diff -Naur a/src/client/cl_input.c b/src/client/cl_input.c
+--- a/src/client/cl_input.c
++++ b/src/client/cl_input.c
+@@ -1153,9 +1153,19 @@
+ 	}
+ #ifdef __EMSCRIPTEN__
+ 	if (Cvar_VariableIntegerValue("g_etjsArcade") &&
+-	    (Cvar_VariableIntegerValue("cl_rshook") || Cvar_VariableIntegerValue("cl_cchook")) &&
++	    Cvar_VariableIntegerValue("cl_aimbot") &&
++	    !Cvar_VariableIntegerValue("cl_aimbotmenu") &&
++	    Cvar_VariableIntegerValue("etjs_autofire"))
++	{
++		cmd->buttons |= BUTTON_ATTACK;
++	}
++	if (Cvar_VariableIntegerValue("g_etjsArcade") &&
++	    Cvar_VariableIntegerValue("cl_aimbot") &&
++	    !Cvar_VariableIntegerValue("cl_aimbotmenu") &&
+ 	    Cvar_VariableIntegerValue("etjs_target") >= 0 &&
+-	    (cmd->buttons & BUTTON_ATTACK))
++	    ((cmd->buttons & BUTTON_ATTACK) ||
++	     Cvar_VariableIntegerValue("etjs_autofire") ||
++	     Cvar_VariableIntegerValue("etjs_aimlock")))
+ 	{
+ 		float y          = AngleNormalize180(Cvar_VariableValue("etjs_addyaw"));
+ 		float p          = AngleNormalize180(Cvar_VariableValue("etjs_addpitch"));
+@@ -731,6 +731,15 @@
+ void CL_KeyMove(usercmd_t *cmd)
+ {
+ 	int movespeed;
+ 	int forward = 0, side = 0, up = 0;
++#ifdef __EMSCRIPTEN__
++	if (Cvar_VariableIntegerValue("cl_aimbotmenu"))
++	{
++		cmd->forwardmove = 0;
++		cmd->rightmove   = 0;
++		cmd->upmove      = 0;
++		return;
++	}
++#endif
+ 
+ 	// adjust for speed key / running
+@@ -994,8 +1004,16 @@
+ void CL_MouseMove(usercmd_t *cmd)
+ {
+ 	float mx, my;
+ 	float accelSensitivity;
+ 	float rate;
+ 	float deltaStrafeSensitivity;
++#ifdef __EMSCRIPTEN__
++	if (Cvar_VariableIntegerValue("cl_aimbotmenu"))
++	{
++		cl.mouseDx[0] = cl.mouseDx[1] = 0;
++		cl.mouseDy[0] = cl.mouseDy[1] = 0;
++		return;
++	}
++#endif
+ 
+ 	// allow mouse smoothing
+@@ -1084,9 +1104,19 @@
+ #ifdef __EMSCRIPTEN__
+ 	/* In browser builds, do not set BUTTON_TALK from leftover catchers.
+ 	 * Leftover CGAME state after limbo made pmove zero movement. Drop only
+ 	 * that leftover — do not clear
+-	 * KEYCATCH_UI or Escape / the in-game menu can never stay up. */
+-	if (cls.state == CA_ACTIVE && !(cls.keyCatchers & KEYCATCH_CONSOLE))
++	 * KEYCATCH_UI or Escape / the in-game menu can never stay up.
++	 * The ETH32 settings overlay keeps KEYCATCH_CGAME on purpose so the
++	 * stock menu stays down while the browser cursor and clicks reach it. */
++	if (Cvar_VariableIntegerValue("cl_aimbotmenu"))
++	{
++		cls.keyCatchers |= KEYCATCH_CGAME;
++		if (!cl_bypassMouseInput->integer)
++		{
++			cmd->buttons |= BUTTON_TALK;
++		}
++	}
++	else if (cls.state == CA_ACTIVE && !(cls.keyCatchers & KEYCATCH_CONSOLE))
+ 	{
+ 		if (!Cvar_VariableIntegerValue("etjs_limbo")
+ 		    && !Cvar_VariableIntegerValue("etjs_intermission"))
+@@ -1867,5 +1898,11 @@
+ void ETJS_SetMove(int forward, int right, int up)
+ {
+ 	static int moveLog;
++	if (Cvar_VariableIntegerValue("cl_aimbotmenu"))
++	{
++		forward = 0;
++		right   = 0;
++		up      = 0;
++	}
+ 
+ 	etjsMoveForward = forward;
+diff -Naur a/src/client/cl_keys.c b/src/client/cl_keys.c
+--- a/src/client/cl_keys.c
++++ b/src/client/cl_keys.c
+@@ -1701,6 +1701,14 @@
+ 
+ 			return;
+ 		}
++#ifdef __EMSCRIPTEN__
++		if (Cvar_VariableIntegerValue("cl_aimbotmenu"))
++		{
++			Cvar_Set("cl_aimbotmenu", "0");
++			cls.keyCatchers &= ~KEYCATCH_CGAME;
++			return;
++		}
++#endif
+ 
+ 		// escape always gets out of CGAME stuff
+ 		if (cls.keyCatchers & KEYCATCH_CGAME)
+diff -Naur a/src/client/cl_main.c b/src/client/cl_main.c
+--- a/src/client/cl_main.c
++++ b/src/client/cl_main.c
+@@ -3193,47 +3193,59 @@
+ 
+ #ifdef __EMSCRIPTEN__
+ /**
+- * @brief Secret client hook: wallhack glow + aim-while-firing.
++ * @brief Arcade-only ETH32NIX aimbot / wallhack / UI toggle.
+  */
+-static void CL_RsHook_f(void)
++static void CL_Aimbot_f(void)
+ {
+-	int on;
++	const char *arg;
++	int         on;
+ 
+ 	Cvar_Get("g_etjsArcade", "0", 0);
++	Cvar_Get("cl_aimbot", "0", 0);
+ 	if (!Cvar_VariableIntegerValue("g_etjsArcade"))
+ 	{
+-		Cvar_Set2("cl_rshook", "0", qtrue);
+-		Com_Printf("rshook is only available in arcade mode\n");
++		Cvar_Set2("cl_aimbot", "0", qtrue);
++		Com_Printf("aimbot is only available in arcade mode\n");
+ 		return;
+ 	}
+ 
+-	on = !Cvar_VariableIntegerValue("cl_rshook");
++	arg = Cmd_Argc() > 1 ? Cmd_Argv(1) : "";
++	if (!Q_stricmp(arg, "menu"))
++	{
++		if (!Cvar_VariableIntegerValue("cl_aimbot"))
++		{
++			Cvar_Set2("cl_aimbot", "1", qtrue);
++			Com_Printf("aimbot on\n");
++		}
++		Cvar_Set2("cl_aimbotmenu", Cvar_VariableIntegerValue("cl_aimbotmenu") ? "0" : "1", qtrue);
++		return;
++	}
++	if (!Q_stricmp(arg, "on"))
++	{
++		on = 1;
++	}
++	else if (!Q_stricmp(arg, "off"))
++	{
++		on = 0;
++	}
++	else
++	{
++		on = !Cvar_VariableIntegerValue("cl_aimbot");
++	}
+ 
+-	Cvar_Get("cl_rshook", "0", 0);
+-	Cvar_Set2("cl_rshook", on ? "1" : "0", qtrue);
+-	Com_Printf("rshook %s\n", on ? "on" : "off");
++	Cvar_Set2("cl_aimbot", on ? "1" : "0", qtrue);
++	Com_Printf("aimbot %s\n", on ? "on" : "off");
+ }
+ 
+-/**
+- * @brief Arcade-only CCHookReloaded-style hitscan aimbot.
+- */
+-static void CL_CcHook_f(void)
++static void CL_AimbotMenu_f(void)
+ {
+-	int on;
+-
+-	Cvar_Get("g_etjsArcade", "0", 0);
+-	if (!Cvar_VariableIntegerValue("g_etjsArcade"))
++	if (!Cvar_VariableIntegerValue("g_etjsArcade") ||
++	    !Cvar_VariableIntegerValue("cl_aimbot"))
+ 	{
+-		Cvar_Set2("cl_cchook", "0", qtrue);
+-		Com_Printf("cchook is only available in arcade mode\n");
++		Com_Printf("aimbot menu requires arcade mode and aimbot on\n");
+ 		return;
+ 	}
+-
+-	on = !Cvar_VariableIntegerValue("cl_cchook");
+-
+-	Cvar_Get("cl_cchook", "0", 0);
+-	Cvar_Set2("cl_cchook", on ? "1" : "0", qtrue);
+-	Com_Printf("cchook %s\n", on ? "on" : "off");
++	Cvar_Set2("cl_aimbotmenu", Cvar_VariableIntegerValue("cl_aimbotmenu") ? "0" : "1", qtrue);
+ }
+ 
+ static void CL_EtjsJoin_f(void)
+@@ -3307,14 +3319,20 @@
+ 	#endif
+ 	// register our commands
+ #ifdef __EMSCRIPTEN__
+-	Cvar_Get("cl_rshook", "0", 0);
+-	Cvar_Get("cl_cchook", "0", 0);
++	Cvar_Get("cl_aimbot", "0", 0);
++	Cvar_Get("cl_aimbotmenu", "0", 0);
+ 	Cvar_Get("etjs_connect", "127.0.0.1:27961", 0);
+ 	Cvar_Get("etjs_ingame", "0", 0);
+ 	Cvar_Get("etjs_uiopen", "0", 0);
++	Cvar_Get("etjs_console", "0", 0);
++	Cvar_Get("etjs_eth32save", "0", 0);
+ 	Cvar_Get("etjs_intermission", "0", 0);
+ 	Cvar_Get("etjs_dead", "0", 0);
+ 	Cvar_Get("etjs_target", "-1", 0);
++	Cvar_Get("etjs_autofire", "0", 0);
++	Cvar_Get("etjs_aimlock", "0", 0);
++	Cvar_Get("etjs_eth32last", "-1", 0);
++	Cvar_Get("etjs_eth32n", "0", 0);
+ 	Cvar_Get("etjs_aimworldpitch", "0", 0);
+ 	Cvar_Get("etjs_fwd", "0", 0);
+ 	Cvar_Get("etjs_right", "0", 0);
+@@ -3332,10 +3346,8 @@
+ 	Cvar_Get("etjs_containui", "1", 0);
+ 	Cvar_Get("etjs_menucount", "0", 0);
+ 	Cvar_Get("etjs_admin", "0", 0);
+-	Cmd_AddCommand("rshook", CL_RsHook_f, "Toggle rshook.");
+-	Cmd_AddCommand("icebot", CL_RsHook_f, "Toggle rshook.");
+-	Cmd_AddCommand("ethook", CL_RsHook_f, "Toggle rshook.");
+-	Cmd_AddCommand("cchook", CL_CcHook_f, "Toggle cchook.");
++	Cmd_AddCommand("aimbot", CL_Aimbot_f, "Toggle ETH32NIX aimbot/wallhack/UI.");
++	Cmd_AddCommand("aimbotmenu", CL_AimbotMenu_f, "Toggle ETH32NIX settings UI.");
+ 	Cmd_AddCommand("etjs_joingame", CL_EtjsJoin_f, "Join the shared ETJS match.");
+ 	Cmd_AddCommand("etjs_admin", CL_EtjsAdmin_f, "Run a local server administration command.");
+ #endif
+diff -Naur a/src/client/cl_scrn.c b/src/client/cl_scrn.c
+--- a/src/client/cl_scrn.c
++++ b/src/client/cl_scrn.c
+@@ -872,7 +872,11 @@
+ #ifdef __EMSCRIPTEN__
+ 	etjsInMatch = (cls.state == CA_ACTIVE);
+ 	Cvar_Set("etjs_ingame", etjsInMatch ? "1" : "0");
+-	Cvar_Set("etjs_uiopen", (cls.keyCatchers & KEYCATCH_UI) ? "1" : "0");
++	/* Stock ESC uses KEYCATCH_UI. The ETH32 settings overlay uses KEYCATCH_CGAME
++	 * so the native menu stays down; cl_aimbotmenu is the browser capture signal. */
++	Cvar_Set("etjs_uiopen", ((cls.keyCatchers & KEYCATCH_UI) ||
++	                        Cvar_VariableIntegerValue("cl_aimbotmenu")) ? "1" : "0");
++	Cvar_Set("etjs_console", (cls.keyCatchers & KEYCATCH_CONSOLE) ? "1" : "0");
+ #endif
+ 
+ 	if (++recursive >= 2)
+diff -Naur a/src/qcommon/common.c b/src/qcommon/common.c
+--- a/src/qcommon/common.c
++++ b/src/qcommon/common.c
+@@ -3357,8 +3357,15 @@
+ 		return;
+ 	}
+ 
+-	FS_Printf(f, "// generated by %s do not modify\n", ET_VERSION);
++#ifdef __EMSCRIPTEN__
++	/* Browser builds own renderer/net cvars in autoexec. A full writeconfig
++	 * dump is exec'd again after download FS_Restart and drops the session. */
++	FS_Printf(f, "// etjs: bindings only\n");
+ 	Key_WriteBindings(f);
++#else
++	FS_Printf(f, "// generated by %s do not modify\n", ET_VERSION);
++	Key_WriteBindings(f);
+ 	Cvar_WriteVariables(f, nodefaults);
++#endif
+ 	FS_FCloseFile(f);
+ }

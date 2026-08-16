@@ -31,9 +31,9 @@ Set `ETJS_MODE` to `vanilla` or `arcade`. Arcade is the default.
 | Stamina | Original drain and recharge | Unlimited |
 | Custom hit sounds | Off | On |
 | Multi-kill announcer | Off | On |
-| Aimbot and visibility assists | Unavailable | Available with the `rshook` console command |
+| Aimbot and visibility assists | Unavailable | Available with the `aimbot` console command |
 
-In Arcade mode, `rshook` toggles the optional targeting and visibility layer. It aims while firing only when an enemy is visible, highlights opponents, and exposes hostile deployables such as landmines. Teammates are excluded. Objectives remain on ET's compass and command map rather than appearing as floating distance markers. Vanilla mode blocks this feature even if a client attempts to enable its cvar directly.
+In Arcade mode, `aimbot` toggles the compiled-in [ETH32NIX rabbmod](https://github.com/rabb/eth32nix-rabbmod) layer: bullet and grenade aimbots, wallhack/chams, name/class/item ESP, radar, and the in-game settings UI. There is no injector. `aimbot menu` (or `aimbotmenu`) opens the ETH32 windows. Teammates are excluded from targeting. Vanilla mode blocks the feature even if a client sets `cl_aimbot` directly. The old `rshook` / `cchook` commands are gone.
 
 ## Run with Docker
 
@@ -253,7 +253,7 @@ npm run test:e2e            # run the browser smoke test
 
 ## Contributing
 
-The `etlegacy/` and `quakejs/` directories are local reference workspaces and are not committed. ET: Legacy is pinned to a known revision; the maintained engine changes live in `patches/etlegacy-wasm.patch` and `patches/etlegacy-modes.patch`. Make engine changes in the prepared `etlegacy/` tree and keep the corresponding patch current so a fresh clone remains reproducible.
+The `etlegacy/` and `quakejs/` directories are local reference workspaces and are not committed. ET: Legacy is pinned to a known revision; the maintained engine changes live in `patches/etlegacy-wasm.patch`, `patches/etlegacy-modes.patch`, and `patches/etlegacy-eth32nix.patch`. The ETH32NIX sources in `eth32nix/` are copied into cgame by `setup-etlegacy.sh`. Make engine changes in the prepared `etlegacy/` tree and keep the corresponding patch current so a fresh clone remains reproducible.
 
 Before submitting a change:
 

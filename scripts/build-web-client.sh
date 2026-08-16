@@ -12,6 +12,11 @@ if ! command -v emcmake >/dev/null 2>&1 || ! command -v emmake >/dev/null 2>&1; 
 fi
 mkdir -p "$ROOT/web/client" "$ROOT/etlegacy/build-web"
 cd "$ROOT/etlegacy/build-web"
+if [ -f "$ROOT/etlegacy/src/cgame/eth32nix.c" ] &&
+   [ -f build.ninja ] &&
+   ! grep -q eth32nix.c build.ninja; then
+  rm -f CMakeCache.txt
+fi
 if [ ! -f CMakeCache.txt ]; then
   emcmake cmake "$ROOT/etlegacy" \
     -GNinja \

@@ -323,26 +323,26 @@ async function readCvars(page, names) {
         window.Module.ccall('Cbuf_AddText', null, ['string'], [text + '\n']);
       }, command);
 
-      push('begin ' + (hookScan ? 'rshook' : 'normal-render') + ' follow scan');
-      await engineCommand('set cl_rshook ' + (hookScan ? '1' : '0'));
+      push('begin ' + (hookScan ? 'aimbot' : 'normal-render') + ' follow scan');
+      await engineCommand('set cl_aimbot ' + (hookScan ? '1' : '0'));
       await engineCommand('team s');
       await page.waitForTimeout(1200);
       for (const clientNum of [1, 2, 3, 4, 5, 6, 8, 9, 12]) {
         await engineCommand('follow ' + clientNum);
         await page.waitForTimeout(700);
         await page.screenshot({
-          path: path.join(OUT, 'follow-' + clientNum + '-' + (hookScan ? 'rshook' : 'normal') + '.png')
+          path: path.join(OUT, 'follow-' + clientNum + '-' + (hookScan ? 'aimbot' : 'normal') + '.png')
         });
         if (hookScan) {
           /* The shell uses tcMod scroll; retain a nearby second frame so visual
            * acceptance can distinguish animation from a static color wash. */
           await page.waitForTimeout(350);
           await page.screenshot({
-            path: path.join(OUT, 'follow-' + clientNum + '-rshook-b.png')
+            path: path.join(OUT, 'follow-' + clientNum + '-aimbot-b.png')
           });
         }
       }
-      push('finished ' + (hookScan ? 'rshook' : 'normal-render') + ' follow scan');
+      push('finished ' + (hookScan ? 'aimbot' : 'normal-render') + ' follow scan');
     }
   }
 

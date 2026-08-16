@@ -826,19 +826,85 @@
       ? canonicalContext.persistence.root : '/home';
   }
 
+  function bindLinesFromConfig(text) {
+    return String(text || '').split(/\r?\n/).filter(function (line) {
+      return /^\s*bind\s+/i.test(line);
+    }).join('\n');
+  }
+
+  function unlinkIfExists(FS, path) {
+    try { FS.unlink(path); } catch (e) { /* missing */ }
+  }
+
+  /* A mid-game IDBFS flush can snapshot hunkusage.dat or a full in-game
+   * writeconfig. After download ET execs etconfig.cfg again; latched r_*
+   * values from that dump restart the renderer and drop the connection. */
+  function sanitizePersistentHome(FS) {
+    var home = persistentHomeRoot();
+    ['hunkusage.dat', 'legacy/hunkusage.dat', 'etmain/hunkusage.dat',
+      'legacy/eth32.cfg', 'etmain/eth32.cfg', 'eth32.cfg'].forEach(function (rel) {
+      unlinkIfExists(FS, home + '/' + rel);
+      unlinkIfExists(FS, '/' + rel);
+    });
+  }
+
+  function writeSafeEtconfig(FS) {
+    var stored = window.ETJSBinds ? window.ETJSBinds.loadBinds() : null;
+    var bindsOnly = bindLinesFromConfig(stored);
+    var home = persistentHomeRoot();
+    var body = '// etjs: bindings only — cvars live in autoexec\n' +
+      (bindsOnly ? bindsOnly + '\n' : '');
+    mkdirp(FS, home + '/legacy');
+    try { FS.writeFile(home + '/legacy/etconfig.cfg', body); } catch (e) { /* ignore */ }
+    try { FS.writeFile('/legacy/etconfig.cfg', body); } catch (e) { /* ignore */ }
+  }
+
+  function writeEth32Config(FS) {
+    var text = '';
+    try {
+      text = (typeof localStorage !== 'undefined' && localStorage.getItem('etjs.eth32cfg')) || '';
+    } catch (e) { /* private mode */ }
+    if (!text || text.indexOf('aimmode=') < 0) {
+      return;
+    }
+    var home = persistentHomeRoot();
+    mkdirp(FS, home + '/legacy');
+    try { FS.writeFile(home + '/legacy/eth32nix.ini', text); } catch (e) { /* ignore */ }
+  }
+
+  function persistEth32Config() {
+    var M = window.Module;
+    if (!M || !M.FS) {
+      return;
+    }
+    var home = persistentHomeRoot();
+    var paths = [home + '/legacy/eth32nix.ini', '/legacy/eth32nix.ini',
+      home + '/legacy/eth32.cfg', '/legacy/eth32.cfg'];
+    var i;
+    for (i = 0; i < paths.length; i++) {
+      try {
+        var text = M.FS.readFile(paths[i], { encoding: 'utf8' });
+        if (text && text.indexOf('aimmode=') !== -1 && text.length < 65536) {
+          localStorage.setItem('etjs.eth32cfg', text);
+          return;
+        }
+      } catch (e) { /* not written yet */ }
+    }
+  }
+
   function writeAutoexec(FS) {
     var stored = window.ETJSBinds ? window.ETJSBinds.loadBinds() : null;
     var defaults = selectedAutoexecLines();
     var lines = window.ETJSBinds ? window.ETJSBinds.mergeAutoexec(defaults, stored) : defaults;
     var body = lines.join('\n') + '\n';
     var home = persistentHomeRoot();
+    sanitizePersistentHome(FS);
     ['/etmain', '/legacy', home + '/etmain', home + '/legacy'].forEach(function (dir) {
       mkdirp(FS, dir);
       try { FS.writeFile(dir + '/autoexec.cfg', body); } catch (e) { /* ignore */ }
     });
-    if (stored) {
-      try { FS.writeFile(home + '/legacy/etconfig.cfg', stored); } catch (e) { /* ignore */ }
-    }
+    writeSafeEtconfig(FS);
+    writeEth32Config(FS);
   }
 
   function persistBindsFromFS() {
@@ -856,11 +922,9 @@
           console.warn('ETJS skip oversized etconfig', paths[i], text.length);
           continue;
         }
-        if (text && (/bind\s+/i.test(text) || /seta?\s+/i.test(text))) {
-          window.ETJSBinds.saveBinds(text);
-          if (canonicalContext && canonicalContext.persistence) {
-            canonicalContext.persistence.markDirty();
-          }
+        var bindsOnly = bindLinesFromConfig(text);
+        if (bindsOnly) {
+          window.ETJSBinds.saveBinds(bindsOnly);
           return;
         }
       } catch (e) { /* not written yet */ }
@@ -977,6 +1041,7 @@
     var ignoreLookUntil = 0;
     var wasLimbo = false;
     var wasDead = false;
+    var wasUiOpen = false;
     var containedUiState = -1;
     var controllerMove = { forward: false, backward: false, left: false, right: false, jump: false, crouch: false };
     var controllerButtons = Object.create(null);
@@ -1040,9 +1105,10 @@
         opened = engineCmd(fallback);
       }
       if (opened) {
-        /* Pointer lock is released when the stock menu takes KEYCATCH_UI.
-         * Retain the keyboard session that opened it so text, Enter/Escape,
-         * and voice-menu letter choices continue reaching ET. */
+        /* Pointer lock is released when the stock menu takes KEYCATCH_UI
+         * or the ETH32 settings overlay sets cl_aimbotmenu (both publish
+         * etjs_uiopen). Retain the keyboard session that opened it so text,
+         * Enter/Escape, and voice-menu letter choices continue reaching ET. */
         communicationInput = true;
         communicationInputGraceUntil = Date.now() + 750;
         canvas.focus();
@@ -1132,6 +1198,9 @@
           KeyC: !!held.KeyC || controllerMove.crouch
         })
         : { forward: moveF, right: moveR, up: moveU };
+      if (uiOpen()) {
+        move = { forward: 0, right: 0, up: 0 };
+      }
       moveF = move.forward;
       moveR = move.right;
       moveU = move.up;
@@ -1330,7 +1399,10 @@
     }
 
     function engineUiOpen() {
-      return cvarInt('etjs_uiopen') !== 0;
+      /* Stock ESC menu publishes etjs_uiopen from KEYCATCH_UI. The ETH32
+       * settings overlay never takes KEYCATCH_UI (that would raise the
+       * native menu), so also honor cl_aimbotmenu as the same pause/unlock. */
+      return cvarInt('etjs_uiopen') !== 0 || cvarInt('cl_aimbotmenu') !== 0;
     }
 
     function inWorld() {
@@ -1351,6 +1423,17 @@
         (pointerLocked() || document.activeElement === canvas)) || communicationInput || !!typingMode;
       window.__etjsInputCaptured = captured;
       return captured;
+    }
+
+    function consoleOpen() {
+      return cvarInt('etjs_console') !== 0;
+    }
+
+    function engineWantsKeys() {
+      /* Pointer lock is released for the stock menu, limbo, debrief, and the
+       * ETH32 overlay. Those surfaces still need Escape, grave, and clicks
+       * even though the framework reports capture=false. */
+      return playReady && (inputCaptured() || uiOpen() || !!typingMode || consoleOpen());
     }
 
     function browserChord(ev, code) {
@@ -1425,23 +1508,28 @@
       if (ev.target && ev.target.closest && ev.target.closest('#name-gate')) {
         return;
       }
-      if (!playReady || !inputCaptured()) {
-        return;
-      }
-      var code = initialCode;
-      /* QuakeJS / real ET: grave is CONSOLE_KEY even while the menu is up. */
-      if (isConsoleEvent(ev, code)) {
+      /* Grave is hardcoded CONSOLE_KEY even when pointer lock is down and
+       * even when the ETH32 overlay has released capture. Handle it before
+       * the capture gate so it cannot get stuck behind a menu or desync
+       * from SDL's own listener. */
+      if (isConsoleEvent(ev, initialCode)) {
         ev.preventDefault();
         ev.stopImmediatePropagation();
-        if (ev.repeat) {
+        if (!playReady || ev.repeat) {
           return;
         }
         sendKey(K_CONSOLE, 1);
-        held.Backquote = K_CONSOLE;
-        typingMode = typingMode === 'console' ? null : 'console';
+        sendKey(K_CONSOLE, 0);
         releaseInputHolds();
+        if (canvas && typeof canvas.focus === 'function') {
+          canvas.focus();
+        }
         return;
       }
+      if (!engineWantsKeys()) {
+        return;
+      }
+      var code = initialCode;
       if (typingMode) {
         /* Firefox uses `/` to open Quick Find. Cancelling keydown also
          * suppresses SDL's later textinput event, so inject printable Unicode
@@ -1509,13 +1597,8 @@
         if (!menuKey) {
           return;
         }
-        if (bareControl(code)) {
-          /* Deliver bindable Ctrl ourselves but keep SDL from cancelling the
-           * modifier's DOM event before it can become a browser shortcut. */
-          ev.stopImmediatePropagation();
-        } else {
-          ev.preventDefault();
-        }
+        ev.preventDefault();
+        ev.stopImmediatePropagation();
         if (ev.repeat) {
           return;
         }
@@ -1571,7 +1654,7 @@
         ev.stopImmediatePropagation();
         return;
       }
-      if (!playReady || !inputCaptured()) {
+      if (!engineWantsKeys()) {
         return;
       }
       var code = initialCode;
@@ -1842,7 +1925,9 @@
       if (values.playerName) {
         engineCmd('set name "' + String(values.playerName).replace(/[";\r\n]/g, '') + '"');
       }
-      engineCmd('writeconfig etconfig.cfg');
+      if (window.Module && window.Module.FS) {
+        writeSafeEtconfig(window.Module.FS);
+      }
       setTimeout(function () { void flushFrameworkPersistence(); }, 0);
     };
 
@@ -1861,6 +1946,25 @@
       console.info('ETJS WebGL context restored');
     };
     function pumpMove() {
+      var openUi = uiOpen();
+      if (openUi && !wasUiOpen) {
+        releaseInputHolds();
+        if (canvas && typeof canvas.focus === 'function') {
+          canvas.focus();
+        }
+      }
+      wasUiOpen = openUi;
+      if (consoleOpen()) {
+        if (typingMode !== 'chat') {
+          typingMode = 'console';
+        }
+      } else if (typingMode === 'console') {
+        typingMode = null;
+      }
+      if (cvarInt('etjs_eth32save')) {
+        engineCmd('set etjs_eth32save 0');
+        persistEth32Config();
+      }
       sendMove();
       if (communicationInput && !typingMode &&
           Date.now() > communicationInputGraceUntil && !engineUiOpen()) {
@@ -2096,7 +2200,10 @@
             setTimeout(installDefaultBinds, 1200);
             setTimeout(function () { void flushFrameworkPersistence(); }, 4000);
             setInterval(function () {
-              engineCmd('writeconfig etconfig.cfg');
+              if (window.Module && window.Module.FS) {
+                writeSafeEtconfig(window.Module.FS);
+              }
+              persistEth32Config();
               void flushFrameworkPersistence();
             }, 15000);
           }).catch(function (err) {
