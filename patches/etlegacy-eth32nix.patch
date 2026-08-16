@@ -1,24 +1,22 @@
 diff -Naur a/src/cgame/cg_cvars.c b/src/cgame/cg_cvars.c
 --- a/src/cgame/cg_cvars.c
 +++ b/src/cgame/cg_cvars.c
-@@ -67,9 +67,8 @@
+@@ -67,8 +67,8 @@
  vmCvar_t cg_brassTime;
  vmCvar_t cg_letterbox;
  vmCvar_t cg_drawGun;
 -vmCvar_t cg_rshook;
  #ifdef __EMSCRIPTEN__
--vmCvar_t cg_cchook;
 +vmCvar_t cg_aimbot;
  vmCvar_t cg_etjsContainUi;
  vmCvar_t cg_etjsArcade;
  #endif
-@@ -347,9 +346,8 @@
+@@ -346,8 +346,8 @@
  {
  	{ &cg_autoswitch,                         "cg_autoswitch",                         "2",           CVAR_ARCHIVE,                 0 },
  	{ &cg_drawGun,                            "cg_drawGun",                            "1",           CVAR_ARCHIVE,                 0 },
 -	{ &cg_rshook,                             "cl_rshook",                             "0",           0,                            0 },
  #ifdef __EMSCRIPTEN__
--	{ &cg_cchook,                             "cl_cchook",                             "0",           0,                            0 },
 +	{ &cg_aimbot,                             "cl_aimbot",                             "0",           0,                            0 },
  	{ &cg_etjsContainUi,                      "etjs_containui",                        "1",           0,                            0 },
  	{ &cg_etjsArcade,                         "g_etjsArcade",                          "0",           0,                            0 },
@@ -26,13 +24,12 @@ diff -Naur a/src/cgame/cg_cvars.c b/src/cgame/cg_cvars.c
 diff -Naur a/src/cgame/cg_cvars.h b/src/cgame/cg_cvars.h
 --- a/src/cgame/cg_cvars.h
 +++ b/src/cgame/cg_cvars.h
-@@ -72,9 +72,8 @@
+@@ -72,8 +72,8 @@
  extern vmCvar_t cg_gun_y;
  extern vmCvar_t cg_gun_z;
  extern vmCvar_t cg_drawGun;
 -extern vmCvar_t cg_rshook;
  #ifdef __EMSCRIPTEN__
--extern vmCvar_t cg_cchook;
 +extern vmCvar_t cg_aimbot;
  extern vmCvar_t cg_etjsArcade;
  extern vmCvar_t cg_etjsContainUi;
@@ -77,7 +74,7 @@ diff -Naur a/src/cgame/cg_ents.c b/src/cgame/cg_ents.c
  {
  	int localTeam;
  
--	if (!cg_etjsArcade.integer || !(cg_rshook.integer || cg_cchook.integer) || !cg.snap || !ETJS_IsHookDeployable(state))
+-	if (!cg_etjsArcade.integer || !cg_rshook.integer || !cg.snap || !ETJS_IsHookDeployable(state))
 +	if (!ETH32_RevealDeployable(state) || !cg.snap || !ETJS_IsHookDeployable(state))
  	{
  		return qfalse;
@@ -169,7 +166,7 @@ diff -Naur a/src/cgame/cg_players.c b/src/cgame/cg_players.c
  	trap_R_AddRefEntityToScene(ent);
  
  #ifdef __EMSCRIPTEN__
--	if (cg_etjsArcade.integer && (cg_rshook.integer || cg_cchook.integer)
+-	if (cg_etjsArcade.integer && cg_rshook.integer
 -	    && es->eType == ET_PLAYER
 -	    && cg.snap
 -	    && es->number != cg.snap->ps.clientNum
@@ -242,106 +239,467 @@ diff -Naur a/src/cgame/cg_view.c b/src/cgame/cg_view.c
  /**
   * Return a sane, slightly-low head target for the ETJS assist.  Head tags are
   * generated while drawing a model, so never trust one without also checking
-@@ -2923,6 +2927,7 @@
- 		etjsCcHookTarget = -1;
- 	}
+@@ -2573,6 +2577,357 @@
+ 	CG_Trace(&trace, from, NULL, NULL, aimPoint, cg.clientNum, MASK_SHOT);
+ 	return trace.fraction > 0.98f || trace.entityNum == clientNum;
  }
++
++/*
++ * CCHookReloaded aimbot (arcade /cchook), ported off the published source
++ * without the injector: hitscan only, head box then body box, screen-distance
++ * ranking, sticky target while attack is held.
++ */
++#define ETJS_CCHOOK_HEAD_STEP 0.5f
++#define ETJS_CCHOOK_BODY_STEP 0.3f
++
++static qboolean ETJS_CcHookHitscan(int weapon)
++{
++	switch (weapon)
++	{
++	case WP_KNIFE:
++	case WP_KNIFE_KABAR:
++	case WP_LUGER:
++	case WP_COLT:
++	case WP_SILENCER:
++	case WP_SILENCED_COLT:
++	case WP_AKIMBO_COLT:
++	case WP_AKIMBO_LUGER:
++	case WP_AKIMBO_SILENCEDCOLT:
++	case WP_AKIMBO_SILENCEDLUGER:
++	case WP_MP40:
++	case WP_THOMPSON:
++	case WP_STEN:
++	case WP_MP34:
++	case WP_KAR98:
++	case WP_CARBINE:
++	case WP_GARAND:
++	case WP_GARAND_SCOPE:
++	case WP_K43:
++	case WP_K43_SCOPE:
++	case WP_FG42:
++	case WP_FG42_SCOPE:
++	case WP_MOBILE_MG42:
++	case WP_MOBILE_MG42_SET:
++	case WP_MOBILE_BROWNING:
++	case WP_MOBILE_BROWNING_SET:
++		return qtrue;
++	default:
++		return qfalse;
++	}
++}
++
++static qboolean ETJS_CcHookPointVisible(const vec3_t from, const vec3_t pt, int skip)
++{
++	trace_t tr;
++
++	CG_Trace(&tr, from, NULL, NULL, pt, cg.clientNum, MASK_SHOT);
++	return tr.fraction > 0.98f || tr.entityNum == skip;
++}
++
++static qboolean ETJS_CcHookBoxVisible(const vec3_t from, const vec3_t mins, const vec3_t maxs,
++                                      float step, vec3_t visOut, int skip)
++{
++	vec3_t boxSize, scaledMins, scaledMaxs, mid;
++	vec3_t corners[8];
++	float  sd;
++	int    i;
++
++	VectorAdd(mins, maxs, visOut);
++	VectorScale(visOut, 0.5f, visOut);
++	if (ETJS_CcHookPointVisible(from, visOut, skip))
++	{
++		return qtrue;
++	}
++
++	boxSize[0] = Q_fabs(maxs[0] - mins[0]);
++	boxSize[1] = Q_fabs(maxs[1] - mins[1]);
++	boxSize[2] = Q_fabs(maxs[2] - mins[2]);
++
++	for (sd = step; sd < 0.99f; sd += step)
++	{
++		VectorScale(boxSize, -sd * 0.5f, scaledMins);
++		VectorScale(boxSize, sd * 0.5f, scaledMaxs);
++		VectorAdd(scaledMins, visOut, scaledMins);
++		VectorAdd(scaledMaxs, visOut, scaledMaxs);
++
++		VectorSet(corners[0], scaledMaxs[0], scaledMaxs[1], scaledMaxs[2]);
++		VectorSet(corners[1], scaledMaxs[0], scaledMaxs[1], scaledMins[2]);
++		VectorSet(corners[2], scaledMins[0], scaledMaxs[1], scaledMins[2]);
++		VectorSet(corners[3], scaledMins[0], scaledMaxs[1], scaledMaxs[2]);
++		VectorSet(corners[4], scaledMaxs[0], scaledMins[1], scaledMaxs[2]);
++		VectorSet(corners[5], scaledMaxs[0], scaledMins[1], scaledMins[2]);
++		VectorSet(corners[6], scaledMins[0], scaledMins[1], scaledMins[2]);
++		VectorSet(corners[7], scaledMins[0], scaledMins[1], scaledMaxs[2]);
++
++		for (i = 0; i < 7; i++)
++		{
++			VectorAdd(corners[i], corners[i + 1], mid);
++			VectorScale(mid, 0.5f, mid);
++			if (ETJS_CcHookPointVisible(from, mid, skip))
++			{
++				VectorCopy(mid, visOut);
++				return qtrue;
++			}
++		}
++		for (i = 0; i < 8; i++)
++		{
++			if (ETJS_CcHookPointVisible(from, corners[i], skip))
++			{
++				VectorCopy(corners[i], visOut);
++				return qtrue;
++			}
++		}
++	}
++
++	return qfalse;
++}
++
++static qboolean ETJS_CcHookWorldToScreen(const vec3_t point, float *x, float *y)
++{
++	vec3_t trans;
++	float  z, px, py;
++
++	VectorSubtract(point, cg.refdef.vieworg, trans);
++	z = DotProduct(trans, cg.refdef.viewaxis[0]);
++	if (z <= 8.f)
++	{
++		return qfalse;
++	}
++
++	px = tan((double)cg.refdef.fov_x * M_PI / 360.0);
++	py = tan((double)cg.refdef.fov_y * M_PI / 360.0);
++	if (px == 0.f || py == 0.f)
++	{
++		return qfalse;
++	}
++
++	*x = 320.f - DotProduct(trans, cg.refdef.viewaxis[1]) * 320.f / (z * px);
++	*y = 240.f - DotProduct(trans, cg.refdef.viewaxis[2]) * 240.f / (z * py);
++	return qtrue;
++}
++
++static void ETJS_CcHookHeadOffset(const centity_t *cent, vec3_t offset)
++{
++	qboolean moving = VectorLengthSquared(cent->currentState.pos.trDelta) > 1.f;
++
++	/* ET: Legacy head hitbox from CCHookReloaded. */
++	if (cent->currentState.eFlags & (EF_PRONE | EF_PRONE_MOVING))
++	{
++		VectorSet(offset, 0.0f, 0.3f, 6.9f);
++	}
++	else if (cent->currentState.eFlags & EF_CROUCHING)
++	{
++		if (moving)
++		{
++			VectorSet(offset, 0.0f, -0.7f, 7.0f);
++		}
++		else
++		{
++			VectorSet(offset, -0.3f, 0.8f, 7.0f);
++		}
++	}
++	else if (moving)
++	{
++		VectorSet(offset, 0.0f, 0.0f, 6.5f);
++	}
++	else
++	{
++		VectorSet(offset, 0.3f, 0.3f, 7.0f);
++	}
++}
++
++static qboolean ETJS_CcHookEnemy(int clientNum, int localTeam, int enemyTeam)
++{
++	centity_t *cent = &cg_entities[clientNum];
++
++	if (clientNum == cg.clientNum || !cgs.clientinfo[clientNum].infoValid)
++	{
++		return qfalse;
++	}
++	if (!cent->currentValid || cent->currentState.eType != ET_PLAYER ||
++	    (cent->currentState.eFlags & EF_DEAD))
++	{
++		return qfalse;
++	}
++	if (cent->currentState.powerups & (1 << PW_INVULNERABLE))
++	{
++		return qfalse;
++	}
++	if (enemyTeam == TEAM_FREE ||
++	    (cent->currentState.teamNum != enemyTeam &&
++	     cgs.clientinfo[clientNum].team != enemyTeam) ||
++	    cent->currentState.teamNum == localTeam ||
++	    cgs.clientinfo[clientNum].team == localTeam)
++	{
++		return qfalse;
++	}
++	return qtrue;
++}
++
++static qboolean ETJS_CcHookGetAimPos(int clientNum, qboolean head, const vec3_t from, vec3_t aimPos)
++{
++	centity_t    *cent = &cg_entities[clientNum];
++	orientation_t tag;
++	vec3_t        offset, mins, maxs, origin;
++	vec3_t        tagDelta;
++	qboolean      haveTag = qfalse;
++
++	if (CG_GetTag(clientNum, "tag_head", &tag))
++	{
++		haveTag = qtrue;
++	}
++	else if (cent->pe.headRefEnt.hModel)
++	{
++		VectorCopy(cent->pe.headRefEnt.origin, tag.origin);
++		AxisCopy(cent->pe.headRefEnt.axis, tag.axis);
++		VectorSubtract(tag.origin, cent->lerpOrigin, tagDelta);
++		haveTag = VectorLengthSquared(tagDelta) <= Square(128.f);
++	}
++
++	if (head)
++	{
++		if (!haveTag)
++		{
++			return qfalse;
++		}
++
++		ETJS_CcHookHeadOffset(cent, offset);
++		VectorCopy(tag.origin, origin);
++		VectorMA(origin, offset[0], tag.axis[0], origin);
++		VectorMA(origin, offset[1], tag.axis[1], origin);
++		VectorMA(origin, offset[2], tag.axis[2], origin);
++
++		VectorSet(mins, -5.5f, -5.5f, -6.0f);
++		VectorSet(maxs, 5.5f, 5.5f, 6.0f);
++		VectorAdd(mins, origin, mins);
++		VectorAdd(maxs, origin, maxs);
++		return ETJS_CcHookBoxVisible(from, mins, maxs, ETJS_CCHOOK_HEAD_STEP, aimPos, clientNum);
++	}
++
++	VectorCopy(cent->lerpOrigin, origin);
++	VectorSet(mins, -18.f, -18.f, -24.f);
++	VectorSet(maxs, 18.f, 18.f, 48.f);
++	VectorAdd(mins, origin, mins);
++	VectorAdd(maxs, origin, maxs);
++	return ETJS_CcHookBoxVisible(from, mins, maxs, ETJS_CCHOOK_BODY_STEP, aimPos, clientNum);
++}
++
++static int ETJS_CcHookPickTarget(const vec3_t from, int localTeam, int enemyTeam, qboolean head, vec3_t aimPos)
++{
++	int    i, best = -1;
++	float  bestDist = 1e30f;
++	vec3_t localAim;
++	float  x, y, dist;
++
++	for (i = 0; i < MAX_CLIENTS; i++)
++	{
++		if (!ETJS_CcHookEnemy(i, localTeam, enemyTeam))
++		{
++			continue;
++		}
++		if (!ETJS_CcHookGetAimPos(i, head, from, localAim))
++		{
++			continue;
++		}
++		if (!ETJS_CcHookWorldToScreen(localAim, &x, &y))
++		{
++			continue;
++		}
++
++		dist = sqrt((x - 320.f) * (x - 320.f) + (y - 240.f) * (y - 240.f));
++		if (best >= 0 && dist >= bestDist)
++		{
++			continue;
++		}
++		best     = i;
++		bestDist = dist;
++		VectorCopy(localAim, aimPos);
++	}
++
++	return best;
++}
++
++static qboolean ETJS_ApplyHookAim(const vec3_t shooterOrigin, const vec3_t aimPoint, int target, qboolean snapLimit)
++{
++	vec3_t to, ang;
++	int    rawYaw, rawPitch;
++
++	VectorSubtract(aimPoint, shooterOrigin, to);
++	vectoangles(to, ang);
++	if (Q_fabs(AngleNormalize180(ang[PITCH])) > 70.f)
++	{
++		return qfalse;
++	}
++	if (snapLimit &&
++	    Q_fabs(AngleDelta(ang[PITCH], cg.predictedPlayerState.viewangles[PITCH])) > 45.f)
++	{
++		return qfalse;
++	}
++
++	rawYaw   = ANGLE2SHORT(ang[YAW]) - cg.predictedPlayerState.delta_angles[YAW];
++	rawPitch = ANGLE2SHORT(ang[PITCH]) - cg.predictedPlayerState.delta_angles[PITCH];
++	trap_Cvar_Set("etjs_addyaw", va("%f", SHORT2ANGLE(rawYaw)));
++	trap_Cvar_Set("etjs_addpitch", va("%f", SHORT2ANGLE(rawPitch)));
++	trap_Cvar_Set("etjs_aimworldpitch", va("%f", AngleNormalize180(ang[PITCH])));
++	trap_Cvar_Set("etjs_target", va("%d", target));
++	cg.predictedPlayerState.viewangles[YAW]   = ang[YAW];
++	cg.predictedPlayerState.viewangles[PITCH] = ang[PITCH];
++	return qtrue;
++}
++
++static void ETJS_CcHookAim(const vec3_t shooterOrigin)
++{
++	static int etjsCcHookTarget = -1;
++	int        localTeam = cg.snap->ps.teamNum;
++	int        enemyTeam;
++	int        target;
++	vec3_t     aimPoint;
++	qboolean   valid = qfalse;
++
++	if (localTeam != TEAM_AXIS && localTeam != TEAM_ALLIES)
++	{
++		localTeam = cgs.clientinfo[cg.clientNum].team;
++	}
++	enemyTeam = (localTeam == TEAM_AXIS) ? TEAM_ALLIES
++	            : ((localTeam == TEAM_ALLIES) ? TEAM_AXIS : TEAM_FREE);
++
++	if (etjsCcHookTarget >= 0)
++	{
++		if (ETJS_CcHookEnemy(etjsCcHookTarget, localTeam, enemyTeam) &&
++		    (ETJS_CcHookGetAimPos(etjsCcHookTarget, qtrue, shooterOrigin, aimPoint) ||
++		     ETJS_CcHookGetAimPos(etjsCcHookTarget, qfalse, shooterOrigin, aimPoint)))
++		{
++			valid  = qtrue;
++			target = etjsCcHookTarget;
++		}
++	}
++
++	if (!valid)
++	{
++		target = ETJS_CcHookPickTarget(shooterOrigin, localTeam, enemyTeam, qtrue, aimPoint);
++		if (target < 0)
++		{
++			target = ETJS_CcHookPickTarget(shooterOrigin, localTeam, enemyTeam, qfalse, aimPoint);
++		}
++		valid = target >= 0;
++	}
++
++	if (valid && ETJS_ApplyHookAim(shooterOrigin, aimPoint, target, qfalse))
++	{
++		etjsCcHookTarget = target;
++	}
++	else
++	{
++		etjsCcHookTarget = -1;
++	}
++}
 +#endif /* superseded by compiled-in ETH32NIX */
  #endif
  
  /**
-@@ -3166,97 +3171,7 @@
+@@ -2816,108 +3171,7 @@
  			/* Invalidate every frame before CL_FinishMove consumes the result.
  			 * This also prevents attack-to-tap-out while dead from reusing aim. */
  			trap_Cvar_Set("etjs_target", "-1");
--			if (cg_etjsArcade.integer && (cg_rshook.integer || cg_cchook.integer)
--			    && (ucmd.buttons & BUTTON_ATTACK) && cg.snap
+-			if (cg_etjsArcade.integer && cg_rshook.integer && (ucmd.buttons & BUTTON_ATTACK) && cg.snap
 -			    && cg.predictedPlayerState.pm_type == PM_NORMAL
 -			    && cg.predictedPlayerState.stats[STAT_HEALTH] > 0)
 -			{
--				vec3_t shooterOrigin;
+-				int      i, best = -1;
+-				float    bestScore = 1e30f;
+-				vec3_t   fwd, to, ang, aimPoint, shooterOrigin;
+-				int      localTeam = cg.snap->ps.teamNum;
+-				int      enemyTeam;
 -
+-				if (localTeam != TEAM_AXIS && localTeam != TEAM_ALLIES)
+-				{
+-					localTeam = cgs.clientinfo[cg.clientNum].team;
+-				}
+-				enemyTeam = (localTeam == TEAM_AXIS) ? TEAM_ALLIES
+-				            : ((localTeam == TEAM_ALLIES) ? TEAM_AXIS : TEAM_FREE);
+-
+-				AngleVectors(cg.predictedPlayerState.viewangles, fwd, NULL, NULL);
 -				VectorCopy(cg.predictedPlayerState.origin, shooterOrigin);
 -				shooterOrigin[2] += cg.predictedPlayerState.viewheight;
--
--				if (cg_cchook.integer &&
--				    ETJS_CcHookHitscan(cg.predictedPlayerState.weapon))
+-				for (i = 0; i < MAX_CLIENTS; i++)
 -				{
--					ETJS_CcHookAim(shooterOrigin);
+-					centity_t *cent = &cg_entities[i];
+-					float     d, len, score;
+-
+-					if (i == cg.clientNum || !cgs.clientinfo[i].infoValid)
+-					{
+-						continue;
+-					}
+-					if (!ETJS_RsAimPoint(i, aimPoint))
+-					{
+-						continue;
+-					}
+-					/* Require a positively identified enemy from both live entity and
+-					 * client metadata where available. Never infer enemy from "not self". */
+-					if (enemyTeam == TEAM_FREE ||
+-					    (cent->currentState.teamNum != enemyTeam &&
+-					     cgs.clientinfo[i].team != enemyTeam) ||
+-					    cent->currentState.teamNum == localTeam ||
+-					    cgs.clientinfo[i].team == localTeam)
+-					{
+-						continue;
+-					}
+-
+-					VectorSubtract(aimPoint, shooterOrigin, to);
+-					len    = VectorNormalize(to);
+-					if (len < 8.f || len > 32768.f || Q_fabs(to[2]) > 0.94f)
+-					{
+-						continue;
+-					}
+-					d = DotProduct(fwd, to);
+-					if (d < 0.55f)
+-					{
+-						continue;
+-					}
+-
+-					/* Never acquire through world geometry.  Treat visibility as a
+-					 * hard safety condition instead of a score preference. */
+-					if (!ETJS_RsTargetVisible(i, shooterOrigin, aimPoint))
+-					{
+-						continue;
+-					}
+-
+-					/* Distance is primary while angular error breaks close calls. */
+-					score = len / (0.35f + d * d);
+-					if (score < bestScore)
+-					{
+-						bestScore = score;
+-						best      = i;
+-					}
 -				}
--				else if (cg_rshook.integer)
+-				if (best >= 0)
 -				{
--					int      i, best = -1;
--					float    bestScore = 1e30f;
--					vec3_t   fwd, to, aimPoint;
--					int      localTeam = cg.snap->ps.teamNum;
--					int      enemyTeam;
+-					int rawYaw, rawPitch;
 -
--					if (localTeam != TEAM_AXIS && localTeam != TEAM_ALLIES)
+-					if (ETJS_RsAimPoint(best, aimPoint))
 -					{
--						localTeam = cgs.clientinfo[cg.clientNum].team;
--					}
--					enemyTeam = (localTeam == TEAM_AXIS) ? TEAM_ALLIES
--					            : ((localTeam == TEAM_ALLIES) ? TEAM_AXIS : TEAM_FREE);
--
--					AngleVectors(cg.predictedPlayerState.viewangles, fwd, NULL, NULL);
--					for (i = 0; i < MAX_CLIENTS; i++)
--					{
--						centity_t *cent = &cg_entities[i];
--						float     d, len, score;
--
--						if (i == cg.clientNum || !cgs.clientinfo[i].infoValid)
--						{
--							continue;
--						}
--						if (!ETJS_RsAimPoint(i, aimPoint))
--						{
--							continue;
--						}
--						/* Require a positively identified enemy from both live entity and
--						 * client metadata where available. Never infer enemy from "not self". */
--						if (enemyTeam == TEAM_FREE ||
--						    (cent->currentState.teamNum != enemyTeam &&
--						     cgs.clientinfo[i].team != enemyTeam) ||
--						    cent->currentState.teamNum == localTeam ||
--						    cgs.clientinfo[i].team == localTeam)
--						{
--							continue;
--						}
--
 -						VectorSubtract(aimPoint, shooterOrigin, to);
--						len    = VectorNormalize(to);
--						if (len < 8.f || len > 32768.f || Q_fabs(to[2]) > 0.94f)
--						{
--							continue;
--						}
--						d = DotProduct(fwd, to);
--						if (d < 0.55f)
--						{
--							continue;
--						}
--
--						/* Never acquire through world geometry.  Treat visibility as a
--						 * hard safety condition instead of a score preference. */
--						if (!ETJS_RsTargetVisible(i, shooterOrigin, aimPoint))
--						{
--							continue;
--						}
--
--						/* Distance is primary while angular error breaks close calls. */
--						score = len / (0.35f + d * d);
--						if (score < bestScore)
--						{
--							bestScore = score;
--							best      = i;
--						}
--					}
--					if (best >= 0 && ETJS_RsAimPoint(best, aimPoint))
--					{
+-						vectoangles(to, ang);
 -						/* Reject malformed/stale transforms at the last possible point.
 -						 * Keep both the absolute pitch and the one-frame vertical turn well
 -						 * away from a straight-up/down camera snap. */
--						ETJS_ApplyHookAim(shooterOrigin, aimPoint, best, qtrue);
+-						if (Q_fabs(AngleNormalize180(ang[PITCH])) <= 70.f
+-						    && Q_fabs(AngleDelta(ang[PITCH],
+-						                         cg.predictedPlayerState.viewangles[PITCH])) <= 45.f)
+-						{
+-							/* CL_FinishMove writes raw usercmd angles; pmove adds the
+-							 * server delta_angles. Convert the desired world aim back to
+-							 * command space so the shot and rendered crosshair coincide. */
+-							rawYaw = ANGLE2SHORT(ang[YAW]) - cg.predictedPlayerState.delta_angles[YAW];
+-							rawPitch = ANGLE2SHORT(ang[PITCH]) - cg.predictedPlayerState.delta_angles[PITCH];
+-							trap_Cvar_Set("etjs_addyaw", va("%f", SHORT2ANGLE(rawYaw)));
+-							trap_Cvar_Set("etjs_addpitch", va("%f", SHORT2ANGLE(rawPitch)));
+-							trap_Cvar_Set("etjs_aimworldpitch",
+-							              va("%f", AngleNormalize180(ang[PITCH])));
+-							trap_Cvar_Set("etjs_target", va("%d", best));
+-							cg.predictedPlayerState.viewangles[YAW]   = ang[YAW];
+-							cg.predictedPlayerState.viewangles[PITCH] = ang[PITCH];
+-						}
 -					}
 -				}
 -			}
@@ -352,30 +710,7 @@ diff -Naur a/src/cgame/cg_view.c b/src/cgame/cg_view.c
 diff -Naur a/src/client/cl_input.c b/src/client/cl_input.c
 --- a/src/client/cl_input.c
 +++ b/src/client/cl_input.c
-@@ -1153,9 +1153,19 @@
- 	}
- #ifdef __EMSCRIPTEN__
- 	if (Cvar_VariableIntegerValue("g_etjsArcade") &&
--	    (Cvar_VariableIntegerValue("cl_rshook") || Cvar_VariableIntegerValue("cl_cchook")) &&
-+	    Cvar_VariableIntegerValue("cl_aimbot") &&
-+	    !Cvar_VariableIntegerValue("cl_aimbotmenu") &&
-+	    Cvar_VariableIntegerValue("etjs_autofire"))
-+	{
-+		cmd->buttons |= BUTTON_ATTACK;
-+	}
-+	if (Cvar_VariableIntegerValue("g_etjsArcade") &&
-+	    Cvar_VariableIntegerValue("cl_aimbot") &&
-+	    !Cvar_VariableIntegerValue("cl_aimbotmenu") &&
- 	    Cvar_VariableIntegerValue("etjs_target") >= 0 &&
--	    (cmd->buttons & BUTTON_ATTACK))
-+	    ((cmd->buttons & BUTTON_ATTACK) ||
-+	     Cvar_VariableIntegerValue("etjs_autofire") ||
-+	     Cvar_VariableIntegerValue("etjs_aimlock")))
- 	{
- 		float y          = AngleNormalize180(Cvar_VariableValue("etjs_addyaw"));
- 		float p          = AngleNormalize180(Cvar_VariableValue("etjs_addpitch"));
-@@ -731,6 +731,15 @@
- void CL_KeyMove(usercmd_t *cmd)
+@@ -732,6 +732,15 @@
  {
  	int movespeed;
  	int forward = 0, side = 0, up = 0;
@@ -390,10 +725,8 @@ diff -Naur a/src/client/cl_input.c b/src/client/cl_input.c
 +#endif
  
  	// adjust for speed key / running
-@@ -994,8 +1004,16 @@
- void CL_MouseMove(usercmd_t *cmd)
- {
- 	float mx, my;
+ 	// the walking flag is to keep animations consistant
+@@ -997,6 +1006,14 @@
  	float accelSensitivity;
  	float rate;
  	float deltaStrafeSensitivity;
@@ -407,8 +740,8 @@ diff -Naur a/src/client/cl_input.c b/src/client/cl_input.c
 +#endif
  
  	// allow mouse smoothing
-@@ -1084,9 +1104,19 @@
- #ifdef __EMSCRIPTEN__
+ 	if (m_filter->integer)
+@@ -1088,8 +1105,18 @@
  	/* In browser builds, do not set BUTTON_TALK from leftover catchers.
  	 * Leftover CGAME state after limbo made pmove zero movement. Drop only
  	 * that leftover — do not clear
@@ -429,7 +762,29 @@ diff -Naur a/src/client/cl_input.c b/src/client/cl_input.c
  	{
  		if (!Cvar_VariableIntegerValue("etjs_limbo")
  		    && !Cvar_VariableIntegerValue("etjs_intermission"))
-@@ -1867,5 +1898,11 @@
+@@ -1153,9 +1180,19 @@
+ 	}
+ #ifdef __EMSCRIPTEN__
+ 	if (Cvar_VariableIntegerValue("g_etjsArcade") &&
+-	    Cvar_VariableIntegerValue("cl_rshook") &&
++	    Cvar_VariableIntegerValue("cl_aimbot") &&
++	    !Cvar_VariableIntegerValue("cl_aimbotmenu") &&
++	    Cvar_VariableIntegerValue("etjs_autofire"))
++	{
++		cmd->buttons |= BUTTON_ATTACK;
++	}
++	if (Cvar_VariableIntegerValue("g_etjsArcade") &&
++	    Cvar_VariableIntegerValue("cl_aimbot") &&
++	    !Cvar_VariableIntegerValue("cl_aimbotmenu") &&
+ 	    Cvar_VariableIntegerValue("etjs_target") >= 0 &&
+-	    (cmd->buttons & BUTTON_ATTACK))
++	    ((cmd->buttons & BUTTON_ATTACK) ||
++	     Cvar_VariableIntegerValue("etjs_autofire") ||
++	     Cvar_VariableIntegerValue("etjs_aimlock")))
+ 	{
+ 		float y          = AngleNormalize180(Cvar_VariableValue("etjs_addyaw"));
+ 		float p          = AngleNormalize180(Cvar_VariableValue("etjs_addpitch"));
+@@ -1859,6 +1896,12 @@
  void ETJS_SetMove(int forward, int right, int up)
  {
  	static int moveLog;
@@ -441,10 +796,11 @@ diff -Naur a/src/client/cl_input.c b/src/client/cl_input.c
 +	}
  
  	etjsMoveForward = forward;
+ 	etjsMoveRight   = right;
 diff -Naur a/src/client/cl_keys.c b/src/client/cl_keys.c
 --- a/src/client/cl_keys.c
 +++ b/src/client/cl_keys.c
-@@ -1701,6 +1701,14 @@
+@@ -1700,6 +1700,14 @@
  
  			return;
  		}
@@ -462,7 +818,7 @@ diff -Naur a/src/client/cl_keys.c b/src/client/cl_keys.c
 diff -Naur a/src/client/cl_main.c b/src/client/cl_main.c
 --- a/src/client/cl_main.c
 +++ b/src/client/cl_main.c
-@@ -3193,47 +3193,59 @@
+@@ -3193,25 +3193,59 @@
  
  #ifdef __EMSCRIPTEN__
  /**
@@ -511,48 +867,31 @@ diff -Naur a/src/client/cl_main.c b/src/client/cl_main.c
 +	{
 +		on = !Cvar_VariableIntegerValue("cl_aimbot");
 +	}
++
++	Cvar_Set2("cl_aimbot", on ? "1" : "0", qtrue);
++	Com_Printf("aimbot %s\n", on ? "on" : "off");
++}
  
 -	Cvar_Get("cl_rshook", "0", 0);
 -	Cvar_Set2("cl_rshook", on ? "1" : "0", qtrue);
 -	Com_Printf("rshook %s\n", on ? "on" : "off");
-+	Cvar_Set2("cl_aimbot", on ? "1" : "0", qtrue);
-+	Com_Printf("aimbot %s\n", on ? "on" : "off");
- }
- 
--/**
-- * @brief Arcade-only CCHookReloaded-style hitscan aimbot.
-- */
--static void CL_CcHook_f(void)
 +static void CL_AimbotMenu_f(void)
- {
--	int on;
--
--	Cvar_Get("g_etjsArcade", "0", 0);
--	if (!Cvar_VariableIntegerValue("g_etjsArcade"))
++{
 +	if (!Cvar_VariableIntegerValue("g_etjsArcade") ||
 +	    !Cvar_VariableIntegerValue("cl_aimbot"))
- 	{
--		Cvar_Set2("cl_cchook", "0", qtrue);
--		Com_Printf("cchook is only available in arcade mode\n");
++	{
 +		Com_Printf("aimbot menu requires arcade mode and aimbot on\n");
- 		return;
- 	}
--
--	on = !Cvar_VariableIntegerValue("cl_cchook");
--
--	Cvar_Get("cl_cchook", "0", 0);
--	Cvar_Set2("cl_cchook", on ? "1" : "0", qtrue);
--	Com_Printf("cchook %s\n", on ? "on" : "off");
++		return;
++	}
 +	Cvar_Set2("cl_aimbotmenu", Cvar_VariableIntegerValue("cl_aimbotmenu") ? "0" : "1", qtrue);
  }
  
  static void CL_EtjsJoin_f(void)
-@@ -3307,14 +3319,20 @@
+@@ -3285,13 +3319,20 @@
  	#endif
  	// register our commands
  #ifdef __EMSCRIPTEN__
 -	Cvar_Get("cl_rshook", "0", 0);
--	Cvar_Get("cl_cchook", "0", 0);
 +	Cvar_Get("cl_aimbot", "0", 0);
 +	Cvar_Get("cl_aimbotmenu", "0", 0);
  	Cvar_Get("etjs_connect", "127.0.0.1:27961", 0);
@@ -570,14 +909,13 @@ diff -Naur a/src/client/cl_main.c b/src/client/cl_main.c
  	Cvar_Get("etjs_aimworldpitch", "0", 0);
  	Cvar_Get("etjs_fwd", "0", 0);
  	Cvar_Get("etjs_right", "0", 0);
-@@ -3332,10 +3346,8 @@
+@@ -3309,9 +3350,8 @@
  	Cvar_Get("etjs_containui", "1", 0);
  	Cvar_Get("etjs_menucount", "0", 0);
  	Cvar_Get("etjs_admin", "0", 0);
 -	Cmd_AddCommand("rshook", CL_RsHook_f, "Toggle rshook.");
 -	Cmd_AddCommand("icebot", CL_RsHook_f, "Toggle rshook.");
 -	Cmd_AddCommand("ethook", CL_RsHook_f, "Toggle rshook.");
--	Cmd_AddCommand("cchook", CL_CcHook_f, "Toggle cchook.");
 +	Cmd_AddCommand("aimbot", CL_Aimbot_f, "Toggle ETH32NIX aimbot/wallhack/UI.");
 +	Cmd_AddCommand("aimbotmenu", CL_AimbotMenu_f, "Toggle ETH32NIX settings UI.");
  	Cmd_AddCommand("etjs_joingame", CL_EtjsJoin_f, "Join the shared ETJS match.");
@@ -602,20 +940,20 @@ diff -Naur a/src/client/cl_scrn.c b/src/client/cl_scrn.c
 diff -Naur a/src/qcommon/common.c b/src/qcommon/common.c
 --- a/src/qcommon/common.c
 +++ b/src/qcommon/common.c
-@@ -3357,8 +3357,15 @@
+@@ -3357,9 +3357,16 @@
  		return;
  	}
  
--	FS_Printf(f, "// generated by %s do not modify\n", ET_VERSION);
 +#ifdef __EMSCRIPTEN__
 +	/* Browser builds own renderer/net cvars in autoexec. A full writeconfig
 +	 * dump is exec'd again after download FS_Restart and drops the session. */
 +	FS_Printf(f, "// etjs: bindings only\n");
- 	Key_WriteBindings(f);
-+#else
-+	FS_Printf(f, "// generated by %s do not modify\n", ET_VERSION);
 +	Key_WriteBindings(f);
++#else
+ 	FS_Printf(f, "// generated by %s do not modify\n", ET_VERSION);
+ 	Key_WriteBindings(f);
  	Cvar_WriteVariables(f, nodefaults);
 +#endif
  	FS_FCloseFile(f);
  }
+ 
