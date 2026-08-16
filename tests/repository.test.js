@@ -97,11 +97,18 @@ describe('reproducible source repository', () => {
     assert.ok(fs.statSync(modesPatch).size > 1000);
     assert.match(setup, /etlegacy-modes\.patch/);
     const eth32Patch = path.join(ROOT, 'patches', 'etlegacy-eth32nix.patch');
+    const slotPatch = path.join(ROOT, 'patches', 'etlegacy-human-slot.patch');
+    const uiPatch = path.join(ROOT, 'patches', 'etlegacy-etjs-ui.patch');
     assert.ok(fs.statSync(eth32Patch).size > 1000);
+    assert.ok(fs.statSync(slotPatch).size > 1000);
+    assert.ok(fs.statSync(uiPatch).size > 1000);
     assert.match(setup, /etlegacy-eth32nix\.patch/);
+    assert.match(setup, /etlegacy-human-slot\.patch/);
+    assert.match(setup, /etlegacy-etjs-ui\.patch/);
     assert.match(setup, /install_eth32nix/);
     assert.ok(fs.existsSync(path.join(ROOT, 'eth32nix', 'eth32nix_aim.c')));
-    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', eth32Patch]);
+    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', uiPatch]);
+    execFileSync('git', ['-C', path.join(ROOT, 'etlegacy'), 'apply', '--reverse', '--check', slotPatch]);
   });
 
   it('builds and requires the matching native qagame module', () => {
@@ -128,6 +135,8 @@ describe('reproducible source repository', () => {
     assert.match(dockerfile, /COPY third_party third_party/);
     assert.match(dockerfile, /COPY web-port web-port/);
     assert.match(dockerfile, /COPY patches\/etlegacy-eth32nix\.patch/);
+    assert.match(dockerfile, /COPY patches\/etlegacy-human-slot\.patch/);
+    assert.match(dockerfile, /COPY patches\/etlegacy-etjs-ui\.patch/);
     assert.match(dockerfile, /COPY eth32nix eth32nix/);
     assert.match(dockerfile, /ETJS_MODE=arcade/);
     assert.match(dockerfile, /ETJS_SLOTS=12/);

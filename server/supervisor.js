@@ -13,7 +13,10 @@ const GAMEPLAY_CVARS = [
   'set g_friendlyFire 0',
   'set g_forcerespawn 1',
   'set g_bluelimbotime 1000',
-  'set g_redlimbotime 1000'
+  'set g_redlimbotime 1000',
+  /* Supervisor owns fill. Omni-Bot must not immediately re-add a bot after
+   * a human takes that slot or after we kick down to target. */
+  'bot balanceteams 0'
 ];
 
 function isLikelyHuman(player) {

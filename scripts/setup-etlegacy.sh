@@ -9,16 +9,32 @@ UPSTREAM_REF="a44ab4f396370a694109da33df901d85f6fe9626"
 ETJS_PATCH="$ROOT/patches/etlegacy-wasm.patch"
 ETJS_MODES_PATCH="$ROOT/patches/etlegacy-modes.patch"
 ETJS_ETH32_PATCH="$ROOT/patches/etlegacy-eth32nix.patch"
+ETJS_SLOT_PATCH="$ROOT/patches/etlegacy-human-slot.patch"
+ETJS_UI_PATCH="$ROOT/patches/etlegacy-etjs-ui.patch"
 ETH32_SRC="$ROOT/eth32nix"
 
 if ! command -v git >/dev/null 2>&1; then
   echo "git is required" >&2
   exit 1
 fi
-if [ ! -f "$ETJS_PATCH" ] || [ ! -f "$ETJS_MODES_PATCH" ] || [ ! -f "$ETJS_ETH32_PATCH" ]; then
+if [ ! -f "$ETJS_PATCH" ] || [ ! -f "$ETJS_MODES_PATCH" ] || [ ! -f "$ETJS_ETH32_PATCH" ] || [ ! -f "$ETJS_SLOT_PATCH" ] || [ ! -f "$ETJS_UI_PATCH" ]; then
   echo "missing ETJS engine patch" >&2
   exit 1
 fi
+
+apply_named_patch() {
+  patch_file="$1"
+  if git -C "$ETLEGACY_DIR" apply --reverse --check "$patch_file" >/dev/null 2>&1; then
+    return 0
+  fi
+  git -C "$ETLEGACY_DIR" apply --check "$patch_file"
+  git -C "$ETLEGACY_DIR" apply "$patch_file"
+}
+
+apply_followup_patches() {
+  apply_named_patch "$ETJS_SLOT_PATCH"
+  apply_named_patch "$ETJS_UI_PATCH"
+}
 
 install_eth32nix() {
   for f in eth32nix.h eth32nix.c eth32nix_aim.c eth32nix_vis.c eth32nix_gui.c eth32nix_luts.h; do
@@ -47,6 +63,7 @@ fi
 
 if git -C "$ETLEGACY_DIR" apply --reverse --check "$ETJS_ETH32_PATCH" >/dev/null 2>&1; then
   install_eth32nix
+  apply_followup_patches
   echo "ETJS engine patches are already applied at $ETLEGACY_DIR"
   exit 0
 fi
@@ -56,6 +73,7 @@ if git -C "$ETLEGACY_DIR" apply --reverse --check "$ETJS_MODES_PATCH" >/dev/null
   install_eth32nix
   git -C "$ETLEGACY_DIR" apply --check "$ETJS_ETH32_PATCH"
   git -C "$ETLEGACY_DIR" apply "$ETJS_ETH32_PATCH"
+  apply_followup_patches
   echo "applied ETH32NIX aimbot to ET: Legacy $UPSTREAM_REF"
   exit 0
 fi
@@ -68,6 +86,7 @@ if git -C "$ETLEGACY_DIR" apply --reverse --check "$ETJS_PATCH" >/dev/null 2>&1;
   install_eth32nix
   git -C "$ETLEGACY_DIR" apply --check "$ETJS_ETH32_PATCH"
   git -C "$ETLEGACY_DIR" apply "$ETJS_ETH32_PATCH"
+  apply_followup_patches
   echo "applied ETJS deployment modes and ETH32NIX to ET: Legacy $UPSTREAM_REF"
   exit 0
 fi
@@ -84,4 +103,5 @@ git -C "$ETLEGACY_DIR" apply "$ETJS_MODES_PATCH"
 install_eth32nix
 git -C "$ETLEGACY_DIR" apply --check "$ETJS_ETH32_PATCH"
 git -C "$ETLEGACY_DIR" apply "$ETJS_ETH32_PATCH"
+apply_followup_patches
 echo "applied ETJS engine patch to ET: Legacy $UPSTREAM_REF"

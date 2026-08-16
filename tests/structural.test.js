@@ -306,6 +306,33 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(draw, /ETH32_Draw2D/);
   });
 
+  it('bounds spectator follow and disguise indexes so WASM cannot trap', () => {
+    const players = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_players.c'), 'utf8');
+    const character = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_character.c'), 'utf8');
+    const draw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_draw.c'), 'utf8');
+    const core = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'eth32nix.c'), 'utf8');
+    const vis = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'eth32nix_vis.c'), 'utf8');
+    const player = extractFn(players, 'CG_Player');
+    const newInfo = extractFn(players, 'CG_NewClientInfo');
+    const follow = extractFn(draw, 'CG_DrawFollow');
+    assert.match(newInfo, /newInfo\.rank >= NUM_EXPERIENCE_LEVELS/);
+    assert.match(newInfo, /newInfo\.cls >= NUM_PLAYER_CLASSES/);
+    assert.match(newInfo, /ch < MAX_CHARACTERS/);
+    assert.match(newInfo, /disguiseClientNum >= MAX_CLIENTS/);
+    assert.match(player, /ci->disguiseClientNum >= 0 && ci->disguiseClientNum < MAX_CLIENTS/);
+    assert.doesNotMatch(player, /cgs\.clientinfo\[cgs\.clientinfo\[cent->currentState\.number\]\.disguiseClientNum\]/);
+    assert.match(player, /rank >= NUM_EXPERIENCE_LEVELS/);
+    assert.match(players, /cent = &cg_entities\[clientNum\]/);
+    assert.match(character, /ch < MAX_CHARACTERS && cgs\.gameCharacters\[ch\]/);
+    assert.match(character, /cls >= NUM_PLAYER_CLASSES/);
+    assert.match(follow, /ps\.clientNum >= MAX_CLIENTS/);
+    assert.match(follow, /rank < NUM_EXPERIENCE_LEVELS/);
+    assert.match(core, /ETH32_SanitizeSettings/);
+    assert.match(core, /clientNum < 0 \|\| clientNum >= MAX_CLIENTS \|\| !ori/);
+    assert.match(vis, /es->number >= MAX_CLIENTS/);
+    assert.match(vis, /clientNum < 0 \|\| clientNum >= MAX_CLIENTS/);
+  });
+
   it('releases browser pointer lock and routes debrief cursor input', () => {
     const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
     const draw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_newDraw.c'), 'utf8');
@@ -405,9 +432,20 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.doesNotMatch(menus, /ui\/quit\.menu/);
     assert.doesNotMatch(menus, /options_customise_hudeditor_fui/);
     assert.match(ingame, /RETURN TO GAME/);
+    assert.ok(ingame.indexOf('AIMBOT') < ingame.indexOf('RETURN TO GAME'));
     assert.match(ingame, /MSGID_MENU_INGAME_LIMBO_MENU/);
-    assert.doesNotMatch(ingame, /CHANGELOG|FAVORITE|OPTIONS|VOTE|SERVER_INFO|DISCONNECT|EXIT|ETLEGACY_VERSION|legacy_logo|development_build_banner/);
+    assert.match(ingame, /MSGID_MENU_INGAME_OPTIONS/);
+    assert.match(ingame, /close ingame_main ; open options/);
+    assert.match(ingame, /AIMBOT/);
+    assert.match(ingame, /YESNOACTION[\s\S]*cl_aimbot/);
+    assert.match(ingame, /SETTINGS/);
+    assert.match(ingame, /aimbot settings/);
+    assert.doesNotMatch(ingame, /cvarTest "cl_aimbot"/);
+    assert.doesNotMatch(ingame, /CHANGELOG|FAVORITE|VOTE|SERVER_INFO|DISCONNECT|EXIT|ETLEGACY_VERSION|legacy_logo|development_build_banner/);
     assert.doesNotMatch(options, /HUD_EDITOR|OPEN_HOME|open_homepath|edithud/);
+    assert.match(options, /conditionalscript etjs_ingame 0/);
+    assert.match(options, /close options ; open ingame_main/);
+    assert.match(options, /close options ; open main/);
     assert.match(loading, /Awaiting connection\.\.\.%i/);
     assert.match(loading, /Awaiting challenge\.\.\.%i/);
     assert.match(loading, /Awaiting gamestate\.\.\./);
@@ -486,7 +524,7 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.doesNotMatch(client, /ES2 tessellator ready[\s\S]{0,80}hideLoadPanel/);
     const scrn = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_scrn.c'), 'utf8');
     assert.match(scrn, /ETJS menu ready/);
-    const disc = scrn.split('case CA_DISCONNECTED')[1].split('case CA_CONNECTING')[0];
+    const disc = scrn.split('case CA_DISCONNECTED')[1].split('case CA_ACTIVE')[0];
     const emDisc = disc.split('#ifdef __EMSCRIPTEN__')[1].split('#else')[0];
     assert.match(emDisc, /UI_SET_ACTIVE_MENU/);
     assert.match(emDisc, /UIMENU_MAIN/);
@@ -513,6 +551,27 @@ describe('no overlay theater in the shipped draw path', () => {
     const info = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_info.c'), 'utf8');
     const drawInfo = extractFn(info, 'CG_DrawInformation');
     assert.match(drawInfo, /#ifndef __EMSCRIPTEN__[\s\S]*?if \(ms < nextcall\)/);
+    assert.match(drawInfo, /SNAPFLAG_NOT_ACTIVE/);
+    assert.match(info, /etjs_loadstatus/);
+    const view = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_view.c'), 'utf8');
+    assert.match(view, /infoScreenText\[0\] != 0[\s\S]*?CG_DrawInformation\(qfalse\)/);
+    assert.match(view, /SNAPFLAG_NOT_ACTIVE[\s\S]*?CG_DrawInformation\(qfalse\)/);
+    const backend = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'renderer', 'tr_backend.c'), 'utf8');
+    assert.match(backend, /projection2D \? -0\.5f/);
+    const scrnLoad = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_scrn.c'), 'utf8');
+    const drawField = extractFn(scrnLoad, 'SCR_DrawScreenField');
+    assert.match(drawField, /ETJS_DrawLoadStatus/);
+    assert.doesNotMatch(drawField.split('CA_PRIMED')[1].split('else if')[0], /UI_REFRESH/);
+    assert.match(scrnLoad, /Awaiting connection/);
+    assert.match(scrnLoad, /464\.f/);
+    assert.match(scrnLoad, /10\.f, 16\.f/);
+    const cgLoad = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_loadpanel.c'), 'utf8');
+    assert.match(cgLoad, /cg\.infoScreenText\[0\] \? cg\.infoScreenText : "LOADING"/);
+    assert.match(cgLoad, /cgs\.arenaData\.longname/);
+    assert.match(cgLoad, /Loading %s/);
+    const scrnDraw = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'client', 'cl_scrn.c'), 'utf8');
+    assert.match(scrnDraw, /cls\.state >= CA_CONNECTING && cls\.state <= CA_PRIMED/);
+    assert.match(scrnDraw, /UI_DRAW_CONNECT_SCREEN, qfalse/);
   });
 
   it('streams real engine startup output into the loading console', () => {
@@ -723,5 +782,31 @@ describe('no overlay theater in the shipped draw path', () => {
     assert.match(pw, /127\.0\.0\.1:8088/);
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'img', 'et-512.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'web', 'sound', 'music', 'menu_server.wav')));
+  });
+
+  it('lets a human take a bot slot instead of rejecting a full or unbalanced team', () => {
+    const team = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_team.c'), 'utf8');
+    const cmds = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_cmds.c'), 'utf8');
+    const local = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_local.h'), 'utf8');
+    const ref = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'game', 'g_referee.c'), 'utf8');
+    const limbo = fs.readFileSync(path.join(ROOT, 'etlegacy', 'src', 'cgame', 'cg_limbopanel.c'), 'utf8');
+    const omni = fs.readFileSync(path.join(ROOT, 'runtime', 'omni-bot-user', 'omni-bot.cfg'), 'utf8');
+    const yieldFn = extractFn(team, 'G_YieldBotSlot');
+    const isBot = extractFn(team, 'G_ClientIsFillBot');
+    const joinFn = extractFn(team, 'G_teamJoinCheck');
+    const setTeam = extractFn(cmds, 'SetTeam');
+    const teamIsFull = extractFn(limbo, 'CG_LimboPanel_TeamIsFull');
+    assert.match(local, /qboolean G_YieldBotSlot\(team_t team, int playerType\)/);
+    assert.match(local, /G_TeamCountHumans/);
+    assert.match(isBot, /SVF_BOT/);
+    assert.match(isBot, /Q_stristr\(ent->client->pers.netname, "\[BOT\]"\)/);
+    assert.match(yieldFn, /G_ClientIsFillBot\(bot\)/);
+    assert.match(yieldFn, /trap_DropClient\(ref, "slot yielded to player"/);
+    assert.match(joinFn, /G_YieldBotSlot\(nTeam/);
+    assert.match(setTeam, /G_TeamCountHumans\(ent - g_entities, TEAM_ALLIES\)/);
+    assert.match(setTeam, /G_TeamCountHumans\(ent - g_entities, TEAM_AXIS\)/);
+    assert.match(ref, /G_YieldBotSlot\(team_id/);
+    assert.match(teamIsFull, /Q_stristr\(cgs\.clientinfo\[i\]\.name, "\[BOT\]"\)/);
+    assert.match(omni, /BalanceTeams\s+=\s+0/);
   });
 });

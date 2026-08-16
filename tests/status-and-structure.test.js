@@ -42,6 +42,7 @@ describe('runtime reconciliation', () => {
     assert.match(commands, /g_etjsArcade 1/);
     assert.match(commands, /g_friendlyFire 0/);
     assert.match(commands, /g_forcerespawn 1/);
+    assert.match(commands, /bot balanceteams 0/);
     assert.doesNotMatch(supervisor, /bot minplayers/);
     assert.match(supervisor, /stopped \|\| running/);
   });

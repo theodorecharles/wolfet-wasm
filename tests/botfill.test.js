@@ -94,4 +94,13 @@ describe('shipped bot fill policy', () => {
     assert.equal(supervisor.botKickCommand('^o[BOT]^7Cledus'),
       'bot kickbot ^o[BOT]^7Cledus');
   });
+
+  it('leaves team balance to humans taking bot slots, not Omni-Bot refill', () => {
+    const cfg = require('fs').readFileSync(
+      path.join(__dirname, '..', 'runtime', 'omni-bot-user', 'omni-bot.cfg'),
+      'utf8'
+    );
+    assert.match(cfg, /BalanceTeams\s+=\s+0/);
+    assert.match(supervisor.GAMEPLAY_CVARS.join('\n'), /bot balanceteams 0/);
+  });
 });

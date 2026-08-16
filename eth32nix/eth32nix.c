@@ -525,6 +525,8 @@ void ETH32_CancelAndClose(void)
 	}
 }
 
+static void ETH32_SanitizeSettings(void);
+
 void ETH32_Init(void)
 {
 	if (eth32.inited)
@@ -539,6 +541,7 @@ void ETH32_Init(void)
 	eth32.cursorY       = 240.f;
 	ETH32_LoadDefaults();
 	ETH32_LoadConfig();
+	ETH32_SanitizeSettings();
 	eth32.revert = eth32.s;
 	ETH32_InitWeapons();
 	eth32.inited = qtrue;
@@ -719,9 +722,15 @@ void ETH32_GetMuzzle(vec3_t out)
 
 qboolean ETH32_GetHeadOri(int clientNum, orientation_t *ori)
 {
-	centity_t *cent = &cg_entities[clientNum];
+	centity_t *cent;
 	vec3_t     delta;
 	float      z;
+
+	if (clientNum < 0 || clientNum >= MAX_CLIENTS || !ori)
+	{
+		return qfalse;
+	}
+	cent = &cg_entities[clientNum];
 
 	if (CG_GetTag(clientNum, "tag_head", ori))
 	{
@@ -905,6 +914,34 @@ void ETH32_CaptureHead(int clientNum, const refEntity_t *re)
 	}
 	VectorCopy(re->origin, eth32.players[clientNum].orHead.origin);
 	AxisCopy(re->axis, eth32.players[clientNum].orHead.axis);
+}
+
+static int ETH32_ClampInt(int v, int lo, int hiExclusive)
+{
+	if (v < lo)
+	{
+		return lo;
+	}
+	if (v >= hiExclusive)
+	{
+		return hiExclusive - 1;
+	}
+	return v;
+}
+
+static void ETH32_SanitizeSettings(void)
+{
+	eth32.s.aimMode       = ETH32_ClampInt(eth32.s.aimMode, 0, ETH32_AIMMODE_MAX);
+	eth32.s.aimType       = ETH32_ClampInt(eth32.s.aimType, 0, ETH32_AIM_MAX);
+	eth32.s.aimSort       = ETH32_ClampInt(eth32.s.aimSort, 0, ETH32_SORT_MAX);
+	eth32.s.headbody      = ETH32_ClampInt(eth32.s.headbody, 0, ETH32_AP_MAX);
+	eth32.s.hitboxType    = ETH32_ClampInt(eth32.s.hitboxType, 0, ETH32_HITBOX_MAX);
+	eth32.s.headTraceType = ETH32_ClampInt(eth32.s.headTraceType, 0, ETH32_HEAD_MAX);
+	eth32.s.bodyTraceType = ETH32_ClampInt(eth32.s.bodyTraceType, 0, ETH32_BODY_MAX);
+	eth32.s.humanMode     = ETH32_ClampInt(eth32.s.humanMode, 0, ETH32_HUMAN_MAX);
+	eth32.s.aimprotect    = ETH32_ClampInt(eth32.s.aimprotect, 0, ETH32_PROTECT_MAX);
+	eth32.s.predSelfType  = ETH32_ClampInt(eth32.s.predSelfType, 0, ETH32_SPR_MAX);
+	eth32.s.classEspType  = ETH32_ClampInt(eth32.s.classEspType, 0, ETH32_CLS_MAX);
 }
 
 #endif /* __EMSCRIPTEN__ */

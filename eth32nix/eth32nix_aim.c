@@ -75,6 +75,10 @@ static float ETH32_CrosshairDist(int clientNum)
 {
 	float x, y;
 
+	if (clientNum < 0 || clientNum >= MAX_CLIENTS)
+	{
+		return 1e30f;
+	}
 	if (!ETH32_WorldToScreen(cg_entities[clientNum].lerpOrigin, &x, &y))
 	{
 		return 1e30f;
@@ -85,8 +89,15 @@ static float ETH32_CrosshairDist(int clientNum)
 static int ETH32_SortPlayers(const void *a, const void *b)
 {
 	int ia = *(const int *)a, ib = *(const int *)b;
-	eth32_player_t *pa = &eth32.players[ia];
-	eth32_player_t *pb = &eth32.players[ib];
+	eth32_player_t *pa;
+	eth32_player_t *pb;
+
+	if (ia < 0 || ia >= MAX_CLIENTS || ib < 0 || ib >= MAX_CLIENTS)
+	{
+		return 0;
+	}
+	pa = &eth32.players[ia];
+	pb = &eth32.players[ib];
 
 	switch (eth32.s.aimSort)
 	{
@@ -445,14 +456,21 @@ static const eth32_hitboxDef_t *ETH32_HeadBox(void)
 
 static qboolean ETH32_TraceHead(int clientNum, const vec3_t start, vec3_t hit)
 {
-	eth32_hitboxDef_t hbox;
-	centity_t        *cent = &cg_entities[clientNum];
-	orientation_t     head;
-	vec3_t            cv, p, vel, size;
-	qboolean          moving;
-	int               eFlags;
-	float             dist, f, closeV, farV;
-	const eth32_weap_t *weap = ETH32_Weapon(cg.predictedPlayerState.weapon);
+	eth32_hitboxDef_t   hbox;
+	centity_t          *cent;
+	orientation_t       head;
+	vec3_t              cv, p, vel, size;
+	qboolean            moving;
+	int                 eFlags;
+	float               dist, f, closeV, farV;
+	const eth32_weap_t *weap;
+
+	if (clientNum < 0 || clientNum >= MAX_CLIENTS)
+	{
+		return qfalse;
+	}
+	cent = &cg_entities[clientNum];
+	weap = ETH32_Weapon(cg.predictedPlayerState.weapon);
 
 	if (!weap->headTraces || !ETH32_GetHeadOri(clientNum, &head))
 	{
@@ -541,14 +559,15 @@ static qboolean ETH32_TraceHead(int clientNum, const vec3_t start, vec3_t hit)
 
 static qboolean ETH32_TraceBody(int clientNum, vec3_t hit)
 {
-	centity_t          *cent = &cg_entities[clientNum];
+	centity_t          *cent;
 	vec3_t              size, origin, muzzle;
 	const eth32_weap_t *weap = ETH32_Weapon(cg.predictedPlayerState.weapon);
 
-	if (!weap->bodyTraces)
+	if (clientNum < 0 || clientNum >= MAX_CLIENTS || !weap->bodyTraces)
 	{
 		return qfalse;
 	}
+	cent = &cg_entities[clientNum];
 	size[0] = size[1] = eth32.s.bodybox;
 	size[2] = 24.f;
 	VectorCopy(cent->lerpOrigin, origin);

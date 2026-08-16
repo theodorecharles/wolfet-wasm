@@ -68,11 +68,12 @@ void ETH32_PlayerChams(refEntity_t *ent, entityState_t *es, int team)
 	const byte *fill;
 	int      localTeam;
 
-	if (!ETH32_Active() || !eth32.s.drawHackVisuals || !cg.snap)
+	if (!ETH32_Active() || !eth32.s.drawHackVisuals || !cg.snap || !es)
 	{
 		return;
 	}
-	if (es->eType != ET_PLAYER || es->number == cg.snap->ps.clientNum || (es->eFlags & EF_DEAD))
+	if (es->eType != ET_PLAYER || es->number < 0 || es->number >= MAX_CLIENTS ||
+	    es->number == cg.snap->ps.clientNum || (es->eFlags & EF_DEAD))
 	{
 		return;
 	}
@@ -186,12 +187,19 @@ static void ETH32_DrawText(float x, float y, float scale, const char *text, vec4
 
 static void ETH32_PlayerEsp(int clientNum)
 {
-	eth32_player_t *pl = &eth32.players[clientNum];
-	centity_t      *cent = &cg_entities[clientNum];
+	eth32_player_t *pl;
+	centity_t      *cent;
 	vec3_t          origin;
 	vec4_t          color, iconColor;
 	float           x, y, boxX, boxY, size;
 	const char     *cls;
+
+	if (clientNum < 0 || clientNum >= MAX_CLIENTS)
+	{
+		return;
+	}
+	pl   = &eth32.players[clientNum];
+	cent = &cg_entities[clientNum];
 
 	if (!ETH32_IsEnemy(clientNum) &&
 	    !(cgs.clientinfo[clientNum].infoValid &&
@@ -446,16 +454,23 @@ static void ETH32_DrawStatus(void)
 	const eth32_weap_t *weap = ETH32_Weapon(cg.predictedPlayerState.weapon);
 	int hp = cg.snap ? cg.snap->ps.stats[STAT_HEALTH] : 0;
 	int ammo = 0;
+	const char *aimTxt = (eth32.s.aimType >= 0 && eth32.s.aimType < ETH32_AIM_MAX)
+	                     ? eth32_aimTypeText[eth32.s.aimType] : "?";
 
 	if (cg.snap && IS_VALID_WEAPON(cg.predictedPlayerState.weapon))
 	{
-		ammo = cg.snap->ps.ammoclip[GetWeaponTableData(cg.predictedPlayerState.weapon)->clipIndex];
+		int clipIndex = GetWeaponTableData(cg.predictedPlayerState.weapon)->clipIndex;
+
+		if (clipIndex >= 0 && clipIndex < MAX_WEAPONS)
+		{
+			ammo = cg.snap->ps.ammoclip[clipIndex];
+		}
 	}
 
 	CG_FillRect(5, 422, 120, 50, bg);
 	ETH32_DrawText(10, 434, 0.14f, va("HP %d  AMMO %d", hp, ammo), fg, qfalse);
 	ETH32_DrawText(10, 448, 0.14f, weap->name, fg, qfalse);
-	ETH32_DrawText(10, 462, 0.12f, eth32_aimTypeText[eth32.s.aimType], fg, qfalse);
+	ETH32_DrawText(10, 462, 0.12f, aimTxt, fg, qfalse);
 }
 
 static void ETH32_DrawRespawn(void)

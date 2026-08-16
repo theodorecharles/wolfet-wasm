@@ -30,6 +30,8 @@ COPY scripts/setup-etlegacy.sh scripts/setup-etlegacy.sh
 COPY patches/etlegacy-wasm.patch patches/etlegacy-wasm.patch
 COPY patches/etlegacy-modes.patch patches/etlegacy-modes.patch
 COPY patches/etlegacy-eth32nix.patch patches/etlegacy-eth32nix.patch
+COPY patches/etlegacy-human-slot.patch patches/etlegacy-human-slot.patch
+COPY patches/etlegacy-etjs-ui.patch patches/etlegacy-etjs-ui.patch
 COPY eth32nix eth32nix
 RUN sh scripts/setup-etlegacy.sh
 
